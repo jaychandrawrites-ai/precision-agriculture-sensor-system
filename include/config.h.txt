@@ -1,0 +1,14 @@
+#pragma once
+
+// =====================================================
+// PRECISION AGRICULTURE SYSTEM CONFIGURATION
+// =====================================================
+
+// Computer Serial Monitor
+#define SERIAL_BAUD 9600
+
+// SEN0604 / DFR0845 communication
+#define SOIL_BAUD 9600
+
+// How often to take measurements
+#define SENSOR_INTERVAL_MS 5000
