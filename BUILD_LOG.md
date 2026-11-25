@@ -48,3 +48,28 @@ PLANS.md and audited the existing Python modules and Arduino sketch.
   bounds. Recursive stability and real-data performance remain open.
 - `python -m compileall -q .` passed. Live serial hardware, CUDA and real
   dataset runs were unavailable for this verification.
+
+### Follow-up verification
+
+- Added ordinary kriging with a supplied covariance range and a held-out
+  site evaluator for kriging, IDW and variational reconstruction. The spatial
+  verification used synthetic sites. Field experiments and Metropolis
+  uncertainty remain pending.
+- Added `experiments.py` and completed a default search-budget run on the
+  synthetic fixture. Both searches used 80 candidate fits and 1,600
+  candidate epochs, followed by 30 final-fit epochs per method.
+
+| Method | Parameters | One-step temperature RMSE (°C) | Six-step temperature RMSE (°C) |
+| --- | ---: | ---: | ---: |
+| Fixed | 3,494 | 2.149 | 59.897 |
+| Classical GA | 19,782 | 0.899 | 43.728 |
+| Classical amplitude search | 26,822 | 0.907 | 56.766 |
+
+The comparison used the configured default dropout. The standalone synthetic
+demo used dropout disabled. All methods showed large recursive errors on the
+fixture, so the results do not establish multi-hour forecast reliability.
+
+A fresh Python virtual environment installed `requirements.txt` with NumPy
+2.5.5, pandas 2.3.3 and pyserial 3.5. All 9 tests passed with deprecation
+warnings treated as errors. The synthetic demo and bytecode compilation also
+passed in that environment.

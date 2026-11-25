@@ -86,7 +86,7 @@ class TemporalTests(unittest.TestCase):
                 result = forecast_csv(path / "input.csv", path / "model.json", 6)
                 self.assertEqual(result.shape, (6, 7))
                 self.assertTrue(np.isfinite(result.iloc[:, 1:]).all().all())
-                self.assertEqual(result.timestamp.iloc[0], frame.timestamp.iloc[-1] + pd.Timedelta(hours=1))
+                self.assertEqual(result.timestamp.iloc[0], pd.Timestamp(frame.timestamp.iloc[-1].to_datetime64() + np.timedelta64(1, "h"), tz="UTC"))
             frame.drop(index=frame.index[-2]).to_csv(path / "input.csv", index=False)
             with self.assertRaises(ValueError):
                 forecast_csv(path / "input.csv", path / "model.json", 6)
@@ -136,3 +136,16 @@ class SearchAndSpatialTests(unittest.TestCase):
         self.assertEqual(result.field.shape, (5, 7))
         self.assertEqual((result.field[0, 0], result.field[4, 6]), (2, 10))
         self.assertLess(result.energies[-1], result.energies[0])
+
+    def test_held_out_spatial_metrics(self):
+        from Spatial.Validation import evaluate_held_out
+
+        grid = SpatialGrid(np.arange(7), np.arange(5))
+        points = [[0, 0], [6, 4], [0, 4]]
+        args = (grid, points, [2, 10, 6], [[3, 2]], [6], create_backend(),
+                SpatialConfig(iterations=30), 5.0)
+        metrics = evaluate_held_out(*args)
+        self.assertEqual(set(metrics), {"idw", "kriging", "variational"})
+        self.assertTrue(all(np.isfinite(item["rmse"]).all() for item in metrics.values()))
+        with self.assertRaises(ValueError):
+            evaluate_held_out(*args[:3], [[0, 0]], *args[4:])

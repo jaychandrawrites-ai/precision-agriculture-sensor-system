@@ -132,3 +132,17 @@ readings with quality flags in `readings.jsonl`. Replay of a raw JSONL preserves
 the logged timestamps. A plain-text replay assigns new receive times. The
 checked-in sketch provides air and soil fields. Leaf wetness and GPS require the
 AquaMap firmware and calibration before an acquired session can feed forecasting.
+
+### Compare research methods
+
+`python experiments.py historical_hourly.csv` evaluates a fixed network and
+the architectures selected by the classical and quantum-inspired searches.
+The default searches each train 80 candidates for 20 epochs. Both use
+validation scores for selection and evaluate their final models on the same
+chronological test split. The amplitude-based method runs classically.
+
+For spatial measurements, use `Spatial.SpatialGrid.local_coordinates` to
+project GPS into local meters and `Spatial.Validation.evaluate_held_out`
+to compare variational reconstruction, IDW and ordinary kriging at
+separate measurement sites. Choose the kriging range with training data
+or domain knowledge before scoring the held-out sites.
