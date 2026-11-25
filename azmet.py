@@ -17,6 +17,9 @@ def prepare(source, metadata):
     weather = read_azmet(source, AZMETSchema.from_dict(metadata["schema"]),
                          source_label=metadata["source_label"], synthetic=metadata.get("synthetic", False))
     features, flags, provenance = historical_features(weather, site, reference, **metadata["scenario"])
+    for key in ("station_id", "source_url", "schema_reference", "metadata_url"):
+        if key in metadata:
+            provenance[key] = metadata[key]
     cutoffs = calendar_cutoffs(features.index.to_numpy(dtype="datetime64[ns]"))
     return features, flags, {"quality": quality_report(features, flags, cutoffs=cutoffs),
                              "provenance": provenance}
