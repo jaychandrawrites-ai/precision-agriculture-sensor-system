@@ -38,3 +38,19 @@ class DirectTests(unittest.TestCase):
             self.assertEqual(len(report["metrics"][mode]), 12)
             self.assertEqual(report["intervals"][mode]["coverage"].shape, (12, 6))
             self.assertEqual(report["intervals"][mode]["calibration_origins"], report["windows"]["calibration"])
+
+    def test_direct_checkpoint_round_trip(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from direct_forecast import predict, train
+
+        with TemporaryDirectory() as temp:
+            path = Path(temp)
+            synthetic_history().to_csv(path / "input.csv", index=False)
+            train(path / "input.csv", path / "model.json", TrainingConfig(epochs=2),
+                  horizon=8, width=4)
+            first = predict(path / "input.csv", path / "model.json")
+            second = predict(path / "input.csv", path / "model.json")
+            self.assertEqual(first.shape, (8, 6))
+            np.testing.assert_array_equal(first, second)
