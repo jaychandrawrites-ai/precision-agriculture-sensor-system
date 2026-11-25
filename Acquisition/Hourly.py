@@ -75,7 +75,8 @@ def session_hourly(path, leaf, soil, *, minimum_count=1, clock="received_at", de
                 except ValueError:
                     counts["soil_outside_calibrated_range"] += 1
             if {"latitude_deg", "longitude_deg"} <= measured.keys():
-                fixes.append({"timestamp": timestamp, "device_id": identity,
+                fixes.append({"timestamp": timestamp, "received_at": _aware(message["received_at"]),
+                              "device_id": identity,
                               "latitude_deg": measured["latitude_deg"],
                               "longitude_deg": measured["longitude_deg"]})
             records.append({"timestamp": timestamp, **{
@@ -106,7 +107,7 @@ def session_hourly(path, leaf, soil, *, minimum_count=1, clock="received_at", de
             coverage = coverage.reindex(span, fill_value=0)
         if hourly.empty:
             raise ValueError("Session has no closed hourly bins")
-    gps = pd.DataFrame(fixes, columns=["timestamp", "device_id", "latitude_deg", "longitude_deg"])
+    gps = pd.DataFrame(fixes, columns=["timestamp", "received_at", "device_id", "latitude_deg", "longitude_deg"])
     provenance = {"source_type": "acquisition_session", "readings_sha256": digest.hexdigest(),
                   "timestamp_clock": clock, "aggregation": "right-closed UTC hourly means",
                   "minimum_count": minimum_count, "device_id": next(iter(device_ids)),

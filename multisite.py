@@ -1,5 +1,6 @@
 """Forecast independent field sessions from one checkpoint and align spatial snapshots."""
 import argparse
+from datetime import timedelta
 from pathlib import Path
 import re
 
@@ -45,8 +46,9 @@ def aligned_snapshot(forecasts, positions, *, feature, valid_at, max_gps_age_min
         current_origin = frame.index[0] - pd.offsets.Hour()
         fixes = positions[name]
         times = pd.to_datetime(fixes["timestamp"], utc=True)
-        recent = fixes.loc[(times <= current_origin) &
-                           (times > current_origin - pd.offsets.Minute(max_gps_age_minutes))]
+        receipts = pd.to_datetime(fixes["received_at"], utc=True)
+        recent = fixes.loc[(times <= current_origin) & (receipts <= current_origin)
+                           & (times > current_origin - timedelta(minutes=max_gps_age_minutes))]
         if recent.empty:
             excluded[name] = "no recent GPS fix known at the forecast origin"
             continue
