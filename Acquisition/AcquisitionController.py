@@ -5,14 +5,21 @@ from Acquisition.SessionManager import session
 
 
 def _save_reading(file, reading):
-    write_json(file, {"received_at": reading.received_at.isoformat(),
-                      "measurements": reading.measurements, "flags": reading.flags})
+    record = {"received_at": reading.received_at.isoformat(),
+              "measurements": reading.measurements, "flags": reading.flags}
+    if reading.observed_at is not None:
+        record["observed_at"] = reading.observed_at.isoformat()
+    if reading.device_id is not None:
+        record["device_id"] = reading.device_id
+    if reading.packet_id is not None:
+        record["packet_id"] = reading.packet_id
+    write_json(file, record)
 
 
-def capture(lines, output, stop=None):
-    parser = PacketParser()
+def capture(lines, output, stop=None, *, parser=None, metadata=None):
+    parser = PacketParser() if parser is None else parser
     timestamp = None
-    with session(output) as (raw, readings):
+    with session(output, metadata=metadata) as (raw, readings):
         try:
             for timestamp, line in lines:
                 if stop is not None and stop.is_set():

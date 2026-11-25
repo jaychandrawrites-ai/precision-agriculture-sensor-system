@@ -1,0 +1,95 @@
+"""Single-device causal aggregation with GPS fixes retained separately."""
+from collections import Counter
+from dataclasses import asdict
+from hashlib import sha256
+import json
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from Acquisition.MappedPackets import FIELDS
+from Data.AZMET import WeatherData
+
+
+TEMPORAL_SENSORS = ("air_temperature_c", "relative_humidity_pct", "lwi", "soil_vwc")
+AUXILIARY_SENSORS = ("soil_moisture_pct", "soil_temperature_c", "soil_ec_us_cm", "soil_ph", "leaf_mv")
+
+
+def _aware(value):
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp) or timestamp.tzinfo is None:
+        raise ValueError("Reading timestamp must have a UTC offset")
+    return timestamp.tz_convert("UTC")
+
+
+def session_hourly(path, leaf, soil, *, minimum_count=1, clock="received_at", device_id=None):
+    if clock not in ("received_at", "observed_at") or not isinstance(minimum_count, int) or minimum_count < 1:
+        raise ValueError("Invalid clock or hourly coverage requirement")
+    records, fixes, device_ids = [], [], set()
+    counts = Counter()
+    digest = sha256()
+    with Path(path).open("rb") as file:
+        for line in file:
+            digest.update(line)
+            message = json.loads(line)
+            counts["records"] += 1
+            for flag in message["flags"]:
+                counts[f"packet_flag:{flag}"] += 1
+            identity = message.get("device_id")
+            if device_id is not None and identity != device_id:
+                counts["other_device"] += 1
+                continue
+            if "duplicate_packet" in message["flags"]:
+                continue
+            if "missing:device_id" in message["flags"]:
+                continue
+            device_ids.add(identity)
+            if clock not in message:
+                counts["missing_clock"] += 1
+                continue
+            timestamp = _aware(message[clock])
+            raw = message["measurements"]
+            measured = {}
+            for name, value in raw.items():
+                if name in FIELDS:
+                    lo, hi, _ = FIELDS[name]
+                    if isinstance(value, (int, float)) and not isinstance(value, bool) and np.isfinite(value) and lo <= value <= hi:
+                        measured[name] = value
+                    else:
+                        counts[f"invalid:{name}"] += 1
+            if "leaf_mv" in measured:
+                measured["lwi"] = leaf.apply(measured["leaf_mv"])
+                if not min(leaf.wet_mv, leaf.dry_mv) <= measured["leaf_mv"] <= max(leaf.wet_mv, leaf.dry_mv):
+                    counts["leaf_outside_endpoints"] += 1
+            if "soil_moisture_pct" in measured:
+                try:
+                    measured["soil_vwc"] = soil.apply(measured["soil_moisture_pct"])
+                except ValueError:
+                    counts["soil_outside_calibrated_range"] += 1
+            if {"latitude_deg", "longitude_deg"} <= measured.keys():
+                fixes.append({"timestamp": timestamp, "device_id": identity,
+                              "latitude_deg": measured["latitude_deg"],
+                              "longitude_deg": measured["longitude_deg"]})
+            records.append({"timestamp": timestamp, **{
+                key: value for key, value in measured.items() if key in TEMPORAL_SENSORS + AUXILIARY_SENSORS
+            }})
+    if len(device_ids) > 1:
+        raise ValueError("Session contains multiple devices; select one explicitly")
+    if not records:
+        raise ValueError("Session has no usable timestamped records")
+    columns = list(TEMPORAL_SENSORS + AUXILIARY_SENSORS)
+    frame = pd.DataFrame(records).set_index("timestamp").reindex(columns=columns).astype(float)
+    # Distinct packets can share the same timestamp. Identity deduplication already ran.
+    bins = frame.sort_index().resample("h", label="right", closed="right")
+    coverage = bins.count()
+    hourly = bins.mean().where(coverage >= minimum_count)
+    flags = (coverage < minimum_count).add_prefix("insufficient:")
+    flags["missing_hour"] = bins.size() == 0
+    gps = pd.DataFrame(fixes, columns=["timestamp", "device_id", "latitude_deg", "longitude_deg"])
+    provenance = {"source_type": "acquisition_session", "readings_sha256": digest.hexdigest(),
+                  "timestamp_clock": clock, "aggregation": "right-closed UTC hourly means",
+                  "minimum_count": minimum_count, "device_id": next(iter(device_ids)),
+                  "calibration": {"leaf": asdict(leaf), "soil": asdict(soil)},
+                  "packet_counts": dict(counts)}
+    return WeatherData(hourly, flags, provenance), gps, coverage
