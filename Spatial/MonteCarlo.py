@@ -18,6 +18,9 @@ class SamplingConfig:
     temperature: float = 1.0
     proposal_scale: float = 1.0
     seed: int = 42
+    proposal: str = "normal"
+    adapt: bool = False
+    target_acceptance: float = 0.44
 
     def __post_init__(self):
         counts = (self.draws, self.burn_in, self.thin, self.chain_count)
@@ -26,6 +29,10 @@ class SamplingConfig:
                 or not all(math.isfinite(v) and v > 0
                            for v in (self.temperature, self.proposal_scale))):
             raise ValueError("Invalid Metropolis settings")
+        if self.proposal not in ("normal", "uniform") or not 0 < self.target_acceptance < 1:
+            raise ValueError("Invalid proposal or target acceptance")
+        if self.adapt and self.burn_in < 1:
+            raise ValueError("Adaptation requires burn-in sweeps")
 
 
 @dataclass
@@ -34,6 +41,7 @@ class Samples:
     energy_trace: np.ndarray
     acceptance: np.ndarray
     burn_in_acceptance: np.ndarray
+    proposal_scales: np.ndarray | None = None
 
 
 def metropolis(energy: EnergyFunctional, initial, settings=SamplingConfig()):
@@ -64,6 +72,7 @@ def metropolis(energy: EnergyFunctional, initial, settings=SamplingConfig()):
     sweeps = settings.burn_in + settings.draws * settings.thin
     # Compute the initial gradient in float64 consistently for all backends.
     anchor = backend.to_host(energy.targets).ravel()
+    adapted = np.full(settings.chain_count, settings.proposal_scale)
     for chain, rng in enumerate(chains(settings.seed, settings.chain_count)):
         field = initial_host.ravel().copy()
         gradient = -fidelity * anchor
@@ -74,7 +83,10 @@ def metropolis(energy: EnergyFunctional, initial, settings=SamplingConfig()):
         for sweep in range(sweeps):
             phase = int(sweep >= settings.burn_in)
             indices = rng.choice(free, size=len(free), replace=True) if len(free) else free
-            increments = rng.normal(size=len(free)) * scales[indices]
+            noise = (rng.normal(size=len(free)) if settings.proposal == "normal"
+                     else rng.uniform(-math.sqrt(3), math.sqrt(3), len(free)))
+            increments = noise * scales[indices] * (adapted[chain] / settings.proposal_scale)
+            before = rates[chain, phase]
             cutoffs = -settings.temperature * rng.exponential(size=len(free))
             for index, increment, cutoff in zip(indices, increments, cutoffs):
                 nodes, weights, diagonal = columns[index]
@@ -84,6 +96,10 @@ def metropolis(energy: EnergyFunctional, initial, settings=SamplingConfig()):
                     gradient[nodes] += increment * weights
                     objective += change
                     rates[chain, phase] += 1
+            if not phase and settings.adapt and len(free):
+                observed = (rates[chain, phase] - before) / len(free)
+                log_scale = math.log(adapted[chain]) + (observed - settings.target_acceptance) / math.sqrt(sweep + 1)
+                adapted[chain] = math.exp(float(np.clip(log_scale, -6, 6)))
             if phase and (sweep - settings.burn_in + 1) % settings.thin == 0:
                 draw = (sweep - settings.burn_in) // settings.thin
                 fields[chain, draw] = field.reshape(shape)
@@ -92,4 +108,4 @@ def metropolis(energy: EnergyFunctional, initial, settings=SamplingConfig()):
         raise FloatingPointError("Metropolis sampling produced nonfinite values")
     proposals = len(free) * np.array([settings.burn_in, settings.draws * settings.thin])
     np.divide(rates, proposals, out=rates, where=proposals > 0)
-    return Samples(fields, energies, rates[:, 1], rates[:, 0])
+    return Samples(fields, energies, rates[:, 1], rates[:, 0], adapted)
