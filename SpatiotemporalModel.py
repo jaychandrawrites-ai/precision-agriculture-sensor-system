@@ -30,12 +30,15 @@ class SpatiotemporalModel:
         return self.forecaster.forecast(history, steps)
 
     def reconstruct(self, grid, coordinates, observations, origin, backend, spatial_settings,
-                    *, kriging_range_m=None, sampling=None, hard_seeds=False):
+                    *, kriging_range_m=None, sampling=None, hard_seeds=False,
+                    boundary_values=None, boundary_weight=None, boundary="neumann"):
         points = local_coordinates(coordinates, origin)
         if len(np.unique(points, axis=0)) < 2:
             raise ValueError("Spatial reconstruction requires at least two distinct measured sites")
         energy, result = reconstruct_variational(grid, points, observations, backend,
-                                                 spatial_settings, hard_seeds=hard_seeds)
+                                                 spatial_settings, hard_seeds=hard_seeds,
+                                                 boundary_values=boundary_values,
+                                                 boundary_weight=boundary_weight, boundary=boundary)
         shape = grid.shape
         baseline = idw(points, observations, grid.points()).reshape(shape)
         kriging = (ordinary_kriging(points, observations, grid.points(), kriging_range_m).reshape(shape)

@@ -37,6 +37,8 @@ class EnergyFunctional:
                               backend.scalar(self.fidelity.max()))
 
     def project(self, field):
+        if field.shape != self.grid.shape:
+            raise ValueError("Field must match the grid")
         with self.backend.scope():
             return self.backend.xp.where(self.fixed, self.fixed_values, field)
 

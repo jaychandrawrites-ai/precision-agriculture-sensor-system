@@ -1,6 +1,8 @@
 """Independent commands for historical training, field forecasting and measured-site mapping."""
 import argparse
 from dataclasses import replace
+from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +11,7 @@ import pandas as pd
 from Acquisition.Calibration import LeafCalibration, SoilCalibration
 from Acquisition.FieldFeatures import field_features
 from Acquisition.Hourly import session_hourly
+from Acquisition.SpatialObservations import spatial_observations
 from assumptions import Assumptions
 from azmet import prepare
 from config import FEATURES, SpatialConfig, TrainingConfig
@@ -70,7 +73,10 @@ def map_measurements(source, configuration, output):
     timestamp = pd.Timestamp(configuration["timestamp"])
     if pd.isna(timestamp) or timestamp.tzinfo is None:
         raise ValueError("Spatial snapshot needs an explicit UTC offset")
-    frame = pd.read_csv(source)
+    if field_name in {"timestamp", "observed_at", "latitude_deg", "longitude_deg", "device_id"}:
+        raise ValueError("Spatial feature must be a measured quantity, separate from coordinates")
+    payload = Path(source).read_bytes()
+    frame = pd.read_csv(BytesIO(payload))
     source_times = frame["timestamp"].astype(str)
     if not source_times.str.contains(r"(?:Z|[+-]\d{2}:\d{2})$").all():
         raise ValueError("Field measurement timestamps need an explicit UTC offset")
@@ -85,12 +91,16 @@ def map_measurements(source, configuration, output):
         snapshot[field_name].to_numpy(dtype=float), configuration["origin_lat_lon"], backend,
         settings, kriging_range_m=configuration.get("kriging_range_m"), sampling=sampling,
         hard_seeds=configuration.get("hard_seeds", False),
+        boundary_values=configuration.get("boundary_values"),
+        boundary_weight=configuration.get("boundary_weight"),
+        boundary=configuration.get("laplacian_boundary", "neumann"),
     )
     arrays = {"east_m": grid.east, "north_m": grid.north, "variational": result.field,
               "idw": result.idw}
     if result.kriging is not None:
         arrays["kriging"] = result.kriging
     report = {"measurement_count": len(snapshot), "feature": field_name,
+              "source_sha256": sha256(payload).hexdigest(),
               "timestamp": timestamp.isoformat(), "converged": result.solver.converged,
               "iterations": result.solver.iterations, "gradient_rms": result.solver.gradient_rms,
               "initial_energy": result.solver.energies[0], "final_energy": result.solver.energies[-1]}
@@ -111,11 +121,13 @@ def map_measurements(source, configuration, output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("train-history", "prepare-session", "forecast-session", "map"):
+    for name in ("train-history", "prepare-session", "forecast-session", "extract-spatial", "map"):
         sub = commands.add_parser(name)
         sub.add_argument("source", type=Path)
         sub.add_argument("configuration", type=Path)
         sub.add_argument("output", type=Path)
+        if name == "extract-spatial":
+            sub.add_argument("--also", type=Path, action="append", default=[])
         if name == "train-history":
             sub.add_argument("--epochs", type=int, default=TrainingConfig().epochs)
         if name == "forecast-session":
@@ -127,6 +139,11 @@ def main():
         report = train_historical(args.source, configuration, args.output,
                                   replace(TrainingConfig(), epochs=args.epochs))
         write_json(args.output.with_suffix(args.output.suffix + ".report.json"), report)
+    elif args.command == "extract-spatial":
+        frame, report = spatial_observations([args.source, *args.also], **configuration)
+        args.output.mkdir()
+        frame.to_csv(args.output / "measurements.csv", index=False)
+        write_json(args.output / "report.json", report)
     elif args.command == "map":
         map_measurements(args.source, configuration, args.output)
     else:
