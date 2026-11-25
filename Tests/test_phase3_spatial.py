@@ -93,3 +93,19 @@ class SpatialTests(unittest.TestCase):
         east, north = local_coordinates([[0, -179.999]], [0, 179.999])[0]
         self.assertAlmostEqual(east, 222.39, places=2)
         self.assertEqual(north, 0)
+
+    def test_conjugate_solver_finds_same_constrained_minimum(self):
+        grid = SpatialGrid(np.arange(8), np.arange(9) * 0.5)
+        points = [[0, 0], [7, 4], [4, 2]]
+        values = [1, 7, 3]
+        settings = SpatialConfig(seed_weight=20, iterations=4000)
+        objective, descent = reconstruct_variational(grid, points, values, self.backend,
+                                                      settings, hard_seeds=True)
+        _, conjugate = reconstruct_variational(grid, points, values, self.backend,
+                                                settings, hard_seeds=True,
+                                                algorithm="conjugate_gradient")
+        self.assertTrue(descent.converged)
+        self.assertTrue(conjugate.converged)
+        np.testing.assert_allclose(conjugate.field, descent.field, atol=5e-4)
+        self.assertLess(conjugate.iterations, descent.iterations)
+        np.testing.assert_array_equal(conjugate.field[objective.fixed], objective.fixed_values[objective.fixed])
