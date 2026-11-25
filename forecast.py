@@ -1,0 +1,39 @@
+"""Load a checkpoint and forecast from the latest consecutive hourly samples."""
+import argparse
+
+import numpy as np
+import pandas as pd
+
+from config import FEATURES
+from Data.DataQuality import invalid_rows
+from Data.Preprocessing import read_hourly
+from Temporal.Predictor import forecast
+from Utils.Checkpoints import load
+
+
+def forecast_csv(source, checkpoint, steps, device="cpu"):
+    values, timestamps = read_hourly(source)
+    if (len(values) < 3 or invalid_rows(values[-3:]).any()
+            or not (np.diff(timestamps[-3:]) == np.timedelta64(1, "h")).all()):
+        raise ValueError("Forecast requires three consecutive, physically valid hourly samples")
+    model, backend, inputs, targets = load(checkpoint, device)
+    predictions = forecast(model, values[-3:], inputs, targets, backend, steps)
+    start = pd.Timestamp(timestamps[-1], tz="UTC") + pd.Timedelta(hours=1)
+    frame = pd.DataFrame(predictions, columns=FEATURES)
+    frame.insert(0, "timestamp", pd.date_range(start, periods=steps, freq="h"))
+    return frame
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source")
+    parser.add_argument("checkpoint")
+    parser.add_argument("--steps", type=int, default=6)
+    parser.add_argument("--device", default="cpu")
+    args = parser.parse_args()
+    print(forecast_csv(args.source, args.checkpoint, args.steps, args.device).to_csv(index=False),
+          end="")
+
+
+if __name__ == "__main__":
+    main()
