@@ -18,6 +18,7 @@ def main():
     source.add_argument("--port")
     source.add_argument("--replay", type=Path)
     parser.add_argument("--packet-schema", type=Path)
+    parser.add_argument("--reconnect-attempts", type=int, default=0)
     parser.add_argument("--baud", type=int, default=9600)
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
@@ -35,7 +36,7 @@ def main():
     metadata = {"transport": "serial" if args.port else "replay",
                 "parser": asdict(schema) if schema is not None else "checked_in_arduino_text"}
     if args.port:
-        capture(serial_lines(args.port, args.baud, stop), args.output, parser=parser,
+        capture(serial_lines(args.port, args.baud, stop, reconnect_attempts=args.reconnect_attempts), args.output, parser=parser,
                 metadata=metadata)
     else:
         capture(replay(args.replay), args.output, stop, parser=parser, metadata=metadata)
