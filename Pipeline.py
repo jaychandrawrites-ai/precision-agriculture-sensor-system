@@ -56,8 +56,11 @@ def prepare_session(readings, configuration):
 
 
 def forecast_session(readings, configuration, checkpoint, steps, *, device="cpu"):
+    return forecast_prepared_session(readings, configuration, load_forecaster(checkpoint, device), steps)
+
+
+def forecast_prepared_session(readings, configuration, forecaster, steps):
     features, flags, provenance, gps, coverage = prepare_session(readings, configuration)
-    forecaster = load_forecaster(checkpoint, device)
     if not provenance["complete_hour_bins_only"]:
         raise ValueError("Forecasting requires closed hourly bins")
     verified = forecaster.require_compatible_field(provenance)
@@ -91,8 +94,17 @@ def map_measurements(source, configuration, output):
         raise ValueError("Field measurement timestamps need an explicit UTC offset")
     mask = pd.to_datetime(source_times, format="ISO8601", utc=True) == timestamp
     snapshot = frame.loc[mask]
+    predicted_source = False
+    if "value_origin" in snapshot:
+        predicted_rows = snapshot["value_origin"].eq("model_forecast")
+        if predicted_rows.any():
+            if not configuration.get("allow_forecast_snapshot", False) or not predicted_rows.all():
+                raise ValueError("Enable forecast-snapshot mapping explicitly and keep it separate from observations")
+            predicted_source = True
     held_out = None
     if role := configuration.get("split_column"):
+        if predicted_source:
+            raise ValueError("Held-out spatial validation requires independent measurements")
         labels = snapshot[role]
         if not labels.isin(("fit", "test")).all() or not labels.eq("test").any():
             raise ValueError("A spatial split requires fit and test labels with held-out rows")
@@ -116,7 +128,8 @@ def map_measurements(source, configuration, output):
               "idw": result.idw}
     if result.kriging is not None:
         arrays["kriging"] = result.kriging
-    report = {"measurement_count": len(snapshot), "feature": field_name,
+    report = {"measurement_count": 0 if predicted_source else len(snapshot),
+              "forecast_seed_count": len(snapshot) if predicted_source else 0, "feature": field_name,
               "source_sha256": sha256(payload).hexdigest(),
               "algorithm": configuration.get("algorithm", "descent"),
               "timestamp": timestamp.isoformat(), "converged": result.solver.converged,
