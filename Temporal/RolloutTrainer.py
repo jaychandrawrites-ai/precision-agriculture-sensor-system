@@ -35,7 +35,7 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
     best = float("inf")
     peak_gradient_norm = 0.0
     clipped_updates = 0
-    history = []
+    history, training_history = [], []
     start = 0
     if recovery_path is not None:
         if backend.is_gpu:
@@ -47,6 +47,7 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
         if recovery is not None:
             start = recovery["epoch"]
             history = recovery["history"]
+            training_history = recovery["training_history"]
             best_epoch = recovery["best_epoch"]
             best = history[best_epoch - 1]
             peak_gradient_norm = recovery["peak_gradient_norm"]
@@ -64,10 +65,13 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
     if budget < 1:
         raise ValueError("Training budget must allow at least one epoch")
     for epoch in range(start + 1, budget + 1):
+        epoch_loss = 0.0
         for inputs, targets, _ in loader:
             opt.zero_grad()
-            engine.objective(inputs, targets, autoregressive=autoregressive and epoch > warmup_epochs,
-                             loss=loss)
+            objective = engine.objective(inputs, targets,
+                                         autoregressive=autoregressive and epoch > warmup_epochs,
+                                         loss=loss)
+            epoch_loss += objective * len(inputs)
             update = opt.step()
             peak_gradient_norm = max(peak_gradient_norm, update["gradient_norm"])
             clipped_updates += update["clip_factor"] < 1
@@ -75,6 +79,7 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
         normalized = backend.array(dataset.target_scaler.transform(predictions).reshape(-1, 6))
         score, _ = regression_loss(normalized, val_targets, backend, kind=loss)
         history.append(score)
+        training_history.append(epoch_loss / len(training.starts))
         schedule.step()
         if score < best:
             best = score
@@ -88,6 +93,7 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
         if recovery_path is not None:
             write_recovery(recovery_path, {
                 "recipe": identity, "epoch": epoch, "best_epoch": best_epoch, "history": history,
+                "training_history": training_history,
                 "peak_gradient_norm": peak_gradient_norm, "clipped_updates": clipped_updates,
                 "last": serialize_runtime(model, backend, opt, schedule, loader),
                 "best": {"weights": weights, "optimizer": opt_state, "schedule": schedule_state,
@@ -97,5 +103,6 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
     model.load_state_dict(weights, backend)
     result = FitResult(best, best_epoch, history, opt_state, schedule_state, shuffle_state, rng_state)
     diagnostics = {"updates": opt.steps, "peak_gradient_norm": peak_gradient_norm,
-                   "clipped_updates": clipped_updates}
+                   "clipped_updates": clipped_updates, "training_loss": training_history,
+                   "validation_loss": history}
     return result, input_scaler, diagnostics
