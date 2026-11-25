@@ -11,6 +11,7 @@ import pandas as pd
 from Acquisition.Calibration import LeafCalibration, SoilCalibration
 from Acquisition.FieldFeatures import field_features
 from Acquisition.Hourly import session_hourly
+from Acquisition.Health import session_health
 from Acquisition.SpatialObservations import spatial_observations
 from assumptions import Assumptions
 from azmet import prepare
@@ -150,6 +151,9 @@ def map_measurements(source, configuration, output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
+    health = commands.add_parser("session-health")
+    health.add_argument("source", type=Path)
+    health.add_argument("output", type=Path)
     for name in ("train-history", "prepare-session", "forecast-session", "extract-spatial", "map"):
         sub = commands.add_parser(name)
         sub.add_argument("source", type=Path)
@@ -163,6 +167,9 @@ def main():
             sub.add_argument("--checkpoint", type=Path, required=True)
             sub.add_argument("--steps", type=int, default=6)
     args = parser.parse_args()
+    if args.command == "session-health":
+        write_json(args.output, session_health(args.source))
+        return
     configuration = read_json(args.configuration)
     if args.command == "train-history":
         report = train_historical(args.source, configuration, args.output,
