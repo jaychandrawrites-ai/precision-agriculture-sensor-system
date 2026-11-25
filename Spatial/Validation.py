@@ -3,7 +3,7 @@ import numpy as np
 
 from Spatial.Interpolation import idw, ordinary_kriging
 from Spatial.SpatialModel import reconstruct
-from Temporal.Evaluator import evaluate
+from Spatial.SpatialLoss import held_out_metrics
 
 
 def sample_grid(grid, field, queries):
@@ -37,5 +37,5 @@ def evaluate_held_out(grid, points, values, queries, targets, backend, settings,
         "idw": idw(points, values, queries),
         "kriging": ordinary_kriging(points, values, queries, kriging_range_m),
     }
-    return {name: evaluate(prediction[:, None], truth[:, None])
+    return {name: held_out_metrics(prediction, truth)
             for name, prediction in predictions.items()}
