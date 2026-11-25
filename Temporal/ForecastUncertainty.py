@@ -43,3 +43,24 @@ def ensemble(members):
     if members.ndim != 4 or not len(members) or not np.isfinite(members).all():
         raise ValueError("Expected finite [member, origin, lead, feature] predictions")
     return members.mean(axis=0), members.std(axis=0)
+
+
+def reliability(calibration_scores, test_scores, prediction, observed, *, quantile=.95):
+    """Flag unusually large input scores relative to the calibration period."""
+    calibration_scores, test_scores = np.asarray(calibration_scores), np.asarray(test_scores)
+    prediction, observed = np.asarray(prediction), np.asarray(observed)
+    if (calibration_scores.ndim != 1 or not len(calibration_scores) or test_scores.ndim != 1
+            or prediction.shape != observed.shape or len(prediction) != len(test_scores)
+            or not all(np.isfinite(a).all() for a in (calibration_scores, test_scores, prediction, observed))
+            or not 0 < quantile < 1):
+        raise ValueError("Expected finite, aligned reliability inputs")
+    threshold = float(np.quantile(calibration_scores, quantile))
+    ood = test_scores > threshold
+    groups = {}
+    for name, keep in (("flagged", ood), ("within_reference", ~ood)):
+        error = prediction[keep] - observed[keep]
+        groups[name] = {"origins": int(keep.sum()),
+                        "rmse": np.sqrt((error**2).mean(axis=0)) if len(error) else None}
+    return {"calibration_quantile": quantile, "threshold": threshold,
+            "score": "largest absolute training-standardized direct input",
+            "groups": groups}

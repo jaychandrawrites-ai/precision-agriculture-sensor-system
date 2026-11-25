@@ -54,3 +54,12 @@ class DirectTests(unittest.TestCase):
             second = predict(path / "input.csv", path / "model.json")
             self.assertEqual(first.shape, (8, 6))
             np.testing.assert_array_equal(first, second)
+
+    def test_reliability_threshold_uses_calibration_only(self):
+        from Temporal.ForecastUncertainty import reliability
+
+        truth = np.zeros((3, 2, 6))
+        result = reliability([1., 2., 3.], [2., 3., 100.], truth + 1, truth)
+        self.assertAlmostEqual(result["threshold"], 2.9)
+        self.assertEqual(result["groups"]["flagged"]["origins"], 2)
+        np.testing.assert_array_equal(result["groups"]["within_reference"]["rmse"], 1)
