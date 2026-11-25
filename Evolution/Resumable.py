@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -32,8 +33,13 @@ class SearchOptions:
 def validation_fingerprint(dataset, settings, windows):
     """Hash only the data available to architecture selection."""
     digest = sha256(json.dumps(asdict(settings), sort_keys=True).encode())
-    for path in (Path(__file__),):
-        digest.update(path.read_bytes())
+    root = Path(__file__).resolve().parents[1]
+    digest.update(np.__version__.encode())
+    digest.update(sys.version.encode())
+    for directory in ("Data", "Evolution", "Framework", "Physics", "QuantumInspired", "Temporal"):
+        for path in sorted((root / directory).rglob("*.py")):
+            digest.update(path.relative_to(root).as_posix().encode())
+            digest.update(path.read_bytes())
     if windows is None:
         arrays = [dataset.inputs[dataset.train], dataset.targets[dataset.train],
                   dataset.inputs[dataset.validation], dataset.targets[dataset.validation],

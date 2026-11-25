@@ -20,3 +20,20 @@ class StationTests(unittest.TestCase):
         result = integrate(lambda t, y: -y, [0.], 0., 2.0, step=0.1, max_step=.2)
         self.assertLessEqual(np.diff(result.times).max(), .2 + 1e-12)
         self.assertEqual(result.times[-1], 2)
+
+    def test_soil_scenario_does_not_change_exogenous_features(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from Examples.SyntheticPhase3 import historical_fixture
+        from scenario_study import compare_scenarios
+
+        with TemporaryDirectory() as directory:
+            path, mapping = historical_fixture(Path(directory), 40)
+            report = compare_scenarios(path, mapping, {
+                "smaller_crop_coefficient": {"assumptions": {"soil": {"crop_coefficient": .4}}}
+            })
+        comparison = report["smaller_crop_coefficient"]["comparison_with_reference"]
+        for field in ("air_temperature_c", "relative_humidity_pct", "lwi", "eto_mm_interval"):
+            self.assertEqual(comparison[field]["rms_difference"], 0)
+        self.assertGreater(comparison["eta_mm_interval"]["rms_difference"], 0)
