@@ -63,6 +63,9 @@ def compare(values, timestamps, settings, budget, *, recursive=False):
             "hidden": hidden, "skips": skips, "parameters": model.parameter_count,
             "candidate_count": len(candidates),
             "candidate_epoch_budget": len(candidates) * budget.candidate_epochs,
+            "candidate_epochs_used": sum(item.epochs for item in candidates),
+            "candidate_parameter_step_budget": (None if budget.candidate_parameter_step_limit is None
+                                                 else len(candidates) * budget.candidate_parameter_step_limit),
             "candidate_model_sample_steps": sum(item.model_sample_steps for item in candidates),
             "candidate_parameter_sample_steps": sum(item.parameters * item.model_sample_steps
                                                      for item in candidates),
@@ -109,12 +112,14 @@ def main():
     parser.add_argument("--population", type=int, default=EvolutionConfig().population)
     parser.add_argument("--generations", type=int, default=EvolutionConfig().generations)
     parser.add_argument("--candidate-epochs", type=int, default=EvolutionConfig().candidate_epochs)
+    parser.add_argument("--candidate-parameter-step-limit", type=int)
     parser.add_argument("--seed", type=int, default=TrainingConfig().seed)
     parser.add_argument("--legacy", action="store_true")
     args = parser.parse_args()
     settings = replace(TrainingConfig(), epochs=args.epochs, seed=args.seed)
     budget = EvolutionConfig(population=args.population, generations=args.generations,
-                             candidate_epochs=args.candidate_epochs)
+                             candidate_epochs=args.candidate_epochs,
+                             candidate_parameter_step_limit=args.candidate_parameter_step_limit)
     report = compare(*read_hourly(args.source), settings, budget, recursive=not args.legacy)
     print(json.dumps(report, allow_nan=False, indent=2))
 

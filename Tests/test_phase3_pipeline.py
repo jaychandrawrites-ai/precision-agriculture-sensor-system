@@ -190,3 +190,26 @@ class IntegrationTests(unittest.TestCase):
                     "feature": "air_temperature_c", "timestamp": "2020-07-01T06:00:00Z",
                     "origin_lat_lon": [0, 0], "east_m": [-1, 1], "north_m": [-1, 1],
                 }, directory / "out")
+
+    def test_candidate_parameter_budget_limits_large_genomes(self):
+        from Data.Dataset import build_dataset
+        from Data.RolloutWindows import rollout_windows
+        from Evolution.Fitness import validation_fitness
+        from Evolution.Genome import Genome
+
+        frame = synthetic_history()
+        values = frame.iloc[:, 1:].to_numpy()
+        timestamps = frame.timestamp.to_numpy(dtype="datetime64[ns]")
+        dataset = build_dataset(values, timestamps)
+        windows = tuple(rollout_windows(dataset, rows, values, timestamps, 6)
+                        for rows in (dataset.train, dataset.validation))
+        settings = TrainingConfig(batch_size=64, dropout=0)
+        budget = EvolutionConfig(candidate_epochs=20, candidate_parameter_step_limit=100_000_000)
+        score = validation_fitness(dataset, settings, budget, rollout_windows_pair=windows)
+        candidate = score(Genome((1,) * 10))
+        self.assertLess(candidate.epochs, 20)
+        self.assertLessEqual(candidate.parameters * candidate.model_sample_steps,
+                             budget.candidate_parameter_step_limit)
+        with self.assertRaisesRegex(ValueError, "work limit must be at least"):
+            too_small = EvolutionConfig(candidate_parameter_step_limit=1_000_000)
+            validation_fitness(dataset, settings, too_small, rollout_windows_pair=windows)

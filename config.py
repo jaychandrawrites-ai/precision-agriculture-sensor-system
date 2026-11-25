@@ -40,12 +40,18 @@ class EvolutionConfig:
     mutation_probability: float = 0.2
     rotation_radians: float = 0.05
     complexity_penalty: float = 0.0001
+    candidate_parameter_step_limit: int | None = None
 
     def __post_init__(self):
         if self.population < 2 or min(self.generations, self.candidate_epochs) < 1:
             raise ValueError("Invalid evolution budget")
         if not 0 < self.survival_fraction <= 1 or not 0 <= self.mutation_probability <= 1:
             raise ValueError("Invalid evolutionary probability")
+        if self.candidate_parameter_step_limit is not None and (
+            not isinstance(self.candidate_parameter_step_limit, int)
+            or self.candidate_parameter_step_limit < 1
+        ):
+            raise ValueError("Candidate work limit must be a positive integer")
 
 @dataclass(frozen=True)
 class SpatialConfig:

@@ -1,6 +1,7 @@
 """Validation-only candidate training under the same epoch and seed budgets."""
 from dataclasses import dataclass, replace
 
+from Evolution.Genome import WIDTHS
 from Framework.Backend import create_backend
 from Temporal.Model import TemporalModel
 from Temporal.Rollout import RolloutOptions
@@ -15,26 +16,41 @@ class Candidate:
     validation_loss: float
     parameters: int
     model_sample_steps: int = 0
+    epochs: int = 0
 
 
 def validation_fitness(dataset, training, evolution, *, rollout_windows_pair=None):
-    settings = replace(training, epochs=evolution.candidate_epochs)
+    cap = evolution.candidate_parameter_step_limit
+    if rollout_windows_pair is None:
+        samples_per_epoch = len(dataset.train)
+    else:
+        train_windows, val_windows = rollout_windows_pair
+        samples_per_epoch = len(train_windows.starts) * train_windows.targets.shape[1]
+    if samples_per_epoch < 1:
+        raise ValueError("Evolution requires complete training windows")
+    widest = max(WIDTHS)
+    # Upper bound for three hidden layers and a projection at each layer.
+    maximum_parameters = 2 * (19 * widest + 2 * (widest + 1) * widest) + 6 * (widest + 1)
+    if cap is not None and cap < maximum_parameters * samples_per_epoch:
+        raise ValueError(f"Candidate work limit must be at least {maximum_parameters * samples_per_epoch}"
+                         " parameter sample-steps to permit one epoch for every genome")
 
     def score(genome):
         hidden, skips = genome.architecture()
-        backend = create_backend(settings.device, settings.dtype, settings.seed)
-        model = TemporalModel(backend, hidden, settings.dropout, skips)
+        backend = create_backend(training.device, training.dtype, training.seed)
+        model = TemporalModel(backend, hidden, training.dropout, skips)
+        count = model.parameter_count
+        epochs = evolution.candidate_epochs
+        if cap is not None:
+            epochs = min(epochs, cap // (count * samples_per_epoch))
+        settings = replace(training, epochs=epochs)
         if rollout_windows_pair is None:
             result = fit(model, dataset, backend, settings)
-            sample_steps = settings.epochs * len(dataset.train)
         else:
-            train_windows, val_windows = rollout_windows_pair
             result, _, _ = fit_rollout(model, dataset, train_windows, val_windows, backend,
                                        settings, RolloutOptions(),
                                        warmup_epochs=settings.epochs // 3)
-            sample_steps = settings.epochs * len(train_windows.starts) * train_windows.targets.shape[1]
-        count = model.parameter_count
         adjusted = result.validation_loss + evolution.complexity_penalty * count / 1000
-        return Candidate(genome, adjusted, result.validation_loss, count, sample_steps)
+        return Candidate(genome, adjusted, result.validation_loss, count, epochs * samples_per_epoch, epochs)
 
     return score
