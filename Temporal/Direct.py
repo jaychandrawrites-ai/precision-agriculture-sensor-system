@@ -77,20 +77,31 @@ class DirectForecast:
         self.model, self.backend = model, backend
         self.inputs, self.targets = input_scaler, target_scaler
 
-    def predict(self, histories):
+    def predict(self, histories, *, anchor=None):
         inputs = self.inputs.transform(direct_features(histories))
         with self.backend.scope():
             prediction, _ = self.model.forward(self.backend.array(inputs), training=False)
         output = self.backend.to_host(prediction).reshape(-1, self.model.horizon, 6)
-        return project(histories[:, -1, None, :] + output * self.targets.scale)
+        base = _forecast_anchor(histories, self.model.horizon, anchor)
+        return project(base + output * self.targets.scale)
 
     def ood_score(self, histories):
         z = self.inputs.transform(direct_features(histories))
         return np.max(np.abs(z), axis=1)
 
 
+def _forecast_anchor(histories, horizon, anchor):
+    histories = np.asarray(histories)
+    if anchor is None:
+        return histories[:, -1, None, :]
+    baseline = np.asarray(anchor, dtype=float)
+    if baseline.shape != (len(histories), horizon, 6) or not np.isfinite(baseline).all():
+        raise ValueError("Expected one finite seasonal forecast per origin, lead and feature")
+    return baseline
+
+
 def fit_direct(training, validation, target_scaler, backend, settings, *, width=32,
-               horizon_weights=None):
+               horizon_weights=None, training_anchor=None, validation_anchor=None):
     if (not len(training.starts) or not len(validation.starts)
             or training.targets.shape[1:] != validation.targets.shape[1:]):
         raise ValueError("Need matching nonempty direct forecast windows")
@@ -102,7 +113,10 @@ def fit_direct(training, validation, target_scaler, backend, settings, *, width=
     features = direct_features(training.histories)
     inputs = Standardizer().fit(features)
     forecast = DirectForecast(model, backend, inputs, target_scaler)
-    target = (training.targets - training.histories[:, -1, None, :]) / target_scaler.scale
+    if (training_anchor is None) != (validation_anchor is None):
+        raise ValueError("Provide the same anchor strategy for fit and validation")
+    base = _forecast_anchor(training.histories, horizon, training_anchor)
+    target = (training.targets - base) / target_scaler.scale
     batches = DataLoader(inputs.transform(features), target.reshape(len(target), -1),
                          settings.batch_size, seed=settings.seed)
     opt = Adam(model.parameters(), backend, learning_rate=settings.learning_rate,
@@ -124,7 +138,7 @@ def fit_direct(training, validation, target_scaler, backend, settings, *, width=
                 peak = max(peak, update["gradient_norm"])
                 clipped += update["clip_factor"] < 1
             train_trace.append(loss_sum / len(target))
-            residual = (forecast.predict(validation.histories) - validation.targets) / target_scaler.scale
+            residual = (forecast.predict(validation.histories, anchor=validation_anchor) - validation.targets) / target_scaler.scale
             matrix = backend.array(residual.reshape(len(residual), -1))
             score, _ = regression_loss(matrix, backend.zeros(matrix.shape), backend,
                                        feature_weights=feature_weights)
