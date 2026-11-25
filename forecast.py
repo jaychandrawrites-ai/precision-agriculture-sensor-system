@@ -18,7 +18,7 @@ def forecast_csv(source, checkpoint, steps, device="cpu"):
         raise ValueError("Forecast requires three consecutive, physically valid hourly samples")
     model, backend, inputs, targets = load(checkpoint, device)
     predictions = forecast(model, values[-3:], inputs, targets, backend, steps)
-    start = pd.Timestamp(timestamps[-1], tz="UTC") + pd.Timedelta(hours=1)
+    start = pd.Timestamp(timestamps[-1] + np.timedelta64(1, "h"), tz="UTC")
     frame = pd.DataFrame(predictions, columns=FEATURES)
     frame.insert(0, "timestamp", pd.date_range(start, periods=steps, freq="h"))
     return frame

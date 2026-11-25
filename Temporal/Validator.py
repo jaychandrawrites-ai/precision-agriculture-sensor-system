@@ -1,6 +1,11 @@
 """Prediction and physical-unit evaluation on a selected chronological split."""
-from Physics.Constraints import project
+from itertools import groupby
+
+import numpy as np
+
+from Physics.Constraints import project, violations
 from Temporal.Evaluator import evaluate
+from Temporal.Predictor import forecast
 
 
 def predict_rows(model, dataset, rows, backend):
@@ -15,15 +20,10 @@ def evaluate_rows(model, dataset, rows, backend):
 
 def evaluate_rollouts(model, dataset, rows, values, timestamps, backend, steps):
     """Score fixed-origin rollouts whose complete horizons fall inside a split."""
-    from itertools import groupby
-
-    import numpy as np
-
-    from Temporal.Predictor import forecast
-
     if steps < 1:
         raise ValueError("Rollout horizon must be positive")
     indices = dataset.target_indices[rows]
+    valid = ~np.logical_or.reduce(tuple(violations(values).values()))
     predictions = []
     targets = []
     origins = []
@@ -31,7 +31,7 @@ def evaluate_rollouts(model, dataset, rows, values, timestamps, backend, steps):
         block = [index for _, index in group]
         for start in block[:max(0, len(block) - steps + 1)]:
             history = values[start-3:start]
-            if (not np.isfinite(history).all()
+            if (not valid[start-3:start].all()
                     or not (np.diff(timestamps[start-3:start+steps])
                             == np.timedelta64(1, "h")).all()):
                 continue
@@ -39,7 +39,8 @@ def evaluate_rollouts(model, dataset, rows, values, timestamps, backend, steps):
                                         dataset.target_scaler, backend, steps))
             targets.append(values[start:start+steps])
             origins.append(history[-1])
-    return [
-        evaluate(np.asarray(predictions)[:, horizon], np.asarray(targets)[:, horizon], origins)
-        for horizon in range(steps)
-    ] if predictions else []
+    if not predictions:
+        return []
+    predictions, targets = np.asarray(predictions), np.asarray(targets)
+    return [evaluate(predictions[:, horizon], targets[:, horizon], origins)
+            for horizon in range(steps)]
