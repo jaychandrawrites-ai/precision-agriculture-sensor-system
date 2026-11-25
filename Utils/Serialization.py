@@ -12,7 +12,8 @@ def atomic_output(destination, *, binary=False):
     destination = Path(destination)
     mode = "wb" if binary else "w"
     encoding = None if binary else "utf-8"
-    with NamedTemporaryFile(mode=mode, encoding=encoding, dir=destination.parent,
+    with NamedTemporaryFile(mode=mode, encoding=encoding, newline=None if binary else "",
+                            dir=destination.parent,
                             prefix=f".{destination.name}.", delete=False) as file:
         temporary = Path(file.name)
         try:
@@ -20,6 +21,7 @@ def atomic_output(destination, *, binary=False):
             file.close()
             temporary.replace(destination)
         finally:
+            file.close()
             temporary.unlink(missing_ok=True)
 
 
