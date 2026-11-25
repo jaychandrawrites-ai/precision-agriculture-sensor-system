@@ -7,6 +7,7 @@ from assumptions import Assumptions
 from Data.AZMET import AZMETSchema, inspect_schema, read_azmet
 from Data.HistoricalFeatures import historical_features
 from Data.QualityReport import quality_report
+from Data.TimeSeries import calendar_cutoffs
 from Data.WeatherPhysics import ReferenceET
 
 
@@ -16,7 +17,9 @@ def prepare(source, metadata):
     weather = read_azmet(source, AZMETSchema.from_dict(metadata["schema"]),
                          source_label=metadata["source_label"], synthetic=metadata.get("synthetic", False))
     features, flags, provenance = historical_features(weather, site, reference, **metadata["scenario"])
-    return features, flags, {"quality": quality_report(features, flags), "provenance": provenance}
+    cutoffs = calendar_cutoffs(features.index.to_numpy(dtype="datetime64[ns]"))
+    return features, flags, {"quality": quality_report(features, flags, cutoffs=cutoffs),
+                             "provenance": provenance}
 
 
 def main():

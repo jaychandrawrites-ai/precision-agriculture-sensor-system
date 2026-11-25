@@ -46,9 +46,9 @@ class CausalReferenceET:
         if len(self.history) < self.config.history_hours:
             return math.nan
         # Use a fixed offset from UTC, independent of civil daylight saving time.
-        end = timestamp + pd.Timedelta(minutes=self.config.solar_offset_minutes)
-        start = end - pd.Timedelta(hours=1)
-        midnight = start.normalize() + pd.Timedelta(days=1)
+        end = timestamp + timedelta(minutes=self.config.solar_offset_minutes)
+        start = end - timedelta(hours=1)
+        midnight = start.normalize() + timedelta(days=1)
         edges = (start, midnight, end) if end > midnight else (start, end)
         return sum(self._interval(a, b) for a, b in zip(edges, edges[1:]))
 

@@ -26,9 +26,9 @@ def train(source, checkpoint, settings, optimizer="adam", loss="huber", stable_r
 
 
 def train_values(values, timestamps, checkpoint, settings, optimizer="adam", loss="huber",
-                 *, stable_rollout=True, provenance=None):
+                 *, stable_rollout=True, provenance=None, cutoffs=None):
     dataset = build_dataset(values, timestamps, settings.train_fraction,
-                            settings.validation_fraction)
+                            settings.validation_fraction, cutoffs=cutoffs)
     backend = create_backend(settings.device, settings.dtype, settings.seed)
     model = TemporalModel(backend, settings.hidden, settings.dropout)
     if stable_rollout:

@@ -8,6 +8,7 @@ from config import EvolutionConfig, TrainingConfig
 from Data.Dataset import build_dataset
 from Data.Preprocessing import read_hourly
 from Data.RolloutWindows import rollout_windows
+from Data.TimeSeries import calendar_cutoffs
 from Evolution.Fitness import validation_fitness
 from Evolution.GeneticAlgorithm import search as genetic_search
 from Framework.Backend import create_backend
@@ -22,8 +23,10 @@ from Utils.Metrics import horizon_metrics, physical_metrics
 
 
 def compare(values, timestamps, settings, budget, *, recursive=False):
+    cutoffs = (calendar_cutoffs(timestamps, settings.train_fraction, settings.validation_fraction)
+               if recursive else None)
     dataset = build_dataset(values, timestamps, settings.train_fraction,
-                            settings.validation_fraction)
+                            settings.validation_fraction, cutoffs=cutoffs)
     windows = None
     if recursive:
         windows = tuple(rollout_windows(dataset, rows, values, timestamps, settings.rollout_steps)
@@ -64,6 +67,7 @@ def compare(values, timestamps, settings, budget, *, recursive=False):
             "candidate_parameter_sample_steps": sum(item.parameters * item.model_sample_steps
                                                      for item in candidates),
             "selection_score": winner.score if winner is not None else None,
+            "winning_bits": winner.genome.bits if winner is not None else None,
             "search_seconds": search_seconds, "final_fit_seconds": fit_seconds,
             "final_fit_epochs": settings.epochs, "validation_loss": result.validation_loss,
         }
@@ -85,6 +89,11 @@ def compare(values, timestamps, settings, budget, *, recursive=False):
             ]
         reports[name] = report
     if recursive:
+        reports["protocol"] = {
+            "seed": settings.seed, "calendar_cutoffs_utc": [str(cutoff) + "Z" for cutoff in cutoffs],
+            "budget": {"population": budget.population, "generations": budget.generations,
+                       "candidate_epochs": budget.candidate_epochs, "horizon": settings.rollout_steps},
+        }
         reports["baselines"] = {
             "persistence": horizon_metrics(persistence, test.targets, persistence),
             "seasonal_persistence": horizon_metrics(seasonal, test.targets, persistence),
