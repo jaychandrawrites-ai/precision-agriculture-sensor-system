@@ -169,3 +169,96 @@ remain pending.
 - The 13 tests also passed in the clean virtual environment with deprecation
   warnings treated as errors. The default train and standalone forecast CLIs
   completed a checkpoint round trip, and bytecode compilation passed.
+
+## 2026-11-25 — Phase 3 implementation expansion
+
+Base `b3c0792`. The baseline suite passed 13 tests. Development used
+incremental commits on `jupiter-development`. Arduino and PlatformIO
+source files were preserved.
+
+### Files and change size
+
+- Historical preparation and chronology. Created `Data/AZMET.py`,
+  `Data/WeatherPhysics.py`, `Data/HistoricalFeatures.py`,
+  `Data/QualityReport.py`, and `azmet.py`. Updated `Data/Dataset.py`,
+  `Data/TimeSeries.py`, and `assumptions.py`.
+- Acquisition. Created `Acquisition/MappedPackets.py`, `Acquisition/Hourly.py`,
+  `Acquisition/FieldFeatures.py`, and `Acquisition/SpatialObservations.py`.
+  Updated `Acquisition/AcquisitionController.py`, `Acquisition/Calibration.py`,
+  `Acquisition/SensorData.py`, `Acquisition/SessionManager.py`, and `acquire.py`.
+- Spatial reconstruction. Created `Spatial/EnergyFunctional.py`,
+  `Spatial/Hamiltonian.py`, `Spatial/MonteCarlo.py`, `Spatial/NoiseGenerator.py`,
+  `Spatial/SeedManager.py`, `Spatial/SpatialLoss.py`, `Spatial/Uncertainty.py`,
+  and `Spatial/VariationalSolver.py`. Updated `Spatial/SpatialGrid.py`,
+  `Spatial/SpatialModel.py`, and `Spatial/Validation.py`.
+- Integrated model and artifacts. Created `Pipeline.py`, `CombinedLoss.py`,
+  `SpatiotemporalModel.py`, `Utils/Diagnostics.py`, `Utils/Metrics.py`,
+  `Utils/ModelLoader.py`, and `Utils/Serialization.py`. Updated
+  `Utils/Checkpoints.py` and `train.py`.
+- Evolution and verification. Updated `Evolution/Fitness.py`, `config.py`,
+  `experiments.py`, `README.md`, and `BUILD_LOG.md`. Created
+  `Examples/__init__.py`, `Examples/SyntheticPhase3.py`,
+  `Tests/test_phase3_pipeline.py`, `Tests/test_phase3_spatial.py`,
+  and `Tests/test_phase3_weather.py`.
+
+Counts since `b3c0792` from Git numstat: 2879 additions and 88 deletions
+across all files. Python accounted for 2,677 additions and 88 deletions.
+Tracked Python grew from 4,333 lines to 6,922 across 112 files, a net gain of
+2,589 lines.
+
+### Verification and experiments
+
+- `OPENBLAS_NUM_THREADS=1 python -W error::DeprecationWarning -m unittest discover -s Tests -q`
+  passed 31 tests in the clean virtual environment. Coverage includes
+  recursive and spatial finite differences, chronology with changed or absent
+  held-out targets, unit conversion, ODE and water balance checks, deterministic
+  posterior sampling, Gaussian variance, calibration, byte-preserving replay,
+  close-hour and receive-cutoff behavior, and checkpoint round trips. The
+  end-to-end test removes its historical source before two matching forecasts.
+- Initial test runs exposed an incorrect weather-fixture assumption, a
+  row-major seed order assertion, and deprecation errors with newer
+  NumPy/pandas datetime arithmetic. The fixture and assertion now compare the
+  intended quantities. Duration comparisons and shifts use explicit units.
+- `python -m compileall -q .`, `python main.py demo`, and
+  `python main.py demo --legacy` passed. The checkpoint format retains
+  version 1 and version 2 inference compatibility.
+- `python -m Examples.SyntheticPhase3 /tmp/<new-directory>` generated the
+  physics-based synthetic history, acquired and replay-tested packets, trained
+  a checkpoint, forecast from local readings and generated an independent field
+  map. The historical dataset had 44/15/15 target rows and 39/10/10 complete
+  six-step windows. Nine field intervals had all six features. The four-epoch
+  smoke model had six-hour temperature RMSE of 11.276 °C, versus 6.818 °C for
+  persistence and effectively zero for seasonal persistence. The smoke run
+  verifies connectivity and does not establish forecast accuracy.
+- The synthetic map used four fit sites and one independently labeled test
+  site. Variational descent converged in 62 iterations and reduced energy from
+  1.13725 to 1.11827. Across four Metropolis chains, post-burn-in acceptance
+  ranged from 70.13% to 70.75%. At the single held-out site, absolute errors
+  were 0.249 °C (variational), 0.052 °C (IDW) and 0.081 °C (kriging).
+  The conditional interval covered the held-out label. One point gives no
+  meaningful empirical calibration estimate.
+- `python experiments.py <prepared-periodic-fixture.csv> --epochs 30`
+  ran on the prior 240-hour synthetic periodic fixture. Both searches scored
+  80 candidates, 1,600 candidate epochs and 1,536,000 candidate sample-steps
+  before opening the test period. Six-hour temperature RMSE was 17.486 °C
+  (fixed), 5.048 °C (classical GA), 5.323 °C (classical amplitude search) and
+  7.571 °C (persistence). Actual parameter-step proxies differed because the
+  searches sampled different widths.
+- Repeating the search with `--candidate-parameter-step-limit 100000000`
+  gave both methods a total upper bound of 8.0 billion parameter sample-steps.
+  Actual proxies were 5.872 billion (classical) and 5.542 billion (amplitude).
+  Six-hour RMSE was 6.820 and 7.613 °C, respectively. This single-seed fixture
+  result does not establish an advantage across stations or seasons.
+
+### Remaining work
+
+- Verify an actual AZMET station export, including its headers, station
+  metadata, timestamp convention, units and missing codes. Compare proxy ET
+  and simulated wetness against independent observations where available.
+- Verify AquaMap firmware and LoRa payloads, acquire live SEN0604, SHT45,
+  PHYTOS31 and PA1010D streams, and measure actual calibration endpoints.
+  The checked-in firmware only provides the existing air and soil text output.
+- Validate temporal transfer and spatial reconstruction with real field
+  observations, evaluate uncertainty calibration and train or validate joint
+  losses only when independent paired field labels are available. GPU validation
+  remains pending.
