@@ -17,8 +17,8 @@ def idw(points, values, queries, power=2.0):
     return weights @ values / weights.sum(axis=1)
 
 
-def ordinary_kriging(points, values, queries, range_m, nugget=1e-6):
-    """Ordinary kriging with a caller-supplied exponential covariance range."""
+def ordinary_kriging(points, values, queries, range_m, nugget=1e-6, *, model="exponential"):
+    """Ordinary kriging with a caller-supplied covariance model and range."""
     points, values, queries = (np.asarray(array, dtype=float)
                                for array in (points, values, queries))
     if (values.ndim != 1 or not len(values) or points.shape != (len(values), 2)
@@ -30,8 +30,37 @@ def ordinary_kriging(points, values, queries, range_m, nugget=1e-6):
     pair_distances = np.linalg.norm(points[:, None] - points[None, :], axis=2)
     query_distances = np.linalg.norm(points[:, None] - queries[None, :], axis=2)
     system = np.ones((len(values) + 1, len(values) + 1))
-    system[:-1, :-1] = np.exp(-pair_distances / range_m) + nugget * np.eye(len(values))
+    system[:-1, :-1] = covariance(pair_distances / range_m, model) + nugget * np.eye(len(values))
     system[-1, -1] = 0
-    rhs = np.vstack((np.exp(-query_distances / range_m), np.ones(len(queries))))
+    rhs = np.vstack((covariance(query_distances / range_m, model), np.ones(len(queries))))
     weights = np.linalg.solve(system, rhs)[:-1]
     return values @ weights
+
+
+
+def covariance(distance_scaled, model):
+    if model == "exponential":
+        return np.exp(-distance_scaled)
+    if model == "gaussian":
+        return np.exp(-distance_scaled**2)
+    if model == "matern32":
+        distance = np.sqrt(3) * distance_scaled
+        return (1 + distance) * np.exp(-distance)
+    raise ValueError("Unknown covariance model")
+
+
+def radial_basis(points, values, queries, range_m, ridge=1e-6):
+    """Regularized Gaussian radial basis regression with an unpenalized constant."""
+    p, y, q = (np.asarray(item, dtype=float) for item in (points, values, queries))
+    if (y.ndim != 1 or len(y) < 1 or p.shape != (len(y), 2) or q.ndim != 2
+            or q.shape[1] != 2 or not all(np.isfinite(item).all() for item in (p, q, y))
+            or not np.isfinite(range_m) or range_m <= 0 or not np.isfinite(ridge) or ridge <= 0):
+        raise ValueError("Invalid radial basis inputs")
+    distance = np.linalg.norm(p[:, None] - p[None], axis=-1)
+    gram = covariance(distance / range_m, "gaussian")
+    system = np.ones((len(y) + 1, len(y) + 1))
+    system[:-1, :-1] = gram + ridge * np.eye(len(y))
+    system[-1, -1] = 0
+    weights = np.linalg.solve(system, np.r_[y, 0])
+    query = np.linalg.norm(q[:, None] - p[None], axis=-1)
+    return covariance(query / range_m, "gaussian") @ weights[:-1] + weights[-1]
