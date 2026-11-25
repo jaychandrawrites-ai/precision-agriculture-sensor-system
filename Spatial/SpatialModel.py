@@ -22,3 +22,18 @@ def reconstruct(grid, points, values, backend, settings, hard_seeds=False):
     return solve(initial, sums, mask, backend, kappa=settings.gradient_weight,
                  gamma=settings.curvature_weight, penalty=settings.seed_weight,
                  dx=dx, dy=dy, iterations=settings.iterations, hard_seeds=hard_seeds)
+
+
+def reconstruct_variational(grid, points, values, backend, settings, *, hard_seeds=False,
+                            boundary_values=None, boundary_weight=None, boundary="neumann"):
+    """Build a model energy and minimize it from an IDW initialization."""
+    from Spatial.EnergyFunctional import EnergyFunctional, EnergyWeights
+    from Spatial.SeedManager import seed_constraints
+    from Spatial.VariationalSolver import minimize
+
+    constraints = seed_constraints(grid, points, values, settings.seed_weight, hard_seeds,
+                                   boundary_values, boundary_weight)
+    weights = EnergyWeights(settings.gradient_weight, settings.curvature_weight)
+    energy = EnergyFunctional(grid, constraints, backend, weights, boundary)
+    initial = idw(points, values, grid.points()).reshape(grid.shape)
+    return energy, minimize(energy, initial, iterations=settings.iterations)
