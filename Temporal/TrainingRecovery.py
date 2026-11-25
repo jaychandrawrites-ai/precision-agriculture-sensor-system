@@ -10,7 +10,7 @@ from Utils.Serialization import read_json, write_json
 
 
 def recipe(model, settings, options, training, validation, inputs, targets, **training_options):
-    metadata = {"format": "jupiter-rollout-epoch-v1", "settings": asdict(settings),
+    metadata = {"format": "jupiter-rollout-epoch-v2", "settings": asdict(settings),
                 "architecture": {"hidden": list(model.hidden), "skips": list(model.skips),
                                  "dropout": model.dropout},
                 "rollout": asdict(options), "training": training_options,
@@ -53,9 +53,9 @@ def read_recovery(path, expected):
     record = read_json(path)
     if record["recipe"] != expected:
         raise ValueError("Recovery data or settings changed; use the original run or a new state path")
-    if (record["epoch"] != len(record["history"]) or not 1 <= record["best_epoch"] <= record["epoch"]
+    if (record["epoch"] != len(record["history"]) or record["epoch"] != len(record["training_history"]) or not 1 <= record["best_epoch"] <= record["epoch"]
             or record["epoch"] > expected["settings"]["epochs"] or
-            not all(np.isfinite(record["history"]))):
+            not all(np.isfinite(record["history"])) or not all(np.isfinite(record["training_history"]))):
         raise ValueError("Recovery epoch metadata is invalid")
     return record
 

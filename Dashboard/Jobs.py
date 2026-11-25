@@ -8,7 +8,7 @@ import sys
 from threading import Event, Lock
 from uuid import uuid4
 
-from Utils.Serialization import atomic_output, decode_json
+from Utils.Serialization import atomic_output, decode_json, read_json
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -108,7 +108,8 @@ class Jobs:
                     file.write(data)
             jobs = {
                 "inspect": ("azmet.py", "inspect", source),
-                "train": ("train.py", source, folder / "model.json", "--epochs", epochs),
+                "train": ("train.py", source, folder / "model.json", "--epochs", epochs,
+                          "--resume-state", folder / "resume.json"),
                 "forecast": ("forecast.py", source, model, "--steps", steps),
                 "replay": ("acquire.py", "--replay", source, "--packet-schema", config, folder / "session"),
                 "spatial": ("Pipeline.py", "map", source, config, folder / "map"),
@@ -160,9 +161,19 @@ class Jobs:
             if job.status in ("queued", "running"):
                 job.cancel.set()
 
+    @staticmethod
+    def _progress(job):
+        state = job.folder / "resume.json"
+        if job.kind != "train" or job.status != "running" or not state.is_file():
+            return None
+        record = read_json(state)
+        return {"epoch": record["epoch"], "epochs": record["recipe"]["settings"]["epochs"],
+                "latest_validation_loss": record["history"][-1]}
+
     def snapshot(self):
         with self.lock:
             return [{"id": job.identifier, "kind": job.kind, "status": job.status,
+                     "progress": self._progress(job),
                      "artifacts": sorted(name for name in ARTIFACTS[job.kind]
                                          if (job.folder / name).is_file())
                      if job.status == "complete" or job.kind == "live" and job.status == "cancelled" else

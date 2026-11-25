@@ -1,6 +1,7 @@
 """Train from a prepared hourly CSV and evaluate the best validation model."""
 import argparse
 import json
+from pathlib import Path
 from dataclasses import replace
 
 from config import TrainingConfig
@@ -27,6 +28,8 @@ def train(source, checkpoint, settings, optimizer="adam", loss="huber", stable_r
 
 def train_values(values, timestamps, checkpoint, settings, optimizer="adam", loss="huber",
                  *, stable_rollout=True, provenance=None, cutoffs=None, recovery_path=None):
+    if recovery_path is not None and Path(recovery_path).resolve() == Path(checkpoint).resolve():
+        raise ValueError("Training recovery and inference checkpoint must use distinct files")
     dataset = build_dataset(values, timestamps, settings.train_fraction,
                             settings.validation_fraction, cutoffs=cutoffs)
     backend = create_backend(settings.device, settings.dtype, settings.seed)

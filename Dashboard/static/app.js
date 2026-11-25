@@ -37,9 +37,9 @@ function encode(file) {
   });
 }
 
-function chart(series, axisLabel) {
+function chart(series, axisLabel, secondary = []) {
   const canvas = $("plot");
-  const filtered = series.filter(Number.isFinite);
+  const filtered = [...series, ...secondary].filter(Number.isFinite);
   canvas.hidden = filtered.length < 2;
   if (canvas.hidden) return;
   const context = canvas.getContext("2d");
@@ -58,18 +58,24 @@ function chart(series, axisLabel) {
   context.fillText(axisLabel, left, 20);
   context.fillText(max.toFixed(2), 8, top + 7);
   context.fillText(min.toFixed(2), 8, bottom);
-  context.strokeStyle = "#087e6b";
-  context.lineWidth = 2;
-  context.beginPath();
-  let started = false;
-  series.forEach((value, index) => {
-    if (!Number.isFinite(value)) { started = false; return; }
-    const x = left + (right - left) * index / (series.length - 1);
-    const y = bottom - (bottom - top) * (value - min) / (max - min || 1);
-    if (started) context.lineTo(x, y); else context.moveTo(x, y);
-    started = true;
-  });
-  context.stroke();
+  function line(values, color) {
+    if (values.length < 2) return;
+    context.strokeStyle = color;
+    context.lineWidth = 2;
+    context.beginPath();
+    let started = false;
+    values.forEach((value, index) => {
+      if (!Number.isFinite(value)) { started = false; return; }
+      const x = left + (right - left) * index / (values.length - 1);
+      const y = bottom - (bottom - top) * (value - min) / (max - min || 1);
+      if (started) context.lineTo(x, y); else context.moveTo(x, y);
+      started = true;
+    });
+    context.stroke();
+  }
+  line(series, "#087e6b");
+  line(secondary, "#9f4b16");
+
 }
 
 async function view(job, artifact, url) {
@@ -84,6 +90,10 @@ async function view(job, artifact, url) {
     const data = await response.json();
     $("report").textContent = JSON.stringify(data, null, 2);
     if (artifact === "model.json") chart(data.training_result?.history || [], "Validation loss by epoch");
+    if (job.kind === "train" && artifact === "report.json" && data.fit_diagnostics) {
+      chart(data.fit_diagnostics.validation_loss, "Epoch loss · green validation · orange training",
+            data.fit_diagnostics.training_loss);
+    }
   } else {
     const text = await response.text();
     $("report").textContent = text.slice(0, 12000);
@@ -161,7 +171,8 @@ async function refresh() {
     }
     const row = document.createElement("li");
     const text = document.createElement("span");
-    text.textContent = labels[job.kind] + " · " + job.status;
+    const progress = job.progress ? " · epoch " + job.progress.epoch + " / " + job.progress.epochs : "";
+    text.textContent = labels[job.kind] + " · " + job.status + progress;
     row.append(text);
     if (["queued", "running"].includes(job.status)) {
       if (job.kind === "live") row.append(button("Live chart", () => viewLive(job)));
