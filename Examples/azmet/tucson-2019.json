@@ -1,0 +1,29 @@
+{
+  "source_label": "University of Arizona AZMET Tucson az01, 2019 raw hourly observations",
+  "source_url": "https://azmet.arizona.edu/azmet/data/0119rh.txt",
+  "schema_reference": "https://azmet.arizona.edu/azmet/raw2003.htm",
+  "metadata_url": "https://azmet.arizona.edu/about/station-metadata/az01",
+  "station_id": "az01",
+  "station_eto_mm_column": "station_eto_mm",
+  "schema": {
+    "calendar": {"year": "year", "day_of_year": "day", "hour": "hour", "hour_encoding": "1-24"},
+    "convention": "end",
+    "timezone": "America/Phoenix",
+    "headerless_columns": [
+      "year", "day", "hour", "air_c", "rh_pct", "vpd_kpa", "shortwave_mj",
+      "rain_mm", "soil_10cm_c", "soil_50cm_c", "wind_mps", "wind_vector_mps",
+      "wind_direction_deg", "wind_direction_sd_deg", "wind_max_mps", "station_eto_mm",
+      "vapor_pressure_kpa", "dewpoint_c"
+    ],
+    "columns": {
+      "air_temperature_c": {"source": "air_c", "unit": "C"},
+      "relative_humidity_pct": {"source": "rh_pct", "unit": "%"},
+      "shortwave_w_m2": {"source": "shortwave_mj", "unit": "MJ/m2/hour"},
+      "wind_m_s": {"source": "wind_mps", "unit": "m/s"},
+      "precipitation_mm": {"source": "rain_mm", "unit": "mm/hour"}
+    }
+  },
+  "reference_et": {"solar_offset_minutes": -443.76},
+  "assumptions": {"site": {"latitude_deg": 32.28, "elevation_m": 717}},
+  "scenario": {"scenario_irrigation_mm": 0.0, "rain_interception_fraction": 0.05}
+}

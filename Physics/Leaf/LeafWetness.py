@@ -22,7 +22,7 @@ def advance_leaf(state,weather,params,interval_seconds=3600):
     def project(y):
         return np.array([y[0],np.clip(y[1],0,1)])
     result=integrate(rhs,[state.temperature_c,state.wetness],0,interval_seconds,
-                     step=min(10,interval_seconds),project=project)
+                     step=min(10,interval_seconds),project=project,max_step=60)
     temperature,wetness=result.states[-1]
     return LeafState(float(temperature),float(wetness)),result
 

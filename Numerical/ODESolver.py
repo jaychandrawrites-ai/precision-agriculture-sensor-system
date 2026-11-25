@@ -17,9 +17,9 @@ def rk4_step(rhs, t, y, h):
     return y+h*(k1+2*k2+2*k3+k4)/6
 
 def integrate(rhs, initial, start, end, step=1.0, rtol=1e-6,
-              atol=1e-8, min_step=1e-8, max_steps=100000, project=None):
+              atol=1e-8, min_step=1e-8, max_steps=100000, project=None, max_step=np.inf):
     """Step doubling estimates local error; projection occurs after acceptance."""
-    if not end >= start or min(step,rtol,atol,min_step)<=0:
+    if not end >= start or min(step,rtol,atol,min_step)<=0 or not max_step >= min_step:
         raise ValueError("Invalid integration settings")
     y=np.asarray(initial,dtype=float).copy()
     if not np.isfinite(y).all():
@@ -32,7 +32,7 @@ def integrate(rhs, initial, start, end, step=1.0, rtol=1e-6,
     while t<end:
         if accepted+rejected>=max_steps:
             raise RuntimeError("Integration budget exhausted")
-        h=min(h,end-t)
+        h=min(h,end-t,max_step)
         coarse=rk4_step(rhs,t,y,h)
         half=rk4_step(rhs,t,y,h/2)
         fine=rk4_step(rhs,t+h/2,half,h/2)
