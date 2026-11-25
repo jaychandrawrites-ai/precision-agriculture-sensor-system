@@ -120,8 +120,10 @@ class IntegrationTests(unittest.TestCase):
             source, mapping = spatial_fixture(directory)
             result = map_measurements(source, mapping, directory / "map")
             self.assertEqual(result["measurement_count"], 4)
+            self.assertEqual(result["held_out_count"], 1)
+            self.assertIn("kriging", result["held_out"])
             keys = {"east_m", "north_m", "variational", "idw", "kriging", "mean",
-                    "std", "lower", "upper", "split_rhat"}
+                    "std", "lower", "upper", "split_rhat", "ess"}
             maps = read_arrays(directory / "map" / "field.npz", keys)
             np.testing.assert_array_equal(maps["variational"][0, [0, -1]], [25, 29])
             self.assertEqual(maps["std"][0, 0], 0)
@@ -150,6 +152,7 @@ class IntegrationTests(unittest.TestCase):
         timestamps = frame.timestamp.to_numpy(dtype="datetime64[ns]")
         altered = values.copy()
         altered[-36:, 0] += 8
+        altered[-4:] = np.nan
         settings = TrainingConfig(hidden=(12,), epochs=2, batch_size=32, dropout=0)
         budget = EvolutionConfig(population=2, generations=1, candidate_epochs=2)
         first = compare(values, timestamps, settings, budget, recursive=True)
@@ -159,6 +162,7 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(first[method]["hidden"], second[method]["hidden"])
             self.assertEqual(first[method]["candidate_model_sample_steps"], 3840)
             self.assertNotEqual(first[method]["test"], second[method]["test"])
+        self.assertEqual(first["protocol"]["calendar_cutoffs_utc"], second["protocol"]["calendar_cutoffs_utc"])
 
     def test_snapshot_uses_only_co_located_observations_in_the_requested_interval(self):
         from Acquisition.SpatialObservations import spatial_observations

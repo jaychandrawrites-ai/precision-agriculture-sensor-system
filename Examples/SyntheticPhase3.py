@@ -89,16 +89,17 @@ def spatial_fixture(directory):
     timestamp = "2020-07-01T12:00:00Z"
     source = directory / "synthetic-field.csv"
     pd.DataFrame([
-        (timestamp, 0.0, 0.0, 25.0),
-        (timestamp, 0.0, 0.00005, 29.0),
-        (timestamp, 0.00005, 0.0, 27.0),
-        (timestamp, 0.00005, 0.00005, 30.0),
-    ], columns=["timestamp", "latitude_deg", "longitude_deg", "air_temperature_c"]).to_csv(
+        (timestamp, 0.0, 0.0, 25.0, "fit"),
+        (timestamp, 0.0, 0.00005, 29.0, "fit"),
+        (timestamp, 0.00005, 0.0, 27.0, "fit"),
+        (timestamp, 0.00005, 0.00005, 30.0, "fit"),
+        (timestamp, 0.000027, 0.000027, 28.0, "test"),
+    ], columns=["timestamp", "latitude_deg", "longitude_deg", "air_temperature_c", "role"]).to_csv(
         source, index=False
     )
     config = {"feature": "air_temperature_c", "timestamp": timestamp, "origin_lat_lon": [0, 0],
               "east_m": [0, 3, 6], "north_m": [0, 3, 6], "kriging_range_m": 4,
-              "hard_seeds": True, "sampling": {"draws": 80, "burn_in": 40, "seed": 19}}
+              "hard_seeds": True, "split_column": "role", "sampling": {"draws": 80, "burn_in": 40, "seed": 19}}
     return source, config
 
 

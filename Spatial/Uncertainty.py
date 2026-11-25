@@ -11,6 +11,7 @@ class Uncertainty:
     lower: np.ndarray
     upper: np.ndarray
     split_rhat: np.ndarray
+    ess: np.ndarray
 
 
 def summarize(samples, credible_mass=0.95):
@@ -33,4 +34,34 @@ def summarize(samples, credible_mass=0.95):
         rhat[(~valid) & (between > 0)] = np.inf
     spread = fields.std(axis=(0, 1), ddof=1)
     spread[np.ptp(fields, axis=(0, 1)) == 0] = 0
-    return Uncertainty(fields.mean(axis=(0, 1)), spread, lower, upper, rhat)
+    return Uncertainty(fields.mean(axis=(0, 1)), spread, lower, upper, rhat,
+                       effective_sample_size(samples))
+
+
+def effective_sample_size(samples):
+    """Estimate per-cell ESS using pooled autocorrelations and positive paired lags.
+
+    Constant cells have no mixing estimate. Compute one north row at a time so
+    diagnostics need no full-grid complex copy of the sample array.
+    """
+    fields = np.asarray(samples.fields, dtype=float)
+    chains, draws, height, width = fields.shape
+    size = np.full((height, width), np.nan)
+    padded = 1 << (2 * draws - 1).bit_length()
+    pairs = draws // 2
+    for row in range(height):
+        strip = fields[:, :, row]
+        centered = strip - strip.mean(axis=1, keepdims=True)
+        transformed = np.fft.rfft(centered, n=padded, axis=1)
+        covariance = np.fft.irfft(np.abs(transformed)**2, n=padded, axis=1)[:, :draws]
+        covariance = covariance.mean(axis=0) / draws
+        variance = covariance[0]
+        correlation = np.divide(covariance, variance,
+                                out=np.zeros_like(covariance), where=variance > 0)
+        paired = correlation[:2 * pairs].reshape(pairs, 2, width).sum(axis=1)
+        monotone = np.minimum.accumulate(paired, axis=0)
+        positive = np.maximum(monotone, 0)
+        time = np.maximum(1.0, -1 + 2 * positive.sum(axis=0))
+        valid = (np.ptp(strip, axis=(0, 1)) > 0) & (variance > 0)
+        size[row, valid] = (chains * draws / time)[valid]
+    return size

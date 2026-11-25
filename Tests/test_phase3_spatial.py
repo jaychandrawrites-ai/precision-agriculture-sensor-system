@@ -79,6 +79,8 @@ class SpatialTests(unittest.TestCase):
         self.assertEqual(stats.std[0, 0], 0)
         self.assertTrue(np.isnan(stats.split_rhat[0, 0]))
         self.assertTrue((stats.split_rhat[~frozen] < 1.1).all())
+        self.assertTrue(np.isnan(stats.ess[0, 0]))
+        self.assertTrue(((stats.ess[~frozen] > 100) & (stats.ess[~frozen] <= 1800)).all())
         components, _ = energy.value_gradient(result.fields[0, -1])
         self.assertAlmostEqual(sum(components), result.energy_trace[0, -1], places=9)
 
