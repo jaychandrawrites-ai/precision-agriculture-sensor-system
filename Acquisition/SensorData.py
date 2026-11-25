@@ -1,4 +1,4 @@
-"""A reading from one text block emitted by the checked-in firmware."""
+"""A normalized reading from a serial block or a mapped receiver packet."""
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -8,3 +8,6 @@ class SensorData:
     received_at: datetime
     measurements: dict[str, float]
     flags: tuple[str, ...]
+    observed_at: datetime | None = None
+    device_id: str | None = None
+    packet_id: str | None = None
