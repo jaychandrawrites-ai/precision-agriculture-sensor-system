@@ -169,3 +169,112 @@ window counts and dates, forecast metrics before and after physical projection,
 projection counts, normalized input and step sizes, and training gradient
 statistics. Inspect [BUILD_LOG.md](BUILD_LOG.md) for the synthetic results and
 the drop in accuracy seen beyond six hours.
+
+## Phase 3 historical, sensor and spatial workflow
+
+Run the integrated example against explicitly synthetic weather, packets,
+calibration values, and field sites. The command creates a new directory
+containing inputs, configurations, a saved model, a forecast, and spatial maps.
+
+```sh
+python -m Examples.SyntheticPhase3 /tmp/jupiter-phase3-demo
+```
+
+### Historical station files
+
+```sh
+python azmet.py inspect station.csv
+python azmet.py inspect station-hourly.dat --headerless
+python azmet.py prepare station.csv station-mapping.json prepared-history
+python Pipeline.py train-history station.csv station-mapping.json temporal.json
+```
+
+Use the export documentation to fill in the mapping. The example generates
+`historical-mapping.json` with synthetic headers. Map air temperature, relative
+humidity, shortwave radiation, wind speed and interval precipitation. Specify
+source units, missing sentinels, timestamp convention and source timezone when
+needed. Headerless files require explicit ordered names. Separate year,
+day-of-year and hour columns require a clock encoding (`0-23` or `1-24`). Hour
+24 advances the calendar date, and a start-labeled timestamp shifts by one
+hour to become the interval end.
+
+The output includes UTC hourly features, missing and imputation flags,
+source SHA-256, and per-period quality and eligibility. Bound any optional
+forward filling of temperature, humidity and wind. Missing hourly records and
+fluxes remain visible. Historical leaf wetness comes from the leaf ODE, ET₀
+from the trailing-temperature Hargreaves proxy, ETa from the soil scenario,
+and cotton heat stress from the crop index. Irrigation needs either a source
+mapping or an explicit scenario. The fixed solar offset places hourly intervals
+on an approximate solar clock. It is independent of the input timestamp zone.
+The optional approximate clear-sky longwave forcing is part of the leaf model.
+
+Historical training fixes chronological boundaries before filtering out invalid
+target windows and fits scaling on training only. A checkpoint records the
+source hash, feature derivations and the assumptions used. Calibration and
+reference ET warmup can reduce usable hours, so inspect the report before
+interpreting the results.
+
+### Field acquisition and forecasting
+
+```sh
+python acquire.py --port /dev/ttyACM0 --packet-schema packet-schema.json field-session
+python acquire.py --replay field-session/raw.jsonl --packet-schema packet-schema.json field-replay
+python Pipeline.py prepare-session field-session/readings.jsonl field-settings.json prepared-field
+python Pipeline.py forecast-session field-session/readings.jsonl field-settings.json forecasts \
+  --checkpoint temporal.json --steps 6
+```
+
+Use the receiver's documented JSON envelope to define canonical sensor fields,
+units, and optional device, boot, packet, fix and observed-time fields. Omit
+`--packet-schema` for the checked-in sketch's text format. The synthetic config
+illustrates the mapping structure. Real AquaMap LoRa firmware and payload
+format remain to be verified. Raw bytes and receive times are retained. Use
+measured dry and wet PHYTOS31 endpoints and a documented soil VWC conversion
+in field settings. A packet header, serial log or sensor model name alone
+does not establish the calibration.
+
+Forecasting reads the checkpoint and local session only. It uses the latest
+three closed hourly intervals and the same causal ET history convention as
+training. Field LWI comes from calibrated leaf readings, and field ETa uses
+measured soil moisture. These differences from historical simulation remain
+a source of domain shift. For an as-of replay, set `hourly.as_of` to an
+offset-bearing timestamp. The aggregation discards late arrivals beyond that
+cutoff and retains empty hours so stale samples cannot serve as current input.
+GPS fixes are written separately from the feature matrix.
+
+### Spatial reconstruction
+
+```sh
+python Pipeline.py extract-spatial field-session/readings.jsonl snapshot-settings.json snapshot \
+  --also second-session/readings.jsonl
+python Pipeline.py map snapshot/measurements.csv spatial-settings.json spatial-map
+```
+
+Snapshot settings specify a measured field, an offset-aware interval end,
+a timestamp clock and a lookback window. Only readings with the requested
+measurement and a GPS fix in the same packet become spatial observations.
+Multiple distinct sites are required. Alternatively, provide a measured CSV
+with `timestamp,latitude_deg,longitude_deg` and a measurement column. A
+configured split column can label independent sites as `fit` or `test`.
+
+Supply the grid in local east/north meters, an origin, and an optional kriging
+range. Choose `descent` or `conjugate_gradient` for minimization. Optional
+`boundary_values` are a north-by-east array with JSON null for unconstrained
+cells. With a `boundary_weight` they act as soft constraints. Without a weight
+they are fixed. Multiple observations assigned to one grid cell are averaged.
+
+The algorithm is classical. The Metropolis maps describe uncertainty
+conditional on the quadratic energy, temperature and supplied observations.
+Inspect acceptance, split R-hat and effective sample sizes. The maps do not
+establish calibrated field prediction intervals. Keep precise real GPS and
+session files outside the public repository.
+
+### Recursive architecture search
+
+The default `experiments.py` command scores both searches with the improved
+rollout objective on validation data, then evaluates the selected networks on
+the untouched test period. Equal candidate counts and maximum epochs give
+equal sample-step budgets. An optional `--candidate-parameter-step-limit`
+also caps the parameter-weighted training work per candidate. The report
+includes both budgets and actual work proxies because architecture size
+changes arithmetic costs. `--legacy` uses the original one-step experiment.
