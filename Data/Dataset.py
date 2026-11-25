@@ -7,7 +7,7 @@ from Data.DataQuality import invalid_rows
 from Data.Derivatives import supervised
 from Data.Filters import clean_inputs
 from Data.Normalization import Standardizer
-from Data.TimeSeries import split_indices
+from Data.TimeSeries import split_at, split_indices
 
 
 @dataclass
@@ -25,7 +25,7 @@ class Dataset:
 
 
 def build_dataset(values, timestamps, train_fraction=0.7, validation_fraction=0.15,
-                  max_gap=0, detect_outliers=False):
+                  max_gap=0, detect_outliers=False, *, cutoffs=None):
     observed = np.array(values, dtype=float, copy=True)
     invalid = invalid_rows(observed)
     observed[invalid] = np.nan
@@ -45,7 +45,8 @@ def build_dataset(values, timestamps, train_fraction=0.7, validation_fraction=0.
     valid_targets = ~invalid[indices] & ~filled[indices].any(axis=1)
     inputs, indices = inputs[valid_targets], indices[valid_targets]
     targets = observed[indices]
-    train, validation, test = split_indices(indices, train_fraction, validation_fraction)
+    train, validation, test = (split_indices(indices, train_fraction, validation_fraction)
+                               if cutoffs is None else split_at(timestamps, indices, cutoffs))
     imputed_rows = filled.any(axis=1)
     weights = 1 - (imputed_rows[indices-1].astype(float) +
                    imputed_rows[indices-2] + imputed_rows[indices-3]) / 4

@@ -5,7 +5,7 @@ from Data.DataQuality import invalid_rows
 from Data.Dataset import build_dataset
 
 
-def quality_report(features, flags=None, training=None):
+def quality_report(features, flags=None, training=None, *, cutoffs=None):
     values = features.to_numpy(dtype=float)
     timestamps = features.index.to_numpy(dtype="datetime64[ns]")
     valid = ~invalid_rows(values)
@@ -21,11 +21,13 @@ def quality_report(features, flags=None, training=None):
     kwargs = ({"train_fraction": training.train_fraction,
                "validation_fraction": training.validation_fraction} if training else {})
     try:
-        dataset = build_dataset(values, timestamps, **kwargs)
+        dataset = build_dataset(values, timestamps, cutoffs=cutoffs, **kwargs)
     except ValueError as exc:
         report["chronology"] = {"unavailable": str(exc)}
     else:
         report["chronology"] = {}
+        if cutoffs is not None:
+            report["calendar_cutoffs_utc"] = [str(cutoff) + "Z" for cutoff in cutoffs]
         for split in ("train", "validation", "test"):
             rows = dataset.target_indices[getattr(dataset, split)]
             report["chronology"][split] = {
