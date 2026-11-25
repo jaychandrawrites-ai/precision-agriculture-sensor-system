@@ -59,3 +59,86 @@ def integrate(rhs, initial, start, end, step=1.0, rtol=1e-6,
         factor=5.0 if ratio==0 else min(5.0,max(0.1,0.9*ratio**(-0.2)))
         h=max(min_step,h*factor)
     return IntegrationResult(np.asarray(times),np.stack(states),accepted,rejected)
+
+
+def integrate_implicit(rhs, initial, start, end, *, step=1.0, jac=None,
+                       rtol=1e-4, atol=1e-7, min_step=1e-9, max_steps=100000,
+                       newton_iterations=12):
+    """Adaptive backward Euler with step doubling and damped Newton solves."""
+    from Numerical.Differentiation import jacobian
+
+    parameters = [start, end, step, rtol, atol, min_step]
+    if (not np.isfinite(parameters).all() or end < start
+            or min(step, rtol, atol, min_step) <= 0 or step < min_step
+            or min(max_steps, newton_iterations) < 1):
+        raise ValueError("Invalid implicit integration settings")
+    state = np.asarray(initial, dtype=float)
+    if state.ndim != 1 or not state.size or not np.isfinite(state).all():
+        raise ValueError("Expected a finite initial state vector")
+    identity = np.eye(len(state))
+
+    def evaluate(time, value):
+        result = np.asarray(rhs(time, value), dtype=float)
+        if result.shape != state.shape:
+            raise ValueError("ODE right hand side must match the state")
+        return result
+
+    def backward_euler(time, old, dt):
+        candidate = old.copy()
+        def residual(value):
+            return value - old - dt * evaluate(time, value)
+        tolerance = (atol + rtol * np.maximum(np.abs(old), 1e-8)) * 0.025
+        for _ in range(newton_iterations):
+            error = residual(candidate)
+            size = np.max(np.abs(error) / tolerance)
+            if not np.isfinite(size):
+                return None
+            if size <= 1:
+                return candidate
+            if jac is None:
+                matrix = jacobian(residual, candidate)
+            else:
+                derivative = np.asarray(jac(time, candidate), dtype=float)
+                if derivative.shape != identity.shape or not np.isfinite(derivative).all():
+                    raise ValueError("ODE Jacobian must be finite and square")
+                matrix = identity - dt * derivative
+            try:
+                direction = np.linalg.solve(matrix, -error)
+            except np.linalg.LinAlgError:
+                return None
+            for factor in (1, .5, .25, .125, .0625):
+                updated = candidate + factor * direction
+                if np.max(np.abs(residual(updated)) / tolerance) < size:
+                    candidate = updated
+                    break
+            else:
+                return None
+        return None
+
+    t, dt = float(start), step
+    times, states = [t], [state.copy()]
+    accepted = rejected = 0
+    while t < end:
+        if accepted + rejected >= max_steps:
+            raise RuntimeError("Implicit integration budget exhausted")
+        dt = min(dt, end - t)
+        if t + dt <= t:
+            raise RuntimeError("Step is below time precision")
+        coarse = backward_euler(t + dt, state, dt)
+        half = backward_euler(t + dt / 2, state, dt / 2)
+        fine = None if half is None else backward_euler(t + dt, half, dt / 2)
+        ratio = np.inf
+        if coarse is not None and fine is not None:
+            weight = atol + rtol * np.maximum(np.abs(fine), np.abs(state))
+            ratio = np.max(np.abs(fine - coarse) / weight)
+        if ratio <= 1:
+            t, state = t + dt, fine
+            times.append(t)
+            states.append(state)
+            accepted += 1
+        else:
+            rejected += 1
+            if dt <= min_step:
+                raise RuntimeError("Cannot satisfy implicit integration tolerance")
+        dt = max(min_step, dt * (4 if ratio == 0 else np.clip(0.9 / np.sqrt(ratio), .2, 4)))
+    return IntegrationResult(np.asarray(times), np.stack(states), accepted, rejected)
