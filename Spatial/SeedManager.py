@@ -13,7 +13,7 @@ class Constraints:
 
 
 def seed_constraints(grid, points, values, weight, hard=False, boundary=None,
-                     boundary_weight=None):
+                     boundary_weight=None, *, measurement_variance=None):
     points, values = np.asarray(points, dtype=float), np.asarray(values, dtype=float)
     if (values.ndim != 1 or points.shape != (len(values), 2) or not len(values)
             or not np.isfinite(values).all() or not np.isfinite(points).all()
@@ -29,8 +29,21 @@ def seed_constraints(grid, points, values, weight, hard=False, boundary=None,
     np.add.at(totals, (north, east), values)
     observed = counts > 0
     targets = np.divide(totals, counts, out=np.zeros_like(totals), where=observed)
+    if measurement_variance is not None:
+        if hard:
+            raise ValueError("Measured variances require soft observation constraints")
+        variance = np.asarray(measurement_variance, dtype=float)
+        if variance.shape != values.shape or not np.isfinite(variance).all() or (variance <= 0).any():
+            raise ValueError("Expected one positive finite variance per measurement")
+        obs_weight = weight / variance
+        precision, information = np.zeros(grid.shape), np.zeros(grid.shape)
+        np.add.at(precision, (north, east), obs_weight)
+        np.add.at(information, (north, east), obs_weight * values)
+        targets = np.divide(information, precision, out=np.zeros_like(information), where=observed)
     # Keep the original per-cell penalty even when multiple points share a cell.
     weights = np.zeros(grid.shape) if hard else np.where(observed, weight, 0.0)
+    if measurement_variance is not None:
+        weights = precision
     fixed = observed.copy() if hard else np.zeros_like(observed)
     fixed_values = targets.copy() if hard else np.zeros_like(targets)
     if boundary is not None:

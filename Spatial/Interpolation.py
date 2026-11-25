@@ -43,6 +43,9 @@ def covariance(distance_scaled, model):
         return np.exp(-distance_scaled)
     if model == "gaussian":
         return np.exp(-distance_scaled**2)
+    if model == "spherical":
+        distance = np.minimum(distance_scaled, 1.0)
+        return 1.0 - 1.5 * distance + 0.5 * distance**3
     if model == "matern32":
         distance = np.sqrt(3) * distance_scaled
         return (1 + distance) * np.exp(-distance)

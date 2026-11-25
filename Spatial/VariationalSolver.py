@@ -41,7 +41,8 @@ def minimize(energy, initial, *, iterations=500, tolerance=1e-6, step=None):
             field = energy.project(field - step * gradient)
 
 
-def minimize_conjugate(energy, initial, *, iterations=500, tolerance=1e-6):
+def minimize_conjugate(energy, initial, *, iterations=500, tolerance=1e-6,
+                       precondition=False):
     """Find a constrained minimum with matrix-free conjugate gradients.
 
     Directions vanish on fixed cells. A nonpositive curvature along a
@@ -59,10 +60,23 @@ def minimize_conjugate(energy, initial, *, iterations=500, tolerance=1e-6):
         energies = [sum(components)]
         if not count:
             return VariationalResult(field, energies, 0, True, 0.0, 0.0)
+        inverse = None
+        if precondition:
+            from Spatial.Hamiltonian import hessian_columns
+
+            diagonal = backend.array([column[2] for column in hessian_columns(energy)]).reshape(field.shape)
+            if bool(backend.scalar((diagonal[free] <= 0).any())):
+                raise FloatingPointError("Free-cell Jacobi diagonal must be positive")
+            inverse = 1 / backend.xp.where(free, diagonal, 1)
+
+        def prepare(residual):
+            transformed = residual if inverse is None else residual * inverse
+            return transformed, backend.scalar((residual * transformed).sum())
+
         residual = -gradient * free
-        direction = residual.copy()
-        squared = backend.scalar((residual * residual).sum())
-        rms = math.sqrt(squared / count)
+        transformed, squared = prepare(residual)
+        direction = transformed.copy()
+        rms = backend.global_norm([residual]) / math.sqrt(count)
         if rms <= tolerance:
             return VariationalResult(field, energies, 0, True, rms, 0.0)
         if energy.lipschitz <= 0:
@@ -85,14 +99,15 @@ def minimize_conjugate(energy, initial, *, iterations=500, tolerance=1e-6):
             # Periodic replacement prevents iterative residual drift.
             if index % 25 == 0:
                 residual = exact
-                direction = residual.copy()
-                squared = backend.scalar((residual * residual).sum())
+                transformed, squared = prepare(residual)
+                direction = transformed.copy()
             else:
-                new_squared = backend.scalar((residual * residual).sum())
+                transformed, new_squared = prepare(residual)
                 if new_squared == 0:
-                    residual, direction = exact, exact.copy()
-                    squared = backend.scalar((residual * residual).sum())
+                    residual = exact
+                    transformed, squared = prepare(residual)
+                    direction = transformed.copy()
                 else:
-                    direction = residual + (new_squared / squared) * direction
+                    direction = transformed + (new_squared / squared) * direction
                     squared = new_squared
         return VariationalResult(field, energies, iterations, False, rms, step)
