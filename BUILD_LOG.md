@@ -270,9 +270,8 @@ passed 31 tests. Verified `4f468ee604ab6b7b8e6f862bfc40770b60b20127` as the
 parent of the first implementation commit (`8f11b2c`). Its tree contains
 exactly 39 Python files plus AGENTS.md and PLANS.md, in addition to the
 original firmware and ancillary files. Published it as `jupiter-foundation`
-before editing the development branch. The functional implementation ends at
-`516014a84a9e12dccc80520792296db196611640`, followed by this documentation
-commit. No merge into main.
+before editing the development branch. The final tested functional commit is
+`064e73be9b75017ccf30cbd95a13019ea0a48b4d`. No merge into main.
 
 ### Files and counts
 
@@ -285,14 +284,15 @@ commit. No merge into main.
 - Forecasting. Added `Temporal/Direct.py`, `Temporal/DirectCheckpoint.py`,
   `Temporal/ForecastUncertainty.py`, `Temporal/TrainingRecovery.py`,
   `direct_forecast.py`, and `forecast_benchmark.py`. Updated
-  `Temporal/RolloutTrainer.py` and `train.py`.
+  `Temporal/RolloutTrainer.py`, `train.py`, and `forecast.py`.
 - Spatial and integrated pipeline. Added `Spatial/Geostatistics.py`,
   `Spatial/RobustField.py`, and `multisite.py`. Updated
   `Spatial/Interpolation.py`, `Spatial/MonteCarlo.py`, `Pipeline.py`,
   and `SpatiotemporalModel.py`.
 - Search and comparisons. Added `Evolution/Diagnostics.py`,
   `Evolution/Resumable.py`, and `Utils/Bootstrap.py`. Updated
-  `experiments.py` with random search, validation Pareto fronts, and
+  `Utils/Serialization.py` for cross-platform cleanup and `experiments.py` with
+  random search, validation Pareto fronts, and
   generation recovery. Cache hits and physical evaluations are reported
   separately. Resume verifies the data, implementation, recipe and RNG.
 - Acquisition. Added `Acquisition/Sequence.py` and `Acquisition/Health.py`.
@@ -309,10 +309,10 @@ commit. No merge into main.
   `test_phase4_station.py`, and `test_phase4_temporal.py` under `Tests/`.
   Updated README.md, PLANS.md, and BUILD_LOG.md.
 
-Git numstat reports 2,494 Python insertions and 53 deletions. Tracked Python
-grew from 6,922 lines in 112 files to 9,363 lines in 141 files, a net gain
-of 2,441. The difference for all tracked files is 3087 insertions and
-53 deletions.
+Git numstat reports 2,498 Python insertions and 55 deletions. Tracked Python
+grew from 6,922 lines in 112 files to 9,365 lines in 141 files, a net gain
+of 2,443. The difference for all tracked files is 3094 insertions and
+55 deletions.
 
 ### Reproduction and results
 
@@ -323,6 +323,10 @@ of 2,441. The difference for all tracked files is 3087 insertions and
   fixtures, strict GPS receipt cutoffs, challenge cases for dashboard request
   validation, and standalone model checkpoints. `node --check Dashboard/static/app.js`
   and `python -m compileall -q .` passed.
+- The first Windows run found a temporary file still open during cleanup and
+  doubled CSV newlines. After closing the handle on failure and supplying a
+  single CSV newline convention, all four Linux and Windows jobs passed on
+  Python 3.11 and 3.12 in [GitHub Actions](https://github.com/jaychandrawrites-ai/precision-agriculture-sensor-system/actions/runs/45723252444).
 - The [AZMET 2019 Tucson archive](https://azmet.arizona.edu/azmet/data/0119rh.txt)
   contained 8,760 records with 18 fields in the
   [published raw format](https://azmet.arizona.edu/azmet/raw2003.htm).
@@ -381,6 +385,5 @@ the lowest RMSE at all three reported horizons.
   uncertainty, adaptive grids, joint fitting on genuine paired field labels,
   and GPU consistency remain open.
 - Dashboard verification used loopback HTTP integration and JavaScript syntax
-  checking. Browser rendering, physical serial streaming and Windows execution
-  remain separate checks. GitHub Actions now defines Linux and Windows test
-  jobs, with actual runner results reported separately from local results.
+  checking. Browser rendering and physical serial streaming remain to be
+  verified.
