@@ -159,3 +159,25 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(first[method]["hidden"], second[method]["hidden"])
             self.assertEqual(first[method]["candidate_model_sample_steps"], 3840)
             self.assertNotEqual(first[method]["test"], second[method]["test"])
+
+    def test_snapshot_uses_only_co_located_observations_in_the_requested_interval(self):
+        from Acquisition.SpatialObservations import spatial_observations
+
+        with TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            session, _, _ = session_fixture(directory, hours=10)
+            source = session / "readings.jsonl"
+            snapshot, report = spatial_observations(
+                [source], "air_temperature_c", "2020-07-01T06:00:00Z",
+                clock="observed_at", window_minutes=120,
+            )
+            self.assertEqual(len(snapshot), 2)
+            self.assertEqual(report["counts"]["duplicate"], 1)
+            self.assertEqual(snapshot["observed_at"].iloc[0].hour, 5)
+            self.assertEqual(snapshot["timestamp"].iloc[0].hour, 6)
+            with self.assertRaisesRegex(ValueError, "distinct measured sites"):
+                snapshot.to_csv(directory / "single-site.csv", index=False)
+                map_measurements(directory / "single-site.csv", {
+                    "feature": "air_temperature_c", "timestamp": "2020-07-01T06:00:00Z",
+                    "origin_lat_lon": [0, 0], "east_m": [-1, 1], "north_m": [-1, 1],
+                }, directory / "out")
