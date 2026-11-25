@@ -3,9 +3,7 @@ import argparse
 import json
 from dataclasses import replace
 
-import numpy as np
-
-from config import FEATURES, TrainingConfig
+from config import TrainingConfig
 from Data.Dataset import build_dataset
 from Data.Preprocessing import read_hourly
 from Data.RolloutWindows import rollout_windows
@@ -18,22 +16,29 @@ from Temporal.RolloutTrainer import fit_rollout
 from Temporal.Trainer import fit
 from Temporal.Validator import evaluate_rollouts, evaluate_rows
 from Utils.Checkpoints import save
+from Utils.Metrics import horizon_metrics, physical_metrics as _physical_metrics
 
 
 def train(source, checkpoint, settings, optimizer="adam", loss="huber", stable_rollout=False):
     values, timestamps = read_hourly(source)
+    return train_values(values, timestamps, checkpoint, settings, optimizer, loss,
+                        stable_rollout=stable_rollout)
+
+
+def train_values(values, timestamps, checkpoint, settings, optimizer="adam", loss="huber",
+                 *, stable_rollout=True, provenance=None):
     dataset = build_dataset(values, timestamps, settings.train_fraction,
                             settings.validation_fraction)
     backend = create_backend(settings.device, settings.dtype, settings.seed)
     model = TemporalModel(backend, settings.hidden, settings.dropout)
     if stable_rollout:
         return _train_stable(checkpoint, settings, optimizer, loss, values, timestamps,
-                             dataset, model, backend)
+                             dataset, model, backend, provenance)
     result = fit(model, dataset, backend, settings, optimizer, loss)
     metrics = evaluate_rows(model, dataset, dataset.test, backend)
     rollout = evaluate_rollouts(model, dataset, dataset.test, values, timestamps,
                                 backend, settings.rollout_steps)
-    save(checkpoint, model, dataset, backend, result, settings)
+    save(checkpoint, model, dataset, backend, result, settings, provenance=provenance)
     return {
         "examples": {split: len(getattr(dataset, split))
                      for split in ("train", "validation", "test")},
@@ -46,7 +51,7 @@ def train(source, checkpoint, settings, optimizer="adam", loss="huber", stable_r
 
 
 def _train_stable(checkpoint, settings, optimizer, loss, values, timestamps,
-                  dataset, model, backend):
+                  dataset, model, backend, provenance):
     steps = settings.rollout_steps
     training, validation, test = [
         rollout_windows(dataset, rows, values, timestamps, steps)
@@ -80,22 +85,12 @@ def _train_stable(checkpoint, settings, optimizer, loss, values, timestamps,
         projected, raw, diagnostics = engine.predict(test.histories, steps, True)
         for name, predictions in (("test_rollout", projected), ("raw_rollout", raw),
                                   ("persistence", persistence), ("seasonal_persistence", seasonal)):
-            report[name] = [
-                _physical_metrics(evaluate(predictions[:, i], test.targets[:, i], persistence[:, i]))
-                for i in range(steps)
-            ]
+            report[name] = horizon_metrics(predictions, test.targets, persistence)
         report["seasonal_fallbacks"] = fallback.tolist()
         report["rollout_diagnostics"] = diagnostics
-    save(checkpoint, model, replace(dataset, input_scaler=inputs), backend, result, settings)
+    save(checkpoint, model, replace(dataset, input_scaler=inputs), backend, result, settings,
+         provenance=provenance)
     return report
-
-
-def _physical_metrics(metrics):
-    return {
-            feature: {metric: float(values[i]) if np.isfinite(values[i]) else None
-                      for metric, values in metrics.items()}
-        for i, feature in enumerate(FEATURES)
-    }
 
 
 def main():

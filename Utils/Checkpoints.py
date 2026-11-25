@@ -1,8 +1,5 @@
 """Versioned JSON temporal checkpoints with atomic replacement."""
 from dataclasses import asdict
-import json
-from pathlib import Path
-from tempfile import NamedTemporaryFile
 
 import numpy as np
 
@@ -12,10 +9,10 @@ from Data.Normalization import Standardizer
 from Framework.Backend import create_backend
 from Temporal.Model import TemporalModel
 from Temporal.Rollout import RolloutOptions
+from Utils.Serialization import read_json, write_json
 
 
-def save(path, model, dataset, backend, result, settings):
-    path = Path(path)
+def save(path, model, dataset, backend, result, settings, *, provenance=None):
     state = {
         "version": 1,
         "features": FEATURES,
@@ -25,7 +22,7 @@ def save(path, model, dataset, backend, result, settings):
         "parameters": model.state_dict(backend),
         "input_scaler": dataset.input_scaler.state_dict(),
         "target_scaler": dataset.target_scaler.state_dict(),
-        "assumptions": Assumptions().metadata(),
+        "assumptions": (provenance or {}).get("assumptions", Assumptions().metadata()),
         "training_config": asdict(settings),
         "training_result": asdict(result),
     }
@@ -33,19 +30,16 @@ def save(path, model, dataset, backend, result, settings):
     if options is not None:
         state["version"] = 2
         state["rollout_options"] = asdict(options)
-    with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
-        temporary = Path(file.name)
-    try:
-        with temporary.open("w", encoding="utf-8") as file:
-            json.dump(state, file, default=lambda array: array.tolist(), allow_nan=False)
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    if provenance is not None:
+        state["provenance"] = provenance
+    write_json(path, state, indent=None)
 
 
 def load(path, device="cpu"):
-    with open(path, encoding="utf-8") as file:
-        state = json.load(file)
+    return load_state(read_json(path), device)
+
+
+def load_state(state, device="cpu"):
     if (state["version"] not in (1, 2) or tuple(state["features"]) != FEATURES
             or state["interval_hours"] != 1):
         raise ValueError("Unsupported checkpoint format")
@@ -60,5 +54,8 @@ def load(path, device="cpu"):
         if not np.isfinite(value).all():
             raise ValueError("Nonfinite checkpoint weights")
     model.load_state_dict(parameters, backend)
-    return (model, backend, Standardizer.from_state(state["input_scaler"]),
-            Standardizer.from_state(state["target_scaler"]))
+    input_scaler = Standardizer.from_state(state["input_scaler"])
+    target_scaler = Standardizer.from_state(state["target_scaler"])
+    if input_scaler.mean.shape != (18,) or target_scaler.mean.shape != (len(FEATURES),):
+        raise ValueError("Checkpoint normalization does not match the feature contract")
+    return model, backend, input_scaler, target_scaler
