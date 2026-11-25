@@ -19,6 +19,7 @@ from Temporal.ForecastUncertainty import calibrate, ensemble, evaluate_intervals
 from Temporal.Model import TemporalModel
 from Temporal.Rollout import Rollout, RolloutOptions
 from Temporal.RolloutTrainer import fit_rollout
+from Utils.Bootstrap import paired_rmse_difference
 from Utils.Metrics import horizon_metrics
 from Utils.Serialization import write_json
 
@@ -71,19 +72,25 @@ def compare(values, times, settings, horizon, seeds, mass=.9):
                 members[mode][i].append(value)
     results = {"persistence": horizon_metrics(persistence, test.targets, persistence),
                "seasonal_persistence": horizon_metrics(seasonal, test.targets, persistence)}
-    uncertainty = {}
+    uncertainty, comparisons = {}, {}
+    contiguous = (np.diff(times[test.starts]) == np.timedelta64(1, "h")).all()
+    block = max(24, horizon)
     for name, (cal_predictions, test_predictions) in members.items():
         cal_ensemble, _ = ensemble(cal_predictions)
         estimate, spread = ensemble(test_predictions)
         intervals = calibrate(cal_ensemble, calibration.targets, mass)
         results[name] = horizon_metrics(estimate, test.targets, persistence)
+        if contiguous and len(test.starts) >= 2 * block:
+            comparisons[name] = paired_rmse_difference(estimate, persistence, test.targets,
+                                                       block=block, draws=200)
         uncertainty[name] = {**evaluate_intervals(intervals, estimate, test.targets),
                              "mean_member_spread": spread.mean(axis=0)}
     return {"windows": {name: len(window.starts) for name, window in zip(
                 ("train", "validation", "calibration", "test"),
                 (direct_train, direct_val, calibration, test))},
             "recursive_training_horizon": settings.rollout_steps, "test_horizon": horizon,
-            "metrics": results, "diagnostics": diagnostics, "intervals": uncertainty}
+            "metrics": results, "diagnostics": diagnostics, "intervals": uncertainty,
+            "rmse_difference_vs_persistence": comparisons}
 
 
 def main():

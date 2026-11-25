@@ -1,0 +1,26 @@
+name: Jupiter CPU tests
+on:
+  push:
+    branches: [jupiter-development]
+  pull_request:
+    branches: [jupiter-development, main]
+permissions:
+  contents: read
+jobs:
+  unittest:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    env:
+      OPENBLAS_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m unittest discover -s Tests -v
+      - run: python -m compileall -q .

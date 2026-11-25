@@ -9,6 +9,7 @@ from Data.Dataset import build_dataset
 from Data.Preprocessing import read_hourly
 from Data.RolloutWindows import rollout_windows
 from Data.TimeSeries import calendar_cutoffs
+from Evolution.Diagnostics import diversity, pareto_front, random_search
 from Evolution.Fitness import validation_fitness
 from Evolution.GeneticAlgorithm import search as genetic_search
 from Framework.Backend import create_backend
@@ -22,7 +23,7 @@ from Temporal.Validator import evaluate_rollouts, evaluate_rows
 from Utils.Metrics import horizon_metrics, physical_metrics
 
 
-def compare(values, timestamps, settings, budget, *, recursive=False):
+def compare(values, timestamps, settings, budget, *, recursive=False, include_random=False):
     cutoffs = (calendar_cutoffs(timestamps, settings.train_fraction, settings.validation_fraction)
                if recursive else None)
     dataset = build_dataset(values, timestamps, settings.train_fraction,
@@ -33,7 +34,10 @@ def compare(values, timestamps, settings, budget, *, recursive=False):
                         for rows in (dataset.train, dataset.validation))
     score = validation_fitness(dataset, settings, budget, rollout_windows_pair=windows)
     selections = {"fixed": ((settings.hidden, ()), [], None, 0.0)}
-    for name, search in (("classical_ga", genetic_search), ("quantum_inspired", amplitude_search)):
+    searches = {"classical_ga": genetic_search, "quantum_inspired": amplitude_search}
+    if include_random:
+        searches["random"] = random_search
+    for name, search in searches.items():
         started = perf_counter()
         winner, history = search(score, budget, seed=settings.seed)
         candidates = [candidate for generation in history for candidate in generation]
@@ -71,6 +75,11 @@ def compare(values, timestamps, settings, budget, *, recursive=False):
                                                      for item in candidates),
             "selection_score": winner.score if winner is not None else None,
             "winning_bits": winner.genome.bits if winner is not None else None,
+            "candidate_diversity": diversity(candidates),
+            "validation_pareto_front": [
+                {"bits": item.genome.bits, "validation_loss": item.validation_loss,
+                 "parameters": item.parameters} for item in pareto_front(candidates)
+            ],
             "search_seconds": search_seconds, "final_fit_seconds": fit_seconds,
             "final_fit_epochs": settings.epochs, "validation_loss": result.validation_loss,
         }
@@ -114,13 +123,15 @@ def main():
     parser.add_argument("--candidate-epochs", type=int, default=EvolutionConfig().candidate_epochs)
     parser.add_argument("--candidate-parameter-step-limit", type=int)
     parser.add_argument("--seed", type=int, default=TrainingConfig().seed)
+    parser.add_argument("--random-baseline", action="store_true")
     parser.add_argument("--legacy", action="store_true")
     args = parser.parse_args()
     settings = replace(TrainingConfig(), epochs=args.epochs, seed=args.seed)
     budget = EvolutionConfig(population=args.population, generations=args.generations,
                              candidate_epochs=args.candidate_epochs,
                              candidate_parameter_step_limit=args.candidate_parameter_step_limit)
-    report = compare(*read_hourly(args.source), settings, budget, recursive=not args.legacy)
+    report = compare(*read_hourly(args.source), settings, budget, recursive=not args.legacy,
+                     include_random=args.random_baseline)
     print(json.dumps(report, allow_nan=False, indent=2))
 
 
