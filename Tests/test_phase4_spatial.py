@@ -50,3 +50,20 @@ class AdvancedSpatialTests(unittest.TestCase):
         second = metropolis(energy, np.ones(grid.shape), config)
         self.assertFalse(np.all(first.proposal_scales == 1))
         np.testing.assert_array_equal(first.fields, second.fields)
+
+    def test_robust_solver_can_be_selected_in_pipeline(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from Examples.SyntheticPhase3 import spatial_fixture
+        from Pipeline import map_measurements
+
+        with TemporaryDirectory() as temp:
+            source, config = spatial_fixture(Path(temp))
+            config.pop("sampling")
+            config["algorithm"] = "robust_lbfgs"
+            config["robust"] = {"east_conductance": 2, "north_conductance": .5}
+            report = map_measurements(source, config, Path(temp) / "map")
+        self.assertTrue(report["converged"])
+        self.assertEqual(report["algorithm"], "robust_lbfgs")
+        self.assertIn("variational", report["held_out"])

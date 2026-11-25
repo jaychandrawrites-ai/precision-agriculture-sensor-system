@@ -123,6 +123,7 @@ def map_measurements(source, configuration, output):
         boundary_weight=configuration.get("boundary_weight"),
         boundary=configuration.get("laplacian_boundary", "neumann"),
         algorithm=configuration.get("algorithm", "descent"),
+        robust=configuration.get("robust"),
     )
     arrays = {"east_m": grid.east, "north_m": grid.north, "variational": result.field,
               "idw": result.idw}
