@@ -63,7 +63,8 @@ def compare(values, times, settings, horizon, seeds, mass=.9):
                             "recursive_fit_seconds": rec_seconds,
                             "direct_fit_seconds": perf_counter() - started,
                             "test_ood_scores": direct.ood_score(test.histories)})
-        blend = np.minimum(1, np.arange(horizon) / max(1, opts.rollout_steps))[None, :, None]
+        lead = np.arange(horizon)
+        blend = (lead / (lead + opts.rollout_steps))[None, :, None]
         for i, window in enumerate((calibration, test)):
             recursive = engine.predict(window.histories, horizon)
             prediction = direct.predict(window.histories)
