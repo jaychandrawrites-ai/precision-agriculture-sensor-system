@@ -31,7 +31,7 @@ def main():
     parser.add_argument("--steps", type=int, default=6)
     parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
-    print(forecast_csv(args.source, args.checkpoint, args.steps, args.device).to_csv(index=False),
+    print(forecast_csv(args.source, args.checkpoint, args.steps, args.device).to_csv(index=False, lineterminator="\n"),
           end="")
 
 
