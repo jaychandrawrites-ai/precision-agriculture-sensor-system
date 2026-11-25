@@ -17,10 +17,12 @@ from azmet import prepare
 from config import FEATURES, SpatialConfig, TrainingConfig
 from Data.DataQuality import invalid_rows
 from Data.QualityReport import quality_report
+from Data.TimeSeries import calendar_cutoffs
 from Data.WeatherPhysics import ReferenceET
 from Framework.Backend import create_backend
 from Spatial.MonteCarlo import SamplingConfig
-from Spatial.SpatialGrid import SpatialGrid
+from Spatial.SpatialGrid import SpatialGrid, local_coordinates
+from Spatial.Validation import score_snapshot
 from SpatiotemporalModel import SpatiotemporalModel
 from train import train_values
 from Utils.Diagnostics import forecast_diagnostics
@@ -30,10 +32,16 @@ from Utils.Serialization import read_json, write_arrays, write_json
 
 def train_historical(source, configuration, checkpoint, settings=TrainingConfig()):
     features, flags, report = prepare(source, configuration)
-    quality = quality_report(features, flags, settings)
-    result = train_values(features.to_numpy(), features.index.to_numpy(dtype="datetime64[ns]"),
-                          checkpoint, settings, provenance=report["provenance"])
-    return {"training": result, "quality": quality, "provenance": report["provenance"]}
+    timestamps = features.index.to_numpy(dtype="datetime64[ns]")
+    cutoffs = calendar_cutoffs(timestamps, settings.train_fraction, settings.validation_fraction)
+    quality = quality_report(features, flags, settings, cutoffs=cutoffs)
+    provenance = {**report["provenance"], "chronological_split": {
+        "method": "calendar_before_target_filtering",
+        "cutoffs_utc": [str(cutoff) + "Z" for cutoff in cutoffs],
+    }}
+    result = train_values(features.to_numpy(), timestamps, checkpoint, settings,
+                          provenance=provenance, cutoffs=cutoffs)
+    return {"training": result, "quality": quality, "provenance": provenance}
 
 
 def prepare_session(readings, configuration):
@@ -82,6 +90,13 @@ def map_measurements(source, configuration, output):
         raise ValueError("Field measurement timestamps need an explicit UTC offset")
     mask = pd.to_datetime(source_times, format="ISO8601", utc=True) == timestamp
     snapshot = frame.loc[mask]
+    held_out = None
+    if role := configuration.get("split_column"):
+        labels = snapshot[role]
+        if not labels.isin(("fit", "test")).all() or not labels.eq("test").any():
+            raise ValueError("A spatial split requires fit and test labels with held-out rows")
+        held_out = snapshot.loc[labels.eq("test")]
+        snapshot = snapshot.loc[labels.eq("fit")]
     grid = SpatialGrid(configuration["east_m"], configuration["north_m"])
     backend = create_backend(dtype="float64")
     settings = SpatialConfig(**configuration.get("solver", {}))
@@ -105,12 +120,23 @@ def map_measurements(source, configuration, output):
               "iterations": result.solver.iterations, "gradient_rms": result.solver.gradient_rms,
               "initial_energy": result.solver.energies[0], "final_energy": result.solver.energies[-1]}
     if result.uncertainty is not None:
-        for name in ("mean", "std", "lower", "upper", "split_rhat"):
+        for name in ("mean", "std", "lower", "upper", "split_rhat", "ess"):
             arrays[name] = getattr(result.uncertainty, name)
         report["sampling"] = {"acceptance": result.sampling.acceptance.tolist(),
                               "burn_in_acceptance": result.sampling.burn_in_acceptance.tolist(),
                               "parameters": configuration["sampling"],
                               "conditional_on_energy_model": True}
+    if held_out is not None:
+        coordinate_columns = ["latitude_deg", "longitude_deg"]
+        origin = configuration["origin_lat_lon"]
+        sites = local_coordinates(snapshot[coordinate_columns].to_numpy(), origin)
+        queries = local_coordinates(held_out[coordinate_columns].to_numpy(), origin)
+        report["held_out_count"] = len(held_out)
+        report["held_out"] = score_snapshot(
+            grid, result.field, sites, snapshot[field_name].to_numpy(dtype=float),
+            queries, held_out[field_name].to_numpy(dtype=float),
+            configuration.get("kriging_range_m"), result.sampling,
+        )
     output = Path(output)
     output.mkdir()
     write_arrays(output / "field.npz", **arrays)
