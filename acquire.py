@@ -36,8 +36,8 @@ def main():
     metadata = {"transport": "serial" if args.port else "replay",
                 "parser": asdict(schema) if schema is not None else "checked_in_arduino_text"}
     if args.port:
-        capture(serial_lines(args.port, args.baud, stop, reconnect_attempts=args.reconnect_attempts), args.output, parser=parser,
-                metadata=metadata)
+        lines = serial_lines(args.port, args.baud, stop, reconnect_attempts=args.reconnect_attempts)
+        capture(lines, args.output, parser=parser, metadata=metadata, session_stop=stop)
     else:
         capture(replay(args.replay), args.output, stop, parser=parser, metadata=metadata)
 

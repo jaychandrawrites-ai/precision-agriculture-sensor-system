@@ -2,6 +2,9 @@
 import base64
 from datetime import datetime, timezone
 import json
+from pathlib import Path
+
+from Acquisition.Archives import raw_records
 
 
 def write_json(file, record):
@@ -15,11 +18,10 @@ def log_raw(file, timestamp, line):
 
 
 def replay(path):
-    with open(path, "rb") as file:
+    path = Path(path)
+    if path.suffix == ".jsonl":
+        yield from raw_records(path)
+        return
+    with path.open("rb") as file:
         for line in file:
-            timestamp = datetime.now(timezone.utc)
-            if path.suffix == ".jsonl":
-                entry = json.loads(line)
-                timestamp = datetime.fromisoformat(entry["received_at"])
-                line = base64.b64decode(entry["line_b64"], validate=True)
-            yield timestamp, line
+            yield datetime.now(timezone.utc), line

@@ -16,15 +16,17 @@ def _save_reading(file, reading):
     write_json(file, record)
 
 
-def capture(lines, output, stop=None, *, parser=None, metadata=None):
+def capture(lines, output, stop=None, *, parser=None, metadata=None, session_stop=None):
     parser = PacketParser() if parser is None else parser
     timestamp = None
-    with session(output, metadata=metadata) as (raw, readings):
+    lifecycle = stop if session_stop is None else session_stop
+    with session(output, metadata=metadata, stop=lifecycle) as (raw, readings):
         try:
-            for timestamp, line in lines:
+            for received_at, line in lines:
                 if stop is not None and stop.is_set():
                     break
-                log_raw(raw, timestamp, line)
+                log_raw(raw, received_at, line)
+                timestamp = received_at
                 reading = parser.feed(line.decode("utf-8", errors="replace"), timestamp)
                 if reading is not None:
                     _save_reading(readings, reading)
