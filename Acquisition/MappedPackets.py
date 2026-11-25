@@ -6,6 +6,7 @@ import json
 import math
 
 from Acquisition.SensorData import SensorData
+from Acquisition.Sequence import SequenceTracker
 
 
 # Canonical ranges are acquisition checks, not calibration endpoints.
@@ -41,6 +42,8 @@ class PacketSchema:
     duplicate_cache: int = 4096
     label: str = "caller_configured_json"
     constants: dict = field(default_factory=dict)
+    sequence_key: str | None = None
+    sequence_modulus: int | None = None
 
     def __post_init__(self):
         if not self.fields or not self.fields.keys() <= FIELDS.keys():
@@ -49,7 +52,7 @@ class PacketSchema:
         if gps and gps != GPS_FIELDS:
             raise ValueError("Map latitude and longitude together")
         keys = [self.packet_id_key, self.device_id_key, self.observed_at_key,
-                self.boot_id_key, self.gps_fix_key]
+                self.boot_id_key, self.gps_fix_key, self.sequence_key]
         for name, spec in self.fields.items():
             if spec.unit not in FIELDS[name][2]:
                 raise ValueError(f"Unsupported packet unit for {name}")
@@ -61,6 +64,12 @@ class PacketSchema:
             raise ValueError("Invalid packet keys, label, or deduplication cache size")
         if self.boot_id_key is not None and self.packet_id_key is None:
             raise ValueError("Boot identity requires a packet ID")
+        if (self.sequence_key is None) != (self.sequence_modulus is None):
+            raise ValueError("Configure both sequence key and counter modulus")
+        if self.sequence_key is not None:
+            if self.device_id_key is None or self.boot_id_key is None:
+                raise ValueError("Sequence tracking requires node and boot identities")
+            SequenceTracker(self.sequence_modulus)
         if self.gps_fix_key is not None and gps != GPS_FIELDS:
             raise ValueError("A fix flag requires mapped GPS coordinates")
 
@@ -93,6 +102,8 @@ class MappedPacketParser:
     def __init__(self, schema):
         self.schema = schema
         self.seen = OrderedDict()
+        self.sequence = (None if schema.sequence_key is None
+                         else SequenceTracker(schema.sequence_modulus, schema.duplicate_cache))
 
     def finish(self, received_at):
         return None
@@ -136,6 +147,11 @@ class MappedPacketParser:
             self.seen[key] = None
             if len(self.seen) > self.schema.duplicate_cache:
                 self.seen.popitem(last=False)
+        if self.sequence is not None:
+            sequence_flags = self.sequence.update(device, boot, message.get(self.schema.sequence_key))
+            flags.extend(sequence_flags)
+            if "duplicate_sequence" in sequence_flags:
+                return SensorData(received_at, {}, (*flags, "duplicate_packet"), observed, device, identifier)
         for name, spec in self.schema.fields.items():
             raw = message.get(spec.key)
             if raw is None:
