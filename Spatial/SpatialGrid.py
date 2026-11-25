@@ -24,17 +24,22 @@ class SpatialGrid:
 
     def __post_init__(self):
         for name in ("east", "north"):
-            axis = np.asarray(getattr(self, name), dtype=float)
+            axis = np.array(getattr(self, name), dtype=float, copy=True)
             if axis.ndim != 1 or len(axis) < 2 or not np.isfinite(axis).all():
                 raise ValueError("Grid axes must contain at least two finite coordinates")
             spacing = np.diff(axis)
             if (spacing <= 0).any() or not np.allclose(spacing, spacing[0]):
                 raise ValueError("Grid coordinates must be evenly spaced and increasing")
+            axis.setflags(write=False)
             object.__setattr__(self, name, axis)
 
     @property
     def shape(self):
         return len(self.north), len(self.east)
+
+    @property
+    def spacing(self):
+        return self.east[1] - self.east[0], self.north[1] - self.north[0]
 
     def points(self):
         east, north = np.meshgrid(self.east, self.north)

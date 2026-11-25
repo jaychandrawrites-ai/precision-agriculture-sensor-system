@@ -19,7 +19,7 @@ def seed_constraints(grid, points, values, weight, hard=False, boundary=None,
             or not np.isfinite(values).all() or not np.isfinite(points).all()
             or not np.isfinite(weight) or weight <= 0):
         raise ValueError("Expected finite measurements and positive seed weight")
-    spacing = [grid.east[1] - grid.east[0], grid.north[1] - grid.north[0]]
+    spacing = grid.spacing
     offsets = (points - [grid.east[0], grid.north[0]]) / spacing
     if ((offsets < -1e-10) | (offsets > np.array(grid.shape[::-1]) - 1 + 1e-10)).any():
         raise ValueError("All seed coordinates must be inside the grid")
@@ -30,7 +30,7 @@ def seed_constraints(grid, points, values, weight, hard=False, boundary=None,
     observed = counts > 0
     targets = np.divide(totals, counts, out=np.zeros_like(totals), where=observed)
     # Keep the original per-cell penalty even when multiple points share a cell.
-    weights = np.where(observed & ~np.full(grid.shape, hard), weight, 0.0)
+    weights = np.zeros(grid.shape) if hard else np.where(observed, weight, 0.0)
     fixed = observed.copy() if hard else np.zeros_like(observed)
     fixed_values = targets.copy() if hard else np.zeros_like(targets)
     if boundary is not None:

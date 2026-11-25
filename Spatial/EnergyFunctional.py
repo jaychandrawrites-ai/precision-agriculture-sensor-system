@@ -18,7 +18,7 @@ class EnergyWeights:
 class EnergyFunctional:
     def __init__(self, grid, constraints, backend, weights=EnergyWeights(), boundary="neumann"):
         self.grid, self.backend, self.weights, self.boundary = grid, backend, weights, boundary
-        self.dx, self.dy = grid.east[1] - grid.east[0], grid.north[1] - grid.north[0]
+        self.dx, self.dy = grid.spacing
         if boundary not in ("neumann", "periodic"):
             raise ValueError("Unsupported Laplacian boundary")
         with backend.scope():

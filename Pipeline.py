@@ -9,7 +9,7 @@ import pandas as pd
 from Acquisition.Calibration import LeafCalibration, SoilCalibration
 from Acquisition.FieldFeatures import field_features
 from Acquisition.Hourly import session_hourly
-from assumptions import Assumptions, CropAssumptions, LeafAssumptions, SiteAssumptions, SoilAssumptions
+from assumptions import Assumptions
 from azmet import prepare
 from config import FEATURES, SpatialConfig, TrainingConfig
 from Data.DataQuality import invalid_rows
@@ -34,11 +34,7 @@ def train_historical(source, configuration, checkpoint, settings=TrainingConfig(
 
 
 def prepare_session(readings, configuration):
-    physical = configuration.get("assumptions", {})
-    site = Assumptions(soil=SoilAssumptions(**physical.get("soil", {})),
-                       site=SiteAssumptions(**physical.get("site", {})),
-                       crop=CropAssumptions(**physical.get("crop", {})),
-                       leaf=LeafAssumptions(**physical.get("leaf", {})))
+    site = Assumptions.from_dict(configuration.get("assumptions", {}))
     reference = ReferenceET(site.site.latitude_deg, **configuration["reference_et"])
     leaf = LeafCalibration(**configuration["leaf_calibration"])
     soil = SoilCalibration(**configuration["soil_calibration"])
@@ -50,6 +46,8 @@ def prepare_session(readings, configuration):
 def forecast_session(readings, configuration, checkpoint, steps, *, device="cpu"):
     features, flags, provenance, gps, coverage = prepare_session(readings, configuration)
     forecaster = load_forecaster(checkpoint, device)
+    if not provenance["complete_hour_bins_only"]:
+        raise ValueError("Forecasting requires closed hourly bins")
     verified = forecaster.require_compatible_field(provenance)
     history = features.iloc[-3:].to_numpy()
     if len(history) < 3 or invalid_rows(history).any():
