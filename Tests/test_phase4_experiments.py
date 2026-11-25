@@ -21,3 +21,29 @@ class ExperimentTests(unittest.TestCase):
         report = paired_rmse_difference(truth + 2, truth + 3, truth, block=24, draws=20)
         for key in ("lower", "upper", "difference"):
             np.testing.assert_array_equal(report[key], -np.ones((3, 6)))
+
+    def test_resumed_search_matches_uninterrupted_all_modes(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from config import EvolutionConfig
+        from Evolution.Fitness import Candidate
+        from Evolution.Resumable import SearchOptions, run_search
+
+        def score(genome):
+            dimensions = genome.architecture()[0]
+            return Candidate(genome, float(sum(dimensions)), sum(dimensions), sum(dimensions), 10, 2)
+
+        budget = EvolutionConfig(population=5, generations=4)
+        options = SearchOptions(workers=2, cache=True)
+        with TemporaryDirectory() as directory:
+            for mode in ("classical_ga", "quantum_inspired", "random"):
+                first = Path(directory) / (mode + "first.json")
+                second = Path(directory) / (mode + "second.json")
+                expected = run_search(mode, score, budget, 98, first, "fixture", options)
+                partial = run_search(mode, score, budget, 98, second, "fixture", options, stop_after=2)
+                self.assertEqual(len(partial[1]), 2)
+                resumed = run_search(mode, score, budget, 98, second, "fixture", options)
+                self.assertEqual(expected, resumed)
+                with self.assertRaisesRegex(ValueError, "recipe"):
+                    run_search(mode, score, budget, 98, second, "changed data", options)

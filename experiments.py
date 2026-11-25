@@ -2,6 +2,7 @@
 import argparse
 from dataclasses import replace
 import json
+from pathlib import Path
 from time import perf_counter
 
 from config import EvolutionConfig, TrainingConfig
@@ -12,6 +13,7 @@ from Data.TimeSeries import calendar_cutoffs
 from Evolution.Diagnostics import diversity, pareto_front, random_search
 from Evolution.Fitness import validation_fitness
 from Evolution.GeneticAlgorithm import search as genetic_search
+from Evolution.Resumable import SearchOptions, run_search, validation_fingerprint
 from Framework.Backend import create_backend
 from QuantumInspired.QuantumEvolution import search as amplitude_search
 from Temporal.Baselines import baseline_forecasts
@@ -23,7 +25,8 @@ from Temporal.Validator import evaluate_rollouts, evaluate_rows
 from Utils.Metrics import horizon_metrics, physical_metrics
 
 
-def compare(values, timestamps, settings, budget, *, recursive=False, include_random=False):
+def compare(values, timestamps, settings, budget, *, recursive=False, include_random=False,
+            search_directory=None, search_options=SearchOptions()):
     cutoffs = (calendar_cutoffs(timestamps, settings.train_fraction, settings.validation_fraction)
                if recursive else None)
     dataset = build_dataset(values, timestamps, settings.train_fraction,
@@ -33,15 +36,28 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
         windows = tuple(rollout_windows(dataset, rows, values, timestamps, settings.rollout_steps)
                         for rows in (dataset.train, dataset.validation))
     score = validation_fitness(dataset, settings, budget, rollout_windows_pair=windows)
-    selections = {"fixed": ((settings.hidden, ()), [], None, 0.0)}
+    selections = {"fixed": ((settings.hidden, ()), [], None, 0.0, [])}
+    if search_directory is not None:
+        search_directory = Path(search_directory)
+        search_directory.mkdir(exist_ok=True)
+        fingerprint = validation_fingerprint(dataset, settings, windows)
+        if settings.device != "cpu" and search_options.workers > 1:
+            raise ValueError("Parallel candidate training is CPU-only")
     searches = {"classical_ga": genetic_search, "quantum_inspired": amplitude_search}
     if include_random:
         searches["random"] = random_search
     for name, search in searches.items():
         started = perf_counter()
-        winner, history = search(score, budget, seed=settings.seed)
+        generation_report = []
+        if search_directory is None:
+            winner, history = search(score, budget, seed=settings.seed)
+        else:
+            winner, history, generation_report = run_search(
+                name, score, budget, settings.seed, search_directory / f"{name}.json",
+                fingerprint, search_options
+            )
         candidates = [candidate for generation in history for candidate in generation]
-        selections[name] = (winner.genome.architecture(), candidates, winner, perf_counter() - started)
+        selections[name] = (winner.genome.architecture(), candidates, winner, perf_counter() - started, generation_report)
 
     # Test windows and scores are only constructed once both selections are final.
     if recursive:
@@ -51,7 +67,7 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
             raise ValueError("No complete held-out windows for the experiment horizon")
         persistence, seasonal, fallback = baseline_forecasts(values, timestamps, test)
     reports = {}
-    for name, ((hidden, skips), candidates, winner, search_seconds) in selections.items():
+    for name, ((hidden, skips), candidates, winner, search_seconds, generation_report) in selections.items():
         backend = create_backend(settings.device, settings.dtype, settings.seed)
         model = TemporalModel(backend, hidden, settings.dropout, skips)
         started = perf_counter()
@@ -76,6 +92,7 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
             "selection_score": winner.score if winner is not None else None,
             "winning_bits": winner.genome.bits if winner is not None else None,
             "candidate_diversity": diversity(candidates),
+            "generations": generation_report,
             "validation_pareto_front": [
                 {"bits": item.genome.bits, "validation_loss": item.validation_loss,
                  "parameters": item.parameters} for item in pareto_front(candidates)
@@ -123,6 +140,9 @@ def main():
     parser.add_argument("--candidate-epochs", type=int, default=EvolutionConfig().candidate_epochs)
     parser.add_argument("--candidate-parameter-step-limit", type=int)
     parser.add_argument("--seed", type=int, default=TrainingConfig().seed)
+    parser.add_argument("--search-directory", type=Path)
+    parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--cache-fitness", action="store_true")
     parser.add_argument("--random-baseline", action="store_true")
     parser.add_argument("--legacy", action="store_true")
     args = parser.parse_args()
@@ -131,7 +151,8 @@ def main():
                              candidate_epochs=args.candidate_epochs,
                              candidate_parameter_step_limit=args.candidate_parameter_step_limit)
     report = compare(*read_hourly(args.source), settings, budget, recursive=not args.legacy,
-                     include_random=args.random_baseline)
+                     include_random=args.random_baseline, search_directory=args.search_directory,
+                     search_options=SearchOptions(workers=args.workers, cache=args.cache_fitness))
     print(json.dumps(report, allow_nan=False, indent=2))
 
 
