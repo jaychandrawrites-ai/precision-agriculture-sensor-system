@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="jupiter-token" content="DASHBOARD_TOKEN">
+  <title>Jupiter research console</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<main>
+  <header><p class="eyebrow">JUPITER</p><h1>Research console</h1><p>Local dataset, model and field jobs</p></header>
+  <section class="panel">
+    <h2>New job</h2>
+    <form id="job">
+      <label>Operation
+        <select id="kind">
+          <option value="inspect">Inspect dataset schema</option>
+          <option value="train">Train temporal model</option>
+          <option value="forecast">Forecast with a saved model</option>
+          <option value="replay">Replay mapped packets</option>
+          <option value="live" id="live-option" hidden>Capture live serial readings</option>
+          <option value="spatial">Reconstruct a field snapshot</option>
+        </select>
+      </label>
+      <label id="data-label"><span id="source-name">Input dataset</span><input id="data" type="file" required></label>
+      <label id="config-label" hidden>Configuration JSON<input id="config" type="file" accept=".json"></label>
+      <label id="port-label" hidden>Allowed serial port<select id="port"></select></label>
+      <label id="baud-label" hidden>Baud rate<input id="baud" type="number" min="300" max="1000000" value="9600"></label>
+      <label id="epoch-label" hidden>Training epochs<input id="epochs" type="number" min="1" max="300" value="30"></label>
+      <label id="step-label" hidden>Forecast hours<input id="steps" type="number" min="1" max="168" value="6"></label>
+      <label id="model-label" hidden>Saved model<select id="model"></select></label>
+      <button type="submit">Queue job</button><p id="notice" role="status"></p>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>Jobs and exports</h2><ul id="jobs"></ul>
+  </section>
+  <section id="details" class="panel" hidden>
+    <h2 id="detail-title">Result</h2>
+    <canvas id="plot" width="900" height="290" aria-label="Result chart" role="img" hidden></canvas>
+    <canvas id="uncertainty" width="900" height="290" role="img" aria-label="Spatial standard deviation" hidden></canvas>
+    <pre id="report"></pre>
+  </section>
+</main>
+</body>
+</html>
