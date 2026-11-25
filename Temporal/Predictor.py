@@ -8,6 +8,14 @@ def forecast(model, history, input_scaler, target_scaler, backend, steps,
     if steps<1:
         raise ValueError("Forecast horizon must be positive")
     history=np.asarray(history,dtype=float)
+    options = getattr(model, "rollout_options", None)
+    if options is not None:
+        from Temporal.Rollout import Rollout
+
+        latest_input(history, interval_hours)
+        engine = Rollout(model, input_scaler, target_scaler, backend, options,
+                         interval_hours, crop_coefficient)
+        return engine.predict(history[None, -3:], steps)[0]
     latest_input(history,interval_hours)
     rolling=list(history[-3:].copy())
     predictions=[]

@@ -2,6 +2,9 @@
 import numpy as np
 from config import FEATURES
 
+LOWER = (-60, 0, 0, 0, 0, 0)
+UPPER = (65, 100, 1, np.inf, np.inf, np.inf)
+
 def violations(values,crop_coefficient=None):
     x=np.asarray(values,dtype=float)
     if x.ndim<1 or x.shape[-1]!=len(FEATURES):
@@ -24,10 +27,7 @@ def project(values,crop_coefficient=None):
     x=np.asarray(values,dtype=float).copy()
     if x.shape[-1]!=6 or not np.isfinite(x).all():
         raise ValueError("Cannot project invalid features")
-    x[...,0]=np.clip(x[...,0],-60,65)
-    x[...,1]=np.clip(x[...,1],0,100)
-    x[...,2]=np.clip(x[...,2],0,1)
-    x[...,3:]=np.maximum(x[...,3:],0)
+    x = np.clip(x, LOWER, UPPER)
     if crop_coefficient is not None:
         if crop_coefficient<0:
             raise ValueError("Negative crop coefficient")

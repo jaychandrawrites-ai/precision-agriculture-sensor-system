@@ -30,3 +30,14 @@ def latest_input(history, interval_hours=1.0):
     if not np.isfinite([a,b,c]).all():
         raise ValueError("Nonfinite history")
     return np.concatenate((c,(c-b)/interval_hours,(c-2*b+a)/interval_hours**2))
+
+
+def lag_coefficients(smoothing=1.0, interval_hours=1.0):
+    """Three causal lags, oldest first. Blend the two available backward slopes."""
+    if not 0 <= smoothing <= 1 or not np.isfinite(interval_hours) or interval_hours <= 0:
+        raise ValueError("Invalid derivative settings")
+    return np.array([
+        [0, 0, 1],
+        [smoothing - 1, 1 - 2 * smoothing, smoothing],
+        [1, -2, 1],
+    ]) / np.array([[1], [interval_hours], [interval_hours**2]])

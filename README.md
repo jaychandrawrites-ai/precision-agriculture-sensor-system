@@ -91,9 +91,9 @@ python main.py demo
 ```
 
 The demo uses an explicitly synthetic periodic series. Its metrics describe that
-fixture only. Training selects a checkpoint using one-step validation loss.
-The report includes held-out one-step and per-horizon recursive metrics against
-persistence. Recursive errors can grow substantially even with low one-step loss.
+fixture only. The default model selects a checkpoint using six-step validation
+loss and requires complete six-hour windows in the training and validation
+splits. The report includes held-out one-step and per-horizon metrics.
 
 ### Prepare, train, and forecast
 
@@ -146,3 +146,26 @@ project GPS into local meters and `Spatial.Validation.evaluate_held_out`
 to compare variational reconstruction, IDW and ordinary kriging at
 separate measurement sites. Choose the kriging range with training data
 or domain knowledge before scoring the held-out sites.
+
+### Recursive forecast stability
+
+The training CLI and synthetic demo use a smoothed delta model with six
+steps of unrolled training. For the original one-step state model, pass
+`--legacy` to either command. Saved version 1 checkpoints still load through
+`forecast.py`. Version 2 stores the derivative and output settings needed to
+reproduce the training-time recurrence.
+
+```sh
+python main.py demo
+python rollout_study.py --seeds 42 43 44 --steps 6 > rollout-study.json
+python rollout_study.py prepared_hourly.csv --seeds 42 43 44 --steps 24 > rollout-24h.json
+```
+
+The study compares both baselines and all model variants on the same complete
+test windows for a requested horizon. Seasonal persistence repeats the last
+known daily cycle and falls back to ordinary persistence if the seasonal
+observation is missing. It uses a fixed 24-hour UTC lag. The report includes
+window counts and dates, forecast metrics before and after physical projection,
+projection counts, normalized input and step sizes, and training gradient
+statistics. Inspect [BUILD_LOG.md](BUILD_LOG.md) for the synthetic results and
+the drop in accuracy seen beyond six hours.
