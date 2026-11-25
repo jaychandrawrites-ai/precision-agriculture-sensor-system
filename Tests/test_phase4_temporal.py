@@ -63,3 +63,39 @@ class DirectTests(unittest.TestCase):
         self.assertAlmostEqual(result["threshold"], 2.9)
         self.assertEqual(result["groups"]["flagged"]["origins"], 2)
         np.testing.assert_array_equal(result["groups"]["within_reference"]["rmse"], 1)
+
+    def test_rollout_resume_reproduces_uninterrupted_training_with_dropout(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from Data.Dataset import build_dataset
+        from Data.RolloutWindows import rollout_windows
+        from Temporal.Model import TemporalModel
+        from Temporal.Rollout import RolloutOptions
+        from Temporal.RolloutTrainer import fit_rollout
+
+        frame = synthetic_history()
+        values = frame.iloc[:, 1:].to_numpy()
+        times = frame.timestamp.to_numpy(dtype="datetime64[ns]")
+        dataset = build_dataset(values, times)
+        training, validation = (rollout_windows(dataset, rows, values, times, 6)
+                                for rows in (dataset.train, dataset.validation))
+        settings = TrainingConfig(epochs=4, hidden=(8,), dropout=.2, batch_size=32)
+
+        def run(path=None, stop=None):
+            backend = create_backend(seed=settings.seed)
+            model = TemporalModel(backend, settings.hidden, settings.dropout)
+            result, _, _ = fit_rollout(model, dataset, training, validation, backend,
+                                       settings, RolloutOptions(), warmup_epochs=1,
+                                       recovery_path=path, stop_after_epoch=stop)
+            return result.history, model.state_dict(backend)
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "recover.json"
+            expected, expected_weights = run()
+            initial, _ = run(path, 2)
+            actual, weights = run(path)
+        self.assertEqual(initial, expected[:2])
+        self.assertEqual(expected, actual)
+        for name in weights:
+            np.testing.assert_array_equal(weights[name], expected_weights[name])

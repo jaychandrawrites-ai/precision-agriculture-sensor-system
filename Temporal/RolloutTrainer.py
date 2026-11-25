@@ -8,10 +8,13 @@ from Framework.Scheduler import CosineAnnealing
 from Temporal.Losses import regression_loss
 from Temporal.Rollout import Rollout
 from Temporal.Trainer import FitResult
+from Temporal.TrainingRecovery import (decode_runtime, read_recovery, recipe,
+                                       serialize_runtime, write_recovery)
 
 
 def fit_rollout(model, dataset, training, validation, backend, settings, options,
-                autoregressive=True, optimizer="adam", loss="huber", warmup_epochs=0):
+                autoregressive=True, optimizer="adam", loss="huber", warmup_epochs=0,
+                *, recovery_path=None, stop_after_epoch=None):
     if not len(training.starts) or not len(validation.starts):
         raise ValueError("Need complete chronological training and validation windows")
     if not 0 <= warmup_epochs < settings.epochs:
@@ -33,7 +36,34 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
     peak_gradient_norm = 0.0
     clipped_updates = 0
     history = []
-    for epoch in range(1, settings.epochs + 1):
+    start = 0
+    if recovery_path is not None:
+        if backend.is_gpu:
+            raise ValueError("Exact rollout recovery is available for CPU training")
+        identity = recipe(model, settings, options, training, validation, input_scaler,
+                          dataset.target_scaler, optimizer=optimizer, loss=loss,
+                          autoregressive=autoregressive, warmup_epochs=warmup_epochs)
+        recovery = read_recovery(recovery_path, identity)
+        if recovery is not None:
+            start = recovery["epoch"]
+            history = recovery["history"]
+            best_epoch = recovery["best_epoch"]
+            best = history[best_epoch - 1]
+            peak_gradient_norm = recovery["peak_gradient_norm"]
+            clipped_updates = recovery["clipped_updates"]
+            weights, opt_state, schedule_state, shuffle_state, rng_state = decode_runtime(
+                recovery["best"], model, backend
+            )
+            last = decode_runtime(recovery["last"], model, backend)
+            model.load_state_dict(last[0], backend)
+            opt.load_state_dict(last[1])
+            schedule.load_state_dict(last[2])
+            loader.rng.bit_generator.state = last[3]
+            backend.rng.set_state(last[4])
+    budget = settings.epochs if stop_after_epoch is None else min(settings.epochs, stop_after_epoch)
+    if budget < 1:
+        raise ValueError("Training budget must allow at least one epoch")
+    for epoch in range(start + 1, budget + 1):
         for inputs, targets, _ in loader:
             opt.zero_grad()
             engine.objective(inputs, targets, autoregressive=autoregressive and epoch > warmup_epochs,
@@ -54,6 +84,15 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
             schedule_state = schedule.state_dict()
             shuffle_state = deepcopy(loader.rng.bit_generator.state)
             rng_state = deepcopy(backend.rng.get_state()) if not backend.is_gpu else None
+
+        if recovery_path is not None:
+            write_recovery(recovery_path, {
+                "recipe": identity, "epoch": epoch, "best_epoch": best_epoch, "history": history,
+                "peak_gradient_norm": peak_gradient_norm, "clipped_updates": clipped_updates,
+                "last": serialize_runtime(model, backend, opt, schedule, loader),
+                "best": {"weights": weights, "optimizer": opt_state, "schedule": schedule_state,
+                         "shuffle_rng": shuffle_state, "backend_rng": rng_state},
+            })
 
     model.load_state_dict(weights, backend)
     result = FitResult(best, best_epoch, history, opt_state, schedule_state, shuffle_state, rng_state)

@@ -19,21 +19,23 @@ from Utils.Checkpoints import save
 from Utils.Metrics import horizon_metrics, physical_metrics as _physical_metrics
 
 
-def train(source, checkpoint, settings, optimizer="adam", loss="huber", stable_rollout=False):
+def train(source, checkpoint, settings, optimizer="adam", loss="huber", stable_rollout=False, *, recovery_path=None):
     values, timestamps = read_hourly(source)
     return train_values(values, timestamps, checkpoint, settings, optimizer, loss,
-                        stable_rollout=stable_rollout)
+                        stable_rollout=stable_rollout, recovery_path=recovery_path)
 
 
 def train_values(values, timestamps, checkpoint, settings, optimizer="adam", loss="huber",
-                 *, stable_rollout=True, provenance=None, cutoffs=None):
+                 *, stable_rollout=True, provenance=None, cutoffs=None, recovery_path=None):
     dataset = build_dataset(values, timestamps, settings.train_fraction,
                             settings.validation_fraction, cutoffs=cutoffs)
     backend = create_backend(settings.device, settings.dtype, settings.seed)
     model = TemporalModel(backend, settings.hidden, settings.dropout)
     if stable_rollout:
         return _train_stable(checkpoint, settings, optimizer, loss, values, timestamps,
-                             dataset, model, backend, provenance)
+                             dataset, model, backend, provenance, recovery_path)
+    if recovery_path is not None:
+        raise ValueError("Use stable rollout training for epoch recovery")
     result = fit(model, dataset, backend, settings, optimizer, loss)
     metrics = evaluate_rows(model, dataset, dataset.test, backend)
     rollout = evaluate_rollouts(model, dataset, dataset.test, values, timestamps,
@@ -51,7 +53,7 @@ def train_values(values, timestamps, checkpoint, settings, optimizer="adam", los
 
 
 def _train_stable(checkpoint, settings, optimizer, loss, values, timestamps,
-                  dataset, model, backend, provenance):
+                  dataset, model, backend, provenance, recovery_path):
     steps = settings.rollout_steps
     training, validation, test = [
         rollout_windows(dataset, rows, values, timestamps, steps)
@@ -60,7 +62,7 @@ def _train_stable(checkpoint, settings, optimizer, loss, values, timestamps,
     options = RolloutOptions()
     result, inputs, fit_diagnostics = fit_rollout(
         model, dataset, training, validation, backend, settings, options,
-        optimizer=optimizer, loss=loss, warmup_epochs=settings.epochs // 3,
+        optimizer=optimizer, loss=loss, warmup_epochs=settings.epochs // 3, recovery_path=recovery_path,
     )
     engine = Rollout(model, inputs, dataset.target_scaler, backend, options)
     one_step = rollout_windows(dataset, dataset.test, values, timestamps, 1)
@@ -101,12 +103,13 @@ def main():
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--optimizer", choices=("adam", "sgd"), default="adam")
     parser.add_argument("--loss", choices=("huber", "mse"), default="huber")
+    parser.add_argument("--resume-state", help="Save or resume an epoch-boundary CPU training run")
     parser.add_argument("--legacy", action="store_true",
                         help="Use the original one-step state model")
     args = parser.parse_args()
     settings = replace(TrainingConfig(), epochs=args.epochs, device=args.device)
     print(json.dumps(train(args.source, args.checkpoint, settings, args.optimizer, args.loss,
-                           stable_rollout=not args.legacy), indent=2, allow_nan=False))
+                           stable_rollout=not args.legacy, recovery_path=args.resume_state), indent=2, allow_nan=False))
 
 
 if __name__ == "__main__":
