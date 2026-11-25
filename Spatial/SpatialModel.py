@@ -25,15 +25,19 @@ def reconstruct(grid, points, values, backend, settings, hard_seeds=False):
 
 
 def reconstruct_variational(grid, points, values, backend, settings, *, hard_seeds=False,
-                            boundary_values=None, boundary_weight=None, boundary="neumann"):
+                            boundary_values=None, boundary_weight=None, boundary="neumann",
+                            algorithm="descent"):
     """Build a model energy and minimize it from an IDW initialization."""
     from Spatial.EnergyFunctional import EnergyFunctional, EnergyWeights
     from Spatial.SeedManager import seed_constraints
-    from Spatial.VariationalSolver import minimize
+    from Spatial.VariationalSolver import minimize, minimize_conjugate
 
     constraints = seed_constraints(grid, points, values, settings.seed_weight, hard_seeds,
                                    boundary_values, boundary_weight)
     weights = EnergyWeights(settings.gradient_weight, settings.curvature_weight)
     energy = EnergyFunctional(grid, constraints, backend, weights, boundary)
     initial = idw(points, values, grid.points()).reshape(grid.shape)
-    return energy, minimize(energy, initial, iterations=settings.iterations)
+    solvers = {"descent": minimize, "conjugate_gradient": minimize_conjugate}
+    if algorithm not in solvers:
+        raise ValueError("Unsupported variational solver")
+    return energy, solvers[algorithm](energy, initial, iterations=settings.iterations)

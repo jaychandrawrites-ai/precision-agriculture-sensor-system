@@ -98,6 +98,12 @@ def session_hourly(path, leaf, soil, *, minimum_count=1, clock="received_at", de
         closed = hourly.index <= watermark
         counts["unfinished_hour_bins"] = int((~closed).sum())
         hourly, flags, coverage = hourly.loc[closed], flags.loc[closed], coverage.loc[closed]
+        if not hourly.empty and cutoff is not None:
+            span = pd.date_range(hourly.index[0], cutoff.floor("h"), freq="h", name="timestamp")
+            counts["empty_hours_after_last_bin"] = len(span) - len(hourly)
+            hourly = hourly.reindex(span)
+            flags = flags.reindex(span, fill_value=True)
+            coverage = coverage.reindex(span, fill_value=0)
         if hourly.empty:
             raise ValueError("Session has no closed hourly bins")
     gps = pd.DataFrame(fixes, columns=["timestamp", "device_id", "latitude_deg", "longitude_deg"])

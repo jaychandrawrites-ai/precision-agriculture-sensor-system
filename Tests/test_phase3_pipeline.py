@@ -93,6 +93,11 @@ class SensorTests(unittest.TestCase):
             snapshot, _, _ = session_hourly(path, **options)
             self.assertEqual(snapshot.provenance["packet_counts"]["unfinished_hour_bins"], 1)
             self.assertEqual(snapshot.values.index[-1], cutoff)
+            later = start + timedelta(hours=4)
+            stale, _, _ = session_hourly(path, as_of=later.isoformat(), **options)
+            self.assertEqual(stale.values.index[-1], later)
+            self.assertTrue(stale.flags.missing_hour.iloc[-1])
+            self.assertTrue(np.isnan(stale.values.air_temperature_c.iloc[-1]))
 
 
 class IntegrationTests(unittest.TestCase):

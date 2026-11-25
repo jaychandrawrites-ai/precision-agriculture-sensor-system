@@ -109,6 +109,7 @@ def map_measurements(source, configuration, output):
         boundary_values=configuration.get("boundary_values"),
         boundary_weight=configuration.get("boundary_weight"),
         boundary=configuration.get("laplacian_boundary", "neumann"),
+        algorithm=configuration.get("algorithm", "descent"),
     )
     arrays = {"east_m": grid.east, "north_m": grid.north, "variational": result.field,
               "idw": result.idw}
@@ -116,6 +117,7 @@ def map_measurements(source, configuration, output):
         arrays["kriging"] = result.kriging
     report = {"measurement_count": len(snapshot), "feature": field_name,
               "source_sha256": sha256(payload).hexdigest(),
+              "algorithm": configuration.get("algorithm", "descent"),
               "timestamp": timestamp.isoformat(), "converged": result.solver.converged,
               "iterations": result.solver.iterations, "gradient_rms": result.solver.gradient_rms,
               "initial_energy": result.solver.energies[0], "final_energy": result.solver.energies[-1]}

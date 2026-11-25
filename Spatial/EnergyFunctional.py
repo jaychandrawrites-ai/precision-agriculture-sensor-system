@@ -42,6 +42,17 @@ class EnergyFunctional:
         with self.backend.scope():
             return self.backend.xp.where(self.fixed, self.fixed_values, field)
 
+    def hessian_vector(self, direction):
+        """Apply the linear Hessian without materializing a dense field matrix."""
+        if direction.shape != self.grid.shape:
+            raise ValueError("Direction must match the grid")
+        with self.backend.scope():
+            lap = laplacian(direction, self.backend, self.dx, self.dy, self.boundary)
+            return (-self.weights.gradient * lap +
+                    self.weights.curvature * laplacian(lap, self.backend, self.dx,
+                                                        self.dy, self.boundary) +
+                    self.fidelity * direction)
+
     def value_gradient(self, field):
         if field.shape != self.grid.shape:
             raise ValueError("Field must match the grid")
