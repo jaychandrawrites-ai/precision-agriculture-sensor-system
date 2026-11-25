@@ -24,3 +24,22 @@ Arduino: SEN0604 soil moisture/temp/EC/pH, SHT45 air temperature/RH, PHYTOS31 le
 
 ## Completion criteria
 A clean checkout installs dependencies, passes relevant tests and runs an explicitly synthetic offline end-to-end demonstration. Real dataset and sensor runs are separate and must be documented as pending if inputs are unavailable. Report actual test outputs and unresolved blockers. Preserve all original hardware source. Do not overwrite main automatically.
+
+## Phase 4 follow-up
+
+The development branch includes the verified Tucson 2019 hourly mapping,
+separate experimental direct and hybrid studies, CPU epoch recovery, resumable
+validation-only architecture search, robust anisotropic reconstruction,
+burn-in-only Monte Carlo adaptation, multi-site forecasts and the loopback
+research dashboard. The Arduino source remains available on both development
+and archival branches.
+
+Prioritize independent, multi-station temporal evaluation and verified
+calibration before using forecasts for field decisions. The Tucson benchmark
+favored seasonal persistence at 12, 24 and 48 hours. Additional work includes
+evaluation on independent seasons, integrating model uncertainty into spatial
+maps, adaptive grids, sampling measurement and parameter uncertainty, validating
+the AquaMap protocol with hardware, and optional joint fitting with genuine
+paired field labels. GPU consistency and real serial tests require the target
+devices. Track these outcomes and maintain checked-in fixtures as explicitly
+synthetic data.

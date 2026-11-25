@@ -262,3 +262,125 @@ Tracked Python grew from 4,333 lines to 6,922 across 112 files, a net gain of
   observations, evaluate uncertainty calibration and train or validate joint
   losses only when independent paired field labels are available. GPU validation
   remains pending.
+
+## 2026-11-25 — Phase 4 extended development
+
+Started at `75fed9718c38433148832b947b39efecb4251261`. The original suite
+passed 31 tests. Verified `4f468ee604ab6b7b8e6f862bfc40770b60b20127` as the
+parent of the first implementation commit (`8f11b2c`). Its tree contains
+exactly 39 Python files plus AGENTS.md and PLANS.md, in addition to the
+original firmware and ancillary files. Published it as `jupiter-foundation`
+before editing the development branch. The functional implementation ends at
+`516014a84a9e12dccc80520792296db196611640`, followed by this documentation
+commit. No merge into main.
+
+### Files and counts
+
+- Numerics and physics. Updated `Numerical/Differentiation.py`,
+  `Numerical/ODESolver.py`, and `Physics/Leaf/LeafWetness.py`. Added
+  `Numerical/Optimization.py` with Armijo L-BFGS.
+- Historical data. Added `Data/StationAnalysis.py`, `station_study.py`,
+  `scenario_study.py`, and `Examples/azmet/tucson-2019.json`. Updated
+  `azmet.py` to record mapped station provenance.
+- Forecasting. Added `Temporal/Direct.py`, `Temporal/DirectCheckpoint.py`,
+  `Temporal/ForecastUncertainty.py`, `Temporal/TrainingRecovery.py`,
+  `direct_forecast.py`, and `forecast_benchmark.py`. Updated
+  `Temporal/RolloutTrainer.py` and `train.py`.
+- Spatial and integrated pipeline. Added `Spatial/Geostatistics.py`,
+  `Spatial/RobustField.py`, and `multisite.py`. Updated
+  `Spatial/Interpolation.py`, `Spatial/MonteCarlo.py`, `Pipeline.py`,
+  and `SpatiotemporalModel.py`.
+- Search and comparisons. Added `Evolution/Diagnostics.py`,
+  `Evolution/Resumable.py`, and `Utils/Bootstrap.py`. Updated
+  `experiments.py` with random search, validation Pareto fronts, and
+  generation recovery. Cache hits and physical evaluations are reported
+  separately. Resume verifies the data, implementation, recipe and RNG.
+- Acquisition. Added `Acquisition/Sequence.py` and `Acquisition/Health.py`.
+  Updated `Acquisition/Hourly.py`, `Acquisition/MappedPackets.py`,
+  `Acquisition/SerialReader.py`, and `acquire.py`.
+- Local application. Added `Dashboard/Jobs.py`, `Dashboard/Server.py`,
+  `Dashboard/__init__.py`, and three assets in `Dashboard/static/`
+  (`index.html`, `app.js`, `style.css`). HTTP tests exercised the
+  train-to-saved-forecast path through the existing CLI.
+- Verification and docs. Added `.github/workflows/jupiter-tests.yml` and
+  `Tests/test_phase4_acquisition.py`, `test_phase4_dashboard.py`,
+  `test_phase4_experiments.py`, `test_phase4_multisite.py`,
+  `test_phase4_numerical.py`, `test_phase4_spatial.py`,
+  `test_phase4_station.py`, and `test_phase4_temporal.py` under `Tests/`.
+  Updated README.md, PLANS.md, and BUILD_LOG.md.
+
+Git numstat reports 2,494 Python insertions and 53 deletions. Tracked Python
+grew from 6,922 lines in 112 files to 9,363 lines in 141 files, a net gain
+of 2,441. The difference for all tracked files is 3087 insertions and
+53 deletions.
+
+### Reproduction and results
+
+- `OPENBLAS_NUM_THREADS=1 python -W error::DeprecationWarning -m unittest discover -s Tests -q`
+  passed 54 tests in the clean verification environment. This includes manual
+  gate and spatial finite differences, exact CPU recovery with dropout,
+  recovered searches matching uninterrupted searches, serial reconnect
+  fixtures, strict GPS receipt cutoffs, challenge cases for dashboard request
+  validation, and standalone model checkpoints. `node --check Dashboard/static/app.js`
+  and `python -m compileall -q .` passed.
+- The [AZMET 2019 Tucson archive](https://azmet.arizona.edu/azmet/data/0119rh.txt)
+  contained 8,760 records with 18 fields in the
+  [published raw format](https://azmet.arizona.edu/azmet/raw2003.htm).
+  SHA-256 `bc4dc71cccf96feaf649336cdc0234d8638ded745ab8273bf5a6f638956c3399`.
+  `python station_study.py tucson-study --station tucson-2019.txt Examples/azmet/tucson-2019.json`
+  produced 8,737 complete feature rows after the 23-hour trailing ET warmup.
+  The first full export attempt failed at a leaf ODE trial stage outside the
+  supported temperature range. A 60-second maximum leaf step preserved the
+  physical equations and allowed the run to finish. The Hargreaves proxy versus
+  archived station-estimated ET₀ had 0.099 mm hourly RMSE and −0.032 mm bias on
+  matched hours. The comparison preserved 1,098 negative station estimates.
+- `python forecast_benchmark.py tucson-study/az01/hourly.csv tucson-benchmark.json --epochs 8 --seeds 42 43`
+  evaluated 1,267 shared test origins and 610 distinct calibration origins.
+  Temperature RMSE in °C was as follows.
+
+| Method | 12 h | 24 h | 48 h |
+| --- | ---: | ---: | ---: |
+| Persistence | 9.729 | 3.901 | 5.156 |
+| Seasonal persistence | 3.895 | 3.901 | 5.156 |
+| Recursive | 9.864 | 14.179 | 18.718 |
+| Gated direct | 7.219 | 4.182 | 5.509 |
+| Horizon blend | 7.616 | 5.061 | 5.697 |
+
+The gated direct model’s nominal 90% temperature interval covered 93.8%,
+89.7%, and 89.9% at 12, 24, and 48 hours. Mean interval widths were 25.89,
+14.09, and 17.82 °C, respectively. The period-derived OOD indicator flagged
+410 of 1,267 origins. The results describe one archive, with overlapping
+weather windows and separate marginal intervals. Seasonal persistence had
+the lowest RMSE at all three reported horizons.
+
+- Synthetic check. Generate the periodic fixture with
+  `python -c "from main import synthetic_history; synthetic_history(1152).to_csv('periodic.csv',index=False)"`.
+  Run `python forecast_benchmark.py periodic.csv periodic-results.json --epochs 8 --synthetic`.
+  The direct model’s 12/24/48-hour temperature RMSE was 8.105/2.849/7.733 °C
+  and the recursive model’s was 15.519/18.339/27.072 °C. Seasonal persistence
+  was effectively exact on this repeating fixture.
+- `python experiments.py periodic.csv --random-baseline --epochs 4 --population 3 --generations 2 --candidate-epochs 3`
+  allocated 86,184 training sample-steps per search. Six-hour synthetic
+  temperature RMSE was 20.491 °C (fixed and random), 21.765 °C (classical GA),
+  and 14.182 °C (classical amplitude search). This small search was a budget
+  and workflow check. Running the small parallel cached search twice with
+  the same `--search-directory` reproduced all three generation reports.
+- On the first 168 archive records, `scenario_study.py` estimated that changing
+  crop coefficient from 1.0 to 0.6 reduced hourly ETa by 0.0265 mm on average.
+  Changing the rain interception scenario from 0.05 to 0.01 reduced mean
+  simulated LWI by 0.0444. These are model sensitivities using common forcing,
+  with no observed ETa or LWI labels assumed.
+
+### Remaining work
+
+- Verify the actual AquaMap LoRa receiver and payload, calibration endpoints,
+  and device behavior with hardware. Acquisition tests used simulated inputs.
+- Broaden the temporal benchmark to independent years and stations. Improve
+  seasonal baselines, test equal-compute architectural comparisons, and
+  verify forecast reliability on independent periods. Spatial parameter
+  uncertainty, adaptive grids, joint fitting on genuine paired field labels,
+  and GPU consistency remain open.
+- Dashboard verification used loopback HTTP integration and JavaScript syntax
+  checking. Browser rendering, physical serial streaming and Windows execution
+  remain separate checks. GitHub Actions now defines Linux and Windows test
+  jobs, with actual runner results reported separately from local results.

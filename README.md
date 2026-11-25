@@ -278,3 +278,105 @@ equal sample-step budgets. An optional `--candidate-parameter-step-limit`
 also caps the parameter-weighted training work per candidate. The report
 includes both budgets and actual work proxies because architecture size
 changes arithmetic costs. `--legacy` uses the original one-step experiment.
+
+## Phase 4 research workflows
+
+### Verified AZMET archive
+
+The supplied mapping is specific to the published Tucson 2019 raw hourly
+archive. The archive stays outside the repository.
+
+```sh
+curl -fL https://azmet.arizona.edu/azmet/data/0119rh.txt -o tucson-2019.txt
+python azmet.py inspect tucson-2019.txt --headerless
+python station_study.py tucson-study --station tucson-2019.txt Examples/azmet/tucson-2019.json
+python forecast_benchmark.py tucson-study/az01/hourly.csv tucson-benchmark.json --epochs 8 --seeds 42 43
+```
+
+Repeat `--station SOURCE MAPPING` for separate station series. Each mapping
+needs a distinct station ID. The report contains monthly coverage and extremes,
+source SHA-256, and an optional comparison of Hargreaves with the archive’s
+station-estimated ET₀. Real station observations and derived or simulated
+features keep their original provenance labels.
+
+`scenario_study.py SOURCE MAPPING SCENARIOS OUTPUT` compares named physics
+assumption or forcing overrides against the reference scenario on matched
+hours. For example, use
+`{"lower_crop_coefficient":{"assumptions":{"soil":{"crop_coefficient":0.6}}}}`.
+Scenario output measures sensitivity to assumptions.
+
+### Experimental forecasters and recovery
+
+```sh
+python direct_forecast.py train prepared.csv direct.json --horizon 24
+python direct_forecast.py predict recent.csv direct.json direct.csv
+python train.py prepared.csv recursive.json --epochs 30 --resume-state training-state.json
+python experiments.py prepared.csv --random-baseline --search-directory search-state --workers 2
+```
+
+Repeat the same training command to resume a CPU run after a completed epoch.
+It validates the original schedule, data and architecture and restores the
+optimizer, shuffle stream and dropout RNG. Keep inference and recovery files
+separate. Search resumes at a completed generation. Optional
+`--cache-fitness` counts reused validation results separately from actual
+candidate work. Leave caching disabled when matching actual sample-step
+budgets. The amplitude-based search is classical.
+
+The benchmark keeps test origins fixed across direct, recursive, hybrid and
+persistence forecasts. It reserves separate validation periods for model
+selection and marginal interval estimation. Historical coverage and OOD
+flags are diagnostics. Weather-dependence and seasonal shift limit their
+interpretation. The models have different output sizes and training window
+lengths, so their forecast comparison is not an equal-compute model study.
+
+### Spatial and multi-site workflows
+
+Set `algorithm` to `robust_lbfgs` in a map configuration for pseudo-Huber
+fidelity and anisotropic regularization. Optional `robust` keys are
+`east_conductance`, `north_conductance`, and `fidelity_delta`.
+Conductance may be specified per edge. Keep quadratic Metropolis sampling
+disabled for this solver. For the quadratic model, `sampling.proposal` accepts
+`normal` or `uniform`, and `sampling.adapt` tunes the scale only in burn-in.
+The geostatistics module provides empirical variograms and comparisons with
+Gaussian radial basis fits, leave-one-location-out folds, or spatial blocks.
+
+`python multisite.py LOCATIONS CHECKPOINT OUTPUT --snapshot-at OFFSET_TIMESTAMP`
+loads one checkpoint for independent sites. Each location supplies a local
+`readings` path and its field `configuration`. Spatial snapshots require a
+common origin and fresh GPS fixes received by that origin. These outputs are
+labeled model forecasts. To map them, set `allow_forecast_snapshot` explicitly.
+Held-out spatial validation requires independent measurements.
+
+### Local dashboard and Windows setup
+
+```sh
+python -m Dashboard.Server --workspace /tmp/jupiter-dashboard
+python Pipeline.py session-health field-session/readings.jsonl session-health.json
+```
+
+Open the printed `127.0.0.1` URL. The dashboard processes uploaded data on the
+local machine and runs the existing CLI jobs. Start with `--allow-port PORT`
+to enable live capture for a specific local serial port. Run directories can
+contain sensor locations and calibration details, so keep them outside the
+checkout. Training and search artifacts can also be produced with the standalone
+commands if a browser is unavailable.
+
+For Windows Command Prompt:
+
+```bat
+py -3 -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install -r requirements.txt
+python -m unittest discover -s Tests -q
+python -m Dashboard.Server --workspace "%TEMP%\jupiter-dashboard"
+```
+
+For PowerShell, use the environment’s Python directly so activation policies
+do not affect setup:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m unittest discover -s Tests -q
+.\.venv\Scripts\python.exe -m Dashboard.Server --workspace "$env:TEMP\jupiter-dashboard"
+```
