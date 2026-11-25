@@ -8,7 +8,7 @@ from Spatial.PDESolver import solve
 def reconstruct(grid, points, values, backend, settings, hard_seeds=False):
     points, values = np.asarray(points, dtype=float), np.asarray(values, dtype=float)
     initial = idw(points, values, grid.points()).reshape(grid.shape)
-    dx, dy = grid.east[1] - grid.east[0], grid.north[1] - grid.north[0]
+    dx, dy = grid.spacing
     offsets = (points - [grid.east[0], grid.north[0]]) / [dx, dy]
     if ((offsets < 0) | (offsets > np.array(grid.shape[::-1]) - 1)).any():
         raise ValueError("All seed coordinates must be inside the grid")

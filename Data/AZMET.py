@@ -42,8 +42,20 @@ class Column:
 
 
 @dataclass(frozen=True)
+class CalendarColumns:
+    year: str
+    day_of_year: str
+    hour: str
+    hour_encoding: str = "0-23"
+
+    def __post_init__(self):
+        if self.hour_encoding not in ("0-23", "1-24"):
+            raise ValueError("Specify 0-23 or 1-24 clock hours")
+
+
+@dataclass(frozen=True)
 class AZMETSchema:
-    timestamp: str
+    timestamp: str | None
     columns: dict[str, Column]
     convention: str
     timezone: str | None = None
@@ -51,6 +63,8 @@ class AZMETSchema:
     delimiter: str = ","
     missing: tuple[str, ...] = ("",)
     max_state_gap_hours: int = 0
+    calendar: CalendarColumns | None = None
+    headerless_columns: tuple[str, ...] | None = None
 
     def __post_init__(self):
         if (self.convention not in ("start", "end") or len(self.delimiter) != 1
@@ -58,7 +72,11 @@ class AZMETSchema:
             raise ValueError("Invalid timestamp convention, delimiter, or gap limit")
         if not REQUIRED <= self.columns.keys() <= UNITS.keys():
             raise ValueError(f"Expected mappings for {sorted(REQUIRED)}")
-        sources = [self.timestamp]
+        if (self.timestamp is None) == (self.calendar is None):
+            raise ValueError("Supply exactly one timestamp column or calendar column mapping")
+        if self.calendar is not None and self.timezone is None:
+            raise ValueError("Calendar columns require an explicit source timezone")
+        sources = list(self.timestamp_sources)
         for name, field_spec in self.columns.items():
             if field_spec.unit not in UNITS[name]:
                 raise ValueError(f"Unsupported unit {field_spec.unit!r} for {name}")
@@ -66,11 +84,20 @@ class AZMETSchema:
         if len(sources) != len(set(sources)) or not all(sources):
             raise ValueError("Source headers must be nonempty and mapped at most once")
 
+    @property
+    def timestamp_sources(self):
+        if self.calendar is None:
+            return (self.timestamp,)
+        return (self.calendar.year, self.calendar.day_of_year, self.calendar.hour)
+
     @classmethod
     def from_dict(cls, record):
-        return cls(**{**record, "columns": {
-            name: Column(**column) for name, column in record["columns"].items()
-        }})
+        config = dict(record)
+        config.setdefault("timestamp", None)
+        config["columns"] = {name: Column(**column) for name, column in record["columns"].items()}
+        if config.get("calendar") is not None:
+            config["calendar"] = CalendarColumns(**config["calendar"])
+        return cls(**config)
 
 
 @dataclass
@@ -80,19 +107,31 @@ class WeatherData:
     provenance: dict = field(default_factory=dict)
 
 
-def _header(payload, delimiter):
+def _frame(payload, delimiter, headerless_columns=None):
     text = payload.decode("utf-8-sig")
-    headers = next(csv.reader(iter(text.splitlines()), delimiter=delimiter), [])
-    if not headers or any(not name for name in headers) or len(headers) != len(set(headers)):
-        raise ValueError("CSV must have unique nonempty column headers")
-    return headers
+    rows = csv.reader(iter(text.splitlines()), delimiter=delimiter)
+    first = next(rows, [])
+    headers = first if headerless_columns is None else list(headerless_columns)
+    if (not first or not headers or len(first) != len(headers)
+            or any(not isinstance(name, str) or not name.strip() for name in headers)
+            or len(headers) != len(set(headers))):
+        raise ValueError("CSV must have unique nonempty column headers matching the file width")
+    for row in rows:
+        if row and len(row) != len(headers):
+            raise ValueError(f"Inconsistent CSV row width near line {rows.line_num}")
+    options = {"header": None, "names": headers} if headerless_columns is not None else {}
+    return pd.read_csv(BytesIO(payload), sep=delimiter, dtype=str, keep_default_na=False, **options)
 
 
-def inspect_schema(path, delimiter=","):
-    """Return the actual header, row count and per-column numeric coverage."""
+def inspect_schema(path, delimiter=",", *, headerless=False):
+    """Return actual file dimensions and per-column numeric coverage."""
     payload = Path(path).read_bytes()
-    headers = _header(payload, delimiter)
-    frame = pd.read_csv(BytesIO(payload), sep=delimiter, dtype=str, keep_default_na=False)
+    names = None
+    if headerless:
+        first = next(csv.reader(iter(payload.decode("utf-8-sig").splitlines()), delimiter=delimiter), [])
+        names = [f"column_{i + 1}" for i in range(len(first))]
+    frame = _frame(payload, delimiter, names)
+    headers = frame.columns
     return {
         "sha256": sha256(payload).hexdigest(),
         "row_count": len(frame),
@@ -104,12 +143,17 @@ def inspect_schema(path, delimiter=","):
     }
 
 
-def _timestamps(raw, schema):
-    if schema.timezone is None:
+def _timestamps(frame, schema):
+    if schema.calendar is not None:
+        parsed = _calendar_timestamps(frame, schema.calendar)
+        index = parsed.tz_localize(schema.timezone, ambiguous="raise", nonexistent="raise").tz_convert("UTC")
+    elif schema.timezone is None:
+        raw = frame[schema.timestamp].str.strip()
         if not raw.str.contains(r"(?:Z|[+-]\d{2}:?\d{2})$", na=False).all():
             raise ValueError("Supply offset timestamps or an explicit timezone for naive timestamps")
         index = pd.DatetimeIndex(pd.to_datetime(raw, format=schema.timestamp_format, utc=True))
     else:
+        raw = frame[schema.timestamp].str.strip()
         parsed = pd.DatetimeIndex(pd.to_datetime(raw, format=schema.timestamp_format))
         if parsed.tz is not None:
             raise ValueError("Use the timezone setting only for naive timestamps")
@@ -125,18 +169,31 @@ def _timestamps(raw, schema):
     return index.rename("timestamp")
 
 
+def _calendar_timestamps(frame, calendar):
+    columns = [frame[name].str.strip() for name in (calendar.year, calendar.day_of_year, calendar.hour)]
+    if not all(column.str.fullmatch(r"[0-9]+").all() for column in columns):
+        raise ValueError("Calendar timestamp components must be integers")
+    year, day, hour = [column.astype(int).to_numpy() for column in columns]
+    midnight = pd.DatetimeIndex(pd.to_datetime(year.astype(str), format="%Y"))
+    maximum_day = np.where(midnight.is_leap_year, 366, 365)
+    minimum_hour = 0 if calendar.hour_encoding == "0-23" else 1
+    if ((day < 1) | (day > maximum_day) | (hour < minimum_hour) |
+            (hour > minimum_hour + 23)).any():
+        raise ValueError("Calendar timestamp component outside its declared range")
+    return midnight + pd.to_timedelta(day - 1, unit="D") + pd.to_timedelta(hour, unit="h")
+
+
 def read_azmet(path, schema, *, source_label, synthetic=False):
     if not source_label.strip():
         raise ValueError("Supply a source label identifying the station/export or fixture")
     payload = Path(path).read_bytes()
-    headers = _header(payload, schema.delimiter)
-    required = {schema.timestamp, *(spec.source for spec in schema.columns.values())}
-    if missing := required - set(headers):
+    raw = _frame(payload, schema.delimiter, schema.headerless_columns)
+    required = {*schema.timestamp_sources, *(spec.source for spec in schema.columns.values())}
+    if missing := required - set(raw.columns):
         raise ValueError(f"Missing mapped CSV headers: {sorted(missing)}")
-    raw = pd.read_csv(BytesIO(payload), sep=schema.delimiter, dtype=str, keep_default_na=False)
     if raw.empty:
         raise ValueError("No weather observations")
-    raw.index = _timestamps(raw[schema.timestamp].str.strip(), schema)
+    raw.index = _timestamps(raw, schema)
     raw = raw.sort_index()
     span = pd.date_range(raw.index[0], raw.index[-1], freq="h", name="timestamp")
     values, flags = pd.DataFrame(index=span), pd.DataFrame(index=span)

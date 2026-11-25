@@ -23,9 +23,11 @@ def _aware(value):
     return timestamp.tz_convert("UTC")
 
 
-def session_hourly(path, leaf, soil, *, minimum_count=1, clock="received_at", device_id=None):
+def session_hourly(path, leaf, soil, *, minimum_count=1, clock="received_at", device_id=None,
+                   as_of=None, complete_only=True):
     if clock not in ("received_at", "observed_at") or not isinstance(minimum_count, int) or minimum_count < 1:
         raise ValueError("Invalid clock or hourly coverage requirement")
+    cutoff = _aware(as_of) if as_of is not None else None
     records, fixes, device_ids = [], [], set()
     counts = Counter()
     digest = sha256()
@@ -44,12 +46,17 @@ def session_hourly(path, leaf, soil, *, minimum_count=1, clock="received_at", de
                 continue
             if "missing:device_id" in message["flags"]:
                 continue
-            device_ids.add(identity)
             if clock not in message:
                 counts["missing_clock"] += 1
                 continue
             timestamp = _aware(message[clock])
+            if cutoff is not None and (timestamp > cutoff or _aware(message["received_at"]) > cutoff):
+                counts["after_cutoff"] += 1
+                continue
             raw = message["measurements"]
+            if not raw and identity is None:
+                continue
+            device_ids.add(identity)
             measured = {}
             for name, value in raw.items():
                 if name in FIELDS:
@@ -86,10 +93,18 @@ def session_hourly(path, leaf, soil, *, minimum_count=1, clock="received_at", de
     hourly = bins.mean().where(coverage >= minimum_count)
     flags = (coverage < minimum_count).add_prefix("insufficient:")
     flags["missing_hour"] = bins.size() == 0
+    watermark = cutoff if cutoff is not None else frame.index.max()
+    if complete_only:
+        closed = hourly.index <= watermark
+        counts["unfinished_hour_bins"] = int((~closed).sum())
+        hourly, flags, coverage = hourly.loc[closed], flags.loc[closed], coverage.loc[closed]
+        if hourly.empty:
+            raise ValueError("Session has no closed hourly bins")
     gps = pd.DataFrame(fixes, columns=["timestamp", "device_id", "latitude_deg", "longitude_deg"])
     provenance = {"source_type": "acquisition_session", "readings_sha256": digest.hexdigest(),
                   "timestamp_clock": clock, "aggregation": "right-closed UTC hourly means",
                   "minimum_count": minimum_count, "device_id": next(iter(device_ids)),
+                  "complete_hour_bins_only": complete_only, "as_of_utc": watermark.isoformat(),
                   "calibration": {"leaf": asdict(leaf), "soil": asdict(soil)},
                   "packet_counts": dict(counts)}
     return WeatherData(hourly, flags, provenance), gps, coverage
