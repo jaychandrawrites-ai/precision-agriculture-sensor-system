@@ -1,5 +1,6 @@
 """Compare experimental direct, recursive and hybrid forecasts on shared origins."""
 import argparse
+import platform
 from dataclasses import asdict, replace
 from hashlib import sha256
 from pathlib import Path
@@ -15,7 +16,7 @@ from Data.TimeSeries import calendar_cutoffs
 from Framework.Backend import create_backend
 from Temporal.Baselines import baseline_forecasts
 from Temporal.Direct import fit_direct
-from Temporal.ForecastUncertainty import calibrate, ensemble, evaluate_intervals
+from Temporal.ForecastUncertainty import calibrate, ensemble, evaluate_intervals, reliability
 from Temporal.Model import TemporalModel
 from Temporal.Rollout import Rollout, RolloutOptions
 from Temporal.RolloutTrainer import fit_rollout
@@ -44,7 +45,7 @@ def compare(values, times, settings, horizon, seeds, mass=.9):
                           for rows in (data.train, a))
     persistence, seasonal, _ = baseline_forecasts(values, times, test)
     members = {mode: [[], []] for mode in ("recursive", "direct", "hybrid")}
-    diagnostics = []
+    diagnostics, calibration_ood, test_ood = [], [], []
     for seed in seeds:
         opts = replace(settings, seed=seed)
         backend = create_backend(opts.device, opts.dtype, seed)
@@ -58,11 +59,13 @@ def compare(values, times, settings, horizon, seeds, mass=.9):
         direct, direct_diagnostics = fit_direct(direct_train, direct_val, data.target_scaler,
                                                 create_backend(opts.device, opts.dtype, seed),
                                                 opts)
+        calibration_ood.append(direct.ood_score(calibration.histories))
+        test_ood.append(direct.ood_score(test.histories))
         diagnostics.append({"seed": seed, "direct": direct_diagnostics,
                             "recursive": {**rec_diagnostics, "parameters": model.parameter_count},
                             "recursive_fit_seconds": rec_seconds,
                             "direct_fit_seconds": perf_counter() - started,
-                            "test_ood_scores": direct.ood_score(test.histories)})
+                            "test_ood_scores": test_ood[-1]})
         lead = np.arange(horizon)
         blend = (lead / (lead + opts.rollout_steps))[None, :, None]
         for i, window in enumerate((calibration, test)):
@@ -73,7 +76,7 @@ def compare(values, times, settings, horizon, seeds, mass=.9):
                 members[mode][i].append(value)
     results = {"persistence": horizon_metrics(persistence, test.targets, persistence),
                "seasonal_persistence": horizon_metrics(seasonal, test.targets, persistence)}
-    uncertainty, comparisons = {}, {}
+    uncertainty, comparisons, reliability_reports = {}, {}, {}
     contiguous = (np.diff(times[test.starts]) == np.timedelta64(1, "h")).all()
     block = max(24, horizon)
     for name, (cal_predictions, test_predictions) in members.items():
@@ -84,6 +87,8 @@ def compare(values, times, settings, horizon, seeds, mass=.9):
         if contiguous and len(test.starts) >= 2 * block:
             comparisons[name] = paired_rmse_difference(estimate, persistence, test.targets,
                                                        block=block, draws=200)
+        reliability_reports[name] = reliability(np.mean(calibration_ood, axis=0),
+                                                np.mean(test_ood, axis=0), estimate, test.targets)
         uncertainty[name] = {**evaluate_intervals(intervals, estimate, test.targets),
                              "mean_member_spread": spread.mean(axis=0)}
     return {"windows": {name: len(window.starts) for name, window in zip(
@@ -91,7 +96,7 @@ def compare(values, times, settings, horizon, seeds, mass=.9):
                 (direct_train, direct_val, calibration, test))},
             "recursive_training_horizon": settings.rollout_steps, "test_horizon": horizon,
             "metrics": results, "diagnostics": diagnostics, "intervals": uncertainty,
-            "rmse_difference_vs_persistence": comparisons}
+            "rmse_difference_vs_persistence": comparisons, "reliability": reliability_reports}
 
 
 def main():
@@ -107,7 +112,8 @@ def main():
     values, times = read_hourly(args.source)
     result = compare(values, times, settings, args.horizon, args.seeds)
     result["manifest"] = {"source_sha256": sha256(args.source.read_bytes()).hexdigest(),
-                          "synthetic": args.synthetic, "training": asdict(settings), "seeds": args.seeds}
+                          "synthetic": args.synthetic, "training": asdict(settings), "seeds": args.seeds,
+                          "python": platform.python_version(), "numpy": np.__version__}
     write_json(args.output, result)
 
 
