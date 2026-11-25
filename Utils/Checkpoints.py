@@ -11,6 +11,7 @@ from config import FEATURES
 from Data.Normalization import Standardizer
 from Framework.Backend import create_backend
 from Temporal.Model import TemporalModel
+from Temporal.Rollout import RolloutOptions
 
 
 def save(path, model, dataset, backend, result, settings):
@@ -28,6 +29,10 @@ def save(path, model, dataset, backend, result, settings):
         "training_config": asdict(settings),
         "training_result": asdict(result),
     }
+    options = getattr(model, "rollout_options", None)
+    if options is not None:
+        state["version"] = 2
+        state["rollout_options"] = asdict(options)
     with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
         temporary = Path(file.name)
     try:
@@ -41,12 +46,14 @@ def save(path, model, dataset, backend, result, settings):
 def load(path, device="cpu"):
     with open(path, encoding="utf-8") as file:
         state = json.load(file)
-    if (state["version"] != 1 or tuple(state["features"]) != FEATURES
+    if (state["version"] not in (1, 2) or tuple(state["features"]) != FEATURES
             or state["interval_hours"] != 1):
         raise ValueError("Unsupported checkpoint format")
     settings = state["training_config"]
     backend = create_backend(device=device, dtype=settings["dtype"], seed=settings["seed"])
     model = TemporalModel(backend, **state["architecture"])
+    if state["version"] == 2:
+        model.rollout_options = RolloutOptions(**state["rollout_options"])
     parameters = {key: np.asarray(value, dtype=settings["dtype"])
                   for key, value in state["parameters"].items()}
     for value in parameters.values():

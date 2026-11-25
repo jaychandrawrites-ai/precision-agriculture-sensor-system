@@ -26,6 +26,7 @@ def synthetic_history(hours=240):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["demo"])
+    parser.add_argument("--legacy", action="store_true", help="Reproduce the original one-step model")
     args = parser.parse_args()
     print("Synthetic fixture for software verification")
     with TemporaryDirectory() as directory:
@@ -34,7 +35,7 @@ def main():
         checkpoint = directory / "temporal.json"
         synthetic_history().to_csv(source, index=False)
         settings = TrainingConfig(epochs=30, batch_size=32, dropout=0)
-        print(json.dumps(train(source, checkpoint, settings), indent=2, allow_nan=False))
+        print(json.dumps(train(source, checkpoint, settings, stable_rollout=not args.legacy), indent=2, allow_nan=False))
         print(forecast_csv(source, checkpoint, settings.rollout_steps).to_csv(index=False), end="")
 
 
