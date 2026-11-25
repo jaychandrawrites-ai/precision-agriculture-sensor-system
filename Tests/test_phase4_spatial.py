@@ -35,3 +35,18 @@ class AdvancedSpatialTests(unittest.TestCase):
         np.testing.assert_array_equal(estimate[fixed], y[fixed])
         self.assertEqual(result.status, "converged")
         self.assertLess(result.loss_trace[-1], result.loss_trace[0])
+
+    def test_burn_in_adaptation_is_reproducible(self):
+        from Framework.Backend import create_backend
+        from Spatial.EnergyFunctional import EnergyFunctional
+        from Spatial.MonteCarlo import SamplingConfig, metropolis
+        from Spatial.SeedManager import seed_constraints
+
+        grid = SpatialGrid([0, 1], [0, 1])
+        energy = EnergyFunctional(grid, seed_constraints(grid, [[0, 0]], [1], 10),
+                                  create_backend(dtype="float64"))
+        config = SamplingConfig(draws=20, burn_in=80, adapt=True, proposal="uniform")
+        first = metropolis(energy, np.ones(grid.shape), config)
+        second = metropolis(energy, np.ones(grid.shape), config)
+        self.assertFalse(np.all(first.proposal_scales == 1))
+        np.testing.assert_array_equal(first.fields, second.fields)

@@ -127,6 +127,7 @@ def map_measurements(source, configuration, output):
         report["sampling"] = {"acceptance": result.sampling.acceptance.tolist(),
                               "burn_in_acceptance": result.sampling.burn_in_acceptance.tolist(),
                               "parameters": configuration["sampling"],
+                              "proposal_scales": result.sampling.proposal_scales.tolist(),
                               "conditional_on_energy_model": True}
     if held_out is not None:
         coordinate_columns = ["latitude_deg", "longitude_deg"]
