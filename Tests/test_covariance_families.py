@@ -41,3 +41,24 @@ class CovarianceFamilyTests(unittest.TestCase):
                        {"nugget": -.1}, {"angle_deg": np.nan}, {"shape": "unsupported"}):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 CovarianceModel(**({"range_m": 1.} | values))
+
+    def test_posterior_report_keeps_holdout_values_out_of_conditioning(self):
+        from validate_spatial import evaluate
+
+        spec = {
+            "conditioning": {"ids": ["a", "b", "c"], "points": [[0, 0], [0, 1], [1, 0]], "values": [3, 3, 3]},
+            "held_out": {"ids": ["x", "y"], "points": [[1, 1], [2, 2]], "values": [3, 3]},
+            "scenarios": [{"id": "first", "covariance": {"range_m": 1}},
+                          {"id": "second", "covariance": {"range_m": 2, "shape": "matern52"}}],
+            "draws": 1000,
+        }
+        first = evaluate(spec)
+        spec["held_out"]["values"] = [30, 30]
+        second = evaluate(spec)
+        a, b = (report["verification"]["site_diagnostics"] for report in (first, second))
+        np.testing.assert_allclose([item["mean"] for item in a], 3., atol=.08)
+        self.assertEqual([item["mean"] for item in a], [item["mean"] for item in b])
+        self.assertGreater(second["verification"]["rmse"], first["verification"]["rmse"])
+        spec["held_out"]["points"][0] = [0, 0]
+        with self.assertRaisesRegex(ValueError, "disjoint"):
+            evaluate(spec)
