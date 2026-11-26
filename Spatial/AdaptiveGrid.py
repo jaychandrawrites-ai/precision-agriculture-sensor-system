@@ -47,7 +47,7 @@ def refine(bounds, predictor, settings=Refinement(), *, observed_xy=None, polygo
     """Refine where the model varies, spreads, or meets declared support.
 
     predictor receives a finite array of local metric points and returns
-    (mean, variance). Output cells are masked by their centers, not clipped
+    (mean, variance), either scalar or with a shared channel axis. Output cells are masked by their centers, not clipped
     exactly to the polygon, and make no claim of observed subcell detail.
     """
     limits = np.asarray(bounds, dtype=float)
@@ -65,6 +65,7 @@ def refine(bounds, predictor, settings=Refinement(), *, observed_xy=None, polygo
             raise ValueError("Provide a finite field polygon with at least three vertices")
     queue, leaves, cache = deque([(west, south, east, north, 0)]), [], {}
     allocated, budget_limited = 1, 0
+    prediction_shape = None
     while queue:
         lo_x, lo_y, hi_x, hi_y, depth = queue.popleft()
         dx, dy = hi_x - lo_x, hi_y - lo_y
@@ -73,17 +74,20 @@ def refine(bounds, predictor, settings=Refinement(), *, observed_xy=None, polygo
         unseen = [key for key in keys if key not in cache]
         if unseen:
             mean, variance = (np.asarray(item, dtype=float) for item in predictor(np.asarray(unseen)))
-            if (mean.shape != (len(unseen),) or variance.shape != mean.shape or (variance < 0).any()
+            if (mean.ndim not in (1, 2) or mean.shape[0] != len(unseen) or mean.size == 0
+                    or variance.shape != mean.shape or (variance < 0).any()
+                    or (prediction_shape is not None and mean.shape[1:] != prediction_shape)
                     or not all(np.isfinite(item).all() for item in (mean, variance))):
-                raise ValueError("Predictor must return finite scalar means and nonnegative variances")
-            cache.update({key: (float(m), float(v)) for key, m, v in zip(unseen, mean, variance)})
-        values, spread = np.array([cache[key] for key in keys]).T
+                raise ValueError("Predictor must return aligned finite means and nonnegative variances")
+            prediction_shape = mean.shape[1:]
+            cache.update(zip(unseen, zip(mean, variance)))
+        values, spread = map(np.asarray, zip(*(cache[key] for key in keys)))
         mask = _polygon_mask(np.asarray(keys), polygon)
         lower = np.maximum(np.array([lo_x, lo_y]) - sites, 0)
         upper = np.maximum(sites - np.array([hi_x, hi_y]), 0)
         distance = np.linalg.norm(lower + upper, axis=1)
         reasons = []
-        if settings.max_variation is not None and np.ptp(values) > settings.max_variation:
+        if settings.max_variation is not None and np.ptp(values, axis=0).max() > settings.max_variation:
             reasons.append("variation")
         if settings.max_standard_deviation is not None and np.sqrt(spread).max() > settings.max_standard_deviation:
             reasons.append("uncertainty")
@@ -99,7 +103,7 @@ def refine(bounds, predictor, settings=Refinement(), *, observed_xy=None, polygo
         else:
             budget_limited += int(eligible)
             leaves.append({"bounds_m": [lo_x, lo_y, hi_x, hi_y], "depth": depth, "inside": bool(mask[0]),
-                           "center_mean": float(values[0]), "center_variance": float(spread[0]),
+                           "center_mean": values[0].tolist(), "center_variance": spread[0].tolist(),
                            "remaining_refinement_drivers": reasons})
     return {"cells": leaves, "settings": asdict(settings), "leaf_count": len(leaves),
             "prediction_sites": len(cache), "budget_limited_cells": budget_limited,

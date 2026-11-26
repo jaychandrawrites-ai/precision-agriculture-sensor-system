@@ -280,7 +280,7 @@ def _forecast_sites(store, survey_id, report, feature, valid_at, origin, gps_min
     return points, samples, issued, valid, lead, len(locations) - len(samples)
 
 
-def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probability=.9, grid_size=25):
+def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probability=.9, grid_size=25, adaptive=None):
     """Propagate shared model draws, keeping site, lead and feature dependencies."""
     from spatial_forecast import ensemble_maps, interpolation_weights
 
@@ -315,7 +315,7 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
               for name, value in arrays.items()}
     result.update(east_m=grid.east, north_m=grid.north, site_member_forecasts=members,
                   interpolation_weights=interpolation_weights(xy, grid.points(), 2).reshape(*grid.shape, len(points)))
-    return result, {
+    metadata = {
         "survey_id": survey_id, "issued_at": issued.isoformat(), "features": FEATURES,
         "valid_at": [(issued + timedelta(hours=i)).isoformat() for i in range(1, steps + 1)],
         "sites": ids, "checkpoint_sha256": hashes, "central_mass": probability,
@@ -324,3 +324,10 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
         "weight_axes": ["north", "east", "site"],
         "interpretation": "propagated empirical model disagreement; field coverage is unverified",
     }
+    if adaptive is not None:
+        from Spatial.EnsembleRefinement import adaptive_ensemble
+        default_bounds = [grid.east[0], grid.north[0], grid.east[-1], grid.north[-1]]
+        arrays, metadata["adaptive"] = adaptive_ensemble(
+            xy, members, adaptive.get("bounds_m", default_bounds), adaptive, probability)
+        result.update(arrays)
+    return result, metadata

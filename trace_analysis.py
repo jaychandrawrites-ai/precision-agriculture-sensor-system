@@ -22,6 +22,7 @@ def main():
             command.add_argument("--clock", choices=("received_at", "observed_at"), default="received_at")
         elif name == "ensemble-map":
             command.add_argument("--forecast-report", type=Path, required=True)
+            command.add_argument("--adaptive", type=Path)
             command.add_argument("--origin", required=True)
             command.add_argument("--steps", type=int, default=6)
         elif name == "forecast-map":
@@ -39,7 +40,8 @@ def main():
     store = TraceStore(args.root, recover=False)
     if args.command == "ensemble-map":
         arrays, result = ensemble_forecast_maps(store, args.survey_id, read_json(args.forecast_report),
-                                                args.origin, steps=args.steps)
+                                                args.origin, steps=args.steps,
+                                                adaptive=read_json(args.adaptive) if args.adaptive else None)
         write_arrays(args.output.with_suffix(".npz"), **arrays)
     elif args.command == "map":
         result = observational_map(store, args.survey_id, args.feature, args.timestamp,
