@@ -1,4 +1,5 @@
 """Saved seasonal residual ensemble with explicit local history requirements."""
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -26,19 +27,31 @@ def save_ensemble(directory, members, blend, intervals, horizon):
     })
 
 
-def forecast_saved(checkpoint, values, timestamps, device="cpu"):
+@dataclass(frozen=True)
+class SavedSeasonalEnsemble:
+    models: tuple
+    correction: ConvexCorrection
+    intervals: object
+    horizon: int
+
+    def predict(self, values, timestamps, origins, histories):
+        daily, fallback = SeasonalLookup(values, timestamps).predict(origins, histories, self.horizon)
+        total = np.zeros_like(daily)
+        for model in self.models:
+            total += model.predict(histories, anchor=daily)
+        return self.correction.predict(daily, total / len(self.models)), daily, fallback
+
+
+def load_seasonal(checkpoint, device="cpu"):
+    from Temporal.BlockIntervals import BlockIntervals
+
     checkpoint = Path(checkpoint)
     record = read_json(checkpoint)
     if record.get("format") != "jupiter-seasonal-residual-v1" or record.get("period_hours") != 24:
         raise ValueError("Unsupported seasonal checkpoint")
-    if (len(values) < 3 or invalid_rows(values[-3:]).any()
-            or not (np.diff(timestamps[-3:]) == np.timedelta64(1, "h")).all()):
-        raise ValueError("Need three latest consecutive, physically valid hourly observations")
     horizon = record["horizon"]
     if type(horizon) is not int or horizon < 1:
         raise ValueError("Invalid seasonal checkpoint horizon")
-    history = np.asarray(values[-3:], dtype=float)[None]
-    baseline, fallback = SeasonalLookup(values, timestamps).predict(timestamps[-1:], history, horizon)
     blend = np.asarray(record["blend"], dtype=float)
     radius = np.asarray(record["empirical_marginal_radius"], dtype=float)
     joint = np.asarray(record["empirical_trajectory_radius"], dtype=float)
@@ -46,9 +59,10 @@ def forecast_saved(checkpoint, values, timestamps, device="cpu"):
             or not all(np.isfinite(x).all() for x in (blend, radius, joint))
             or (blend < 0).any() or (blend > 1).any() or (radius < 0).any() or (joint < 0).any()):
         raise ValueError("Invalid blend or empirical interval parameters")
-    total = np.zeros_like(baseline)
+    models = []
     members = record["members"]
-    if not isinstance(members, list) or not members or len(set(members)) != len(members):
+    if (not isinstance(members, list) or not members or not all(isinstance(name, str) for name in members)
+            or len(set(members)) != len(members)):
         raise ValueError("Missing or duplicate seasonal members")
     for filename in members:
         if (not isinstance(filename, str) or Path(filename).name != filename
@@ -57,9 +71,25 @@ def forecast_saved(checkpoint, values, timestamps, device="cpu"):
         model = load_direct(checkpoint.parent / filename, device)
         if model.model.horizon != horizon:
             raise ValueError("Seasonal member horizon differs from the ensemble checkpoint")
-        total += model.predict(history, anchor=baseline)
-    point = ConvexCorrection(blend).predict(baseline, total / len(members))[0]
-    return {"point": point, "daily": baseline[0], "used_current_state": fallback[0],
+        models.append(model)
+    if (type(record["calibration_origins"]) is not int or record["calibration_origins"] < 1
+            or type(record["calibration_spacing_hours"]) is not int
+            or record["calibration_spacing_hours"] < horizon or not 0 < record["nominal_mass"] < 1):
+        raise ValueError("Invalid calibration metadata")
+    intervals = BlockIntervals(radius, joint, record["calibration_origins"],
+                               record["calibration_spacing_hours"], record["nominal_mass"])
+    return SavedSeasonalEnsemble(tuple(models), ConvexCorrection(blend), intervals, horizon)
+
+
+def forecast_saved(checkpoint, values, timestamps, device="cpu"):
+    if (len(values) < 3 or invalid_rows(values[-3:]).any()
+            or not (np.diff(timestamps[-3:]) == np.timedelta64(1, "h")).all()):
+        raise ValueError("Need three latest consecutive, physically valid hourly observations")
+    ensemble = load_seasonal(checkpoint, device)
+    history = np.asarray(values[-3:], dtype=float)[None]
+    point, daily, fallback = ensemble.predict(values, timestamps, timestamps[-1:], history)
+    point, radius, joint = point[0], ensemble.intervals.marginal_radius, ensemble.intervals.trajectory_radius
+    return {"point": point, "daily": daily[0], "used_current_state": fallback[0],
             "lower": point - radius, "upper": point + radius,
             "trajectory_lower": point - joint, "trajectory_upper": point + joint,
-            "nominal_mass": record["nominal_mass"], "calibration_origins": record["calibration_origins"]}
+            "nominal_mass": ensemble.intervals.mass, "calibration_origins": ensemble.intervals.calibration_count}

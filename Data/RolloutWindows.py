@@ -15,11 +15,24 @@ class RolloutWindows:
 
 
 def rollout_windows(dataset, rows, values, timestamps, steps):
+    return evaluation_windows(values, timestamps, steps, dataset.target_indices[rows])
+
+
+def evaluation_windows(values, timestamps, steps, selected=None):
+    """Complete rolling-origin windows without fitting a dataset or normalizer."""
+
     if steps < 1:
         raise ValueError("Window horizon must be positive")
     values = np.asarray(values)
     timestamps = np.asarray(timestamps, dtype="datetime64[ns]")
-    selected = dataset.target_indices[rows]
+    if selected is None:
+        selected = np.arange(3, len(values))
+    else:
+        selected = np.asarray(selected, dtype=int)
+    if selected.ndim != 1 or (np.diff(selected) <= 0).any() or (
+        len(selected) and (selected[0] < 3 or selected[-1] >= len(values))
+    ):
+        raise ValueError("Expected increasing target positions with three preceding observations")
     candidates = selected[:max(0, len(selected) - steps + 1)]
     offsets = np.arange(-3, steps)
     indices = candidates[:, None] + offsets
