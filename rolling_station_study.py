@@ -77,7 +77,7 @@ def main():
     parser.add_argument("--initial-hours", type=int, required=True)
     parser.add_argument("--test-hours", type=int, required=True)
     parser.add_argument("--horizon", type=int, default=24)
-    parser.add_argument("--stride", type=int)
+    parser.add_argument("--stride", type=int, help="Hours between test blocks, at least --test-hours")
     parser.add_argument("--max-training-hours", type=int)
     args = parser.parse_args()
     values, times = read_hourly(args.sources[0]) if len(args.sources) == 1 else assemble(args.sources)
