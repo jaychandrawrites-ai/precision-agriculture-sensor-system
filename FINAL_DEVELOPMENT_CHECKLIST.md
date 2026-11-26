@@ -2,16 +2,16 @@
 
 Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERIFIED entries count. The [original master requirements](MASTER_REQUIREMENTS.md) remain authoritative.
 
-**35/96 verified (36.5%).**
+**37/96 verified (38.5%).**
 
 | Classification | Count |
 | --- | ---: |
 | BLOCKED — EXTERNAL HARDWARE | 7 |
-| PARTIALLY IMPLEMENTED | 44 |
+| PARTIALLY IMPLEMENTED | 42 |
 | BLOCKED — COMPUTATIONAL RESOURCE | 2 |
 | NOT STARTED | 1 |
 | BLOCKED — EXTERNAL DATA | 6 |
-| COMPLETE — VERIFIED | 35 |
+| COMPLETE — VERIFIED | 37 |
 | BLOCKED — USER APPROVAL | 1 |
 
 ## 1. AI Trace and hardware integration
@@ -79,7 +79,7 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R039 | Complete adaptive exploration and diversity diagnostics. | PARTIALLY IMPLEMENTED | Verify exploration and diversity diagnostics across the expanded candidate space. |
 | R040 | Verify expanded architecture checkpoint recovery. | COMPLETE — VERIFIED | Generation recovery verifies candidate manifests and recurrent/convolution/attention artifacts. Tests/test_phase8_search_objectives.py. 3f59750, ec12d9d. |
 | R041 | Run matched-budget fixed/random/classical/amplitude/hybrid comparisons. | PARTIALLY IMPLEMENTED | Run all named methods on matched independent sequence-search experiments. |
-| R042 | Integrate selected architectures into application workflows. | PARTIALLY IMPLEMENTED | Selected portable sequence checkpoints work in the CLI and field loader. Dashboard still needs direct selection/export of search winners. |
+| R042 | Integrate selected architectures into application workflows. | COMPLETE — VERIFIED | Dashboard registers exported sequence search models and runs selected CSV or field forecasts. Loopback and Chromium exercise the search-to-forecast flow. fd6c85b, 020f81e. |
 
 ## 6. Spatial reconstruction and Monte Carlo
 
@@ -103,7 +103,7 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R053 | Preserve spatial and temporal dependence in uncertainty draws. | COMPLETE — VERIFIED | One member index and IDW transform across the trajectory. `Tests/test_trace_ensemble.py` reproduces the exported trajectory statistics. df5915b. |
 | R054 | Generate spatial predictive uncertainty maps. | COMPLETE — VERIFIED | `trace_analysis.py` exports empirical ensemble mean, spread and quantile maps. `Tests/test_trace_ensemble.py`, b203519 and df5915b. |
 | R055 | Generate time-indexed forecast maps for all six features. | COMPLETE — VERIFIED | Time and feature axes verified on six leads and six features in `Tests/test_trace_ensemble.py`. `Acquisition/TraceAnalysis.py`, b203519. |
-| R056 | Integrate adaptive spatial reconstruction with survey forecasts. | PARTIALLY IMPLEMENTED | Joint draws pass through IDW and fixed or adaptive variational operators with shared geometry. Cell-chunk results agree across chunk sizes. Dense output and covariance factorization still need an out-of-core path. 2be8e9e. |
+| R056 | Integrate adaptive spatial reconstruction with survey forecasts. | PARTIALLY IMPLEMENTED | Joint draws pass through IDW, kriging and fixed or adaptive variational operators. CLI disk-backed staging bounds the draw cube and preserves exact summaries. Dense covariance factorization and interrupted-job recovery remain. 6f0cec2. |
 | R057 | Complete optional joint temporal-spatial objective. | COMPLETE — VERIFIED | `Temporal/JointTraining.py` jointly updates the temporal model from paired held-out-aware workflows with spatial, physical and regularization terms. Finite differences and recovery in `Tests/test_joint_training.py`, 16920c2. |
 | R058 | Test joint optimization using explicitly synthetic fixtures. | COMPLETE — VERIFIED | `Examples/SyntheticJoint.py` compares joint and independent training on separate survey targets at a held-out site and period. `Tests/test_joint_training.py`, 16920c2. |
 | R059 | Validate joint learning when genuine paired field labels are available. | BLOCKED — EXTERNAL DATA | Requires real multi-site observations with independently measured targets and adequate paired coverage. |
@@ -119,12 +119,12 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R064 | Display real training progress and loss curves. | PARTIALLY IMPLEMENTED | Verify live training and loss curve rendering in a browser. |
 | R065 | Display evolutionary population and generation progress. | PARTIALLY IMPLEMENTED | Verify generation and population views during live search. |
 | R066 | Display quantum-inspired probability diagnostics. | PARTIALLY IMPLEMENTED | Expose and verify searchable amplitude diagnostics in the UI. |
-| R067 | Display Pareto fronts. | PARTIALLY IMPLEMENTED | Verify interactive Pareto front rendering and selection. |
+| R067 | Display Pareto fronts. | COMPLETE — VERIFIED | The search results view displays the Pareto front and individual validation, parameter, work, latency and estimated memory objectives. Chromium test in Tests/test_research_browser.py. 020f81e. |
 | R068 | Display all six forecast features and uncertainty intervals. | PARTIALLY IMPLEMENTED | Display joint survey ensemble maps alongside local forecast intervals. |
 | R069 | Display interactive spatial and uncertainty maps. | PARTIALLY IMPLEMENTED | Expose time-indexed uncertainty grids in interactive map controls. |
 | R070 | Complete integrated research experiment controls. | PARTIALLY IMPLEMENTED | Expose remaining matched-run and spatial experiment controls. |
 | R071 | Complete downloadable reports and figures. | PARTIALLY IMPLEMENTED | Add and verify publication figure exports alongside existing reports. |
-| R072 | Verify actual browser interactions. | PARTIALLY IMPLEMENTED | Actual Chromium verified AI Trace at 1365 and 390 px, plus quantile training, calibration view and forecasting in the console. Add browser checks of evolutionary search and publication exports. |
+| R072 | Verify actual browser interactions. | PARTIALLY IMPLEMENTED | Chromium verified AI Trace, quantile training and calibration, and sequence search through saved-model forecasting. Publication-export browser coverage remains. 020f81e. |
 | R073 | Complete responsive layout and interface polish. | PARTIALLY IMPLEMENTED | Verify and refine layout across actual viewport sizes. |
 
 ## 9. Scientific experiments and reporting

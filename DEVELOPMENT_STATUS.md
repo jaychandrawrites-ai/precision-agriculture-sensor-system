@@ -60,3 +60,8 @@ execution, publication exports and independent field verification.
 Joint site draws now propagate through selectable reconstruction operators.
 The checklist retains R056 as partial pending a disk-backed export path.
 See EXECUTION_RUNBOOK.md for checkpoint and verification procedure.
+
+The Phase 9 continuation adds disk-backed CLI staging for survey draws and
+browser-verified Pareto viewing and reuse of sequence search winners.
+R042 and R067 are verified. R056 remains partial because covariance
+factorization is dense and the export cannot resume after interruption.

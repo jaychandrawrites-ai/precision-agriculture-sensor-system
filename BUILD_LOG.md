@@ -910,3 +910,23 @@ empirical total-variance identity. Measured field validation remains open.
 The Chromium-enabled full suite at `2be8e9e` ran 166 tests, with 164
 passes and two CUDA skips. The subsequent variance diagnostic passed
 all 13 focused spatial tests at `f986d24`.
+
+### Phase 9 continuation
+
+- `6f0cec2` adds `trace_analysis.py ensemble-map --disk-backed`, which stages
+  the predictive draw cube in a temporary memory-mapped NumPy file and
+  streams it into the existing NPZ. Exact summaries are calculated in cell
+  chunks sized to the working-memory budget. A regression verified that
+  the mapped export matches dense output under a budget that rejected the
+  dense cube. The CLI also ran successfully on the synthetic survey.
+  Kriging still needs an in-memory covariance factorization.
+- `fd6c85b` enables sequence search checkpoint selection in CSV and field
+  forecast jobs. The loopback test trained a sequence search and served
+  a saved random-search winner.
+- `020f81e` displays Pareto objectives and verifies model selection and
+  forecasting in Chromium. Verified R042 and R067.
+
+The complete local suite at `fd6c85b` ran 168 tests with Chromium enabled.
+166 passed and two CUDA tests skipped. The expanded Chromium search test
+passed separately at `020f81e`. The checklist now records 37 verified,
+42 partial, one unstarted and 16 externally blocked requirements.
