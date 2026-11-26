@@ -10,38 +10,78 @@
 </head>
 <body>
 <main>
-  <header><p class="eyebrow">JUPITER</p><h1>Research console</h1><p>Local dataset, model and field jobs</p></header>
+  <header><p class="eyebrow">JUPITER</p><h1>Research console</h1><p>Weather datasets, model experiments and field sessions</p></header>
   <section class="panel">
     <h2>New job</h2>
     <form id="job">
       <label>Operation
         <select id="kind">
-          <option value="inspect">Inspect dataset schema</option>
-          <option value="train">Train temporal model</option>
-          <option value="forecast">Forecast with a saved model</option>
-          <option value="replay">Replay mapped packets</option>
-          <option value="live" id="live-option" hidden>Capture live serial readings</option>
-          <option value="spatial">Reconstruct a field snapshot</option>
+          <optgroup label="Datasets">
+            <option value="inspect">Inspect dataset schema</option>
+            <option value="prepare">Prepare AZMET dataset</option>
+          </optgroup>
+          <optgroup label="Forecasts and experiments">
+            <option value="train">Train temporal model</option>
+            <option value="forecast">Forecast from a CSV</option>
+            <option value="field">Forecast from a field session</option>
+            <option value="benchmark">Compare forecasts with multiple seeds</option>
+            <option value="search">Compare architecture searches</option>
+          </optgroup>
+          <optgroup label="Sensors and maps">
+            <option value="replay">Replay mapped packets</option>
+            <option value="live" id="live-option" hidden>Capture live serial readings</option>
+            <option value="health">Summarize sensor session quality</option>
+            <option value="spatial">Reconstruct a field snapshot</option>
+          </optgroup>
         </select>
       </label>
+      <label id="dataset-label" hidden>Prepared dataset<select id="dataset"></select></label>
       <label id="data-label"><span id="source-name">Input dataset</span><input id="data" type="file" required></label>
-      <label id="config-label" hidden>Configuration JSON<input id="config" type="file" accept=".json"></label>
+      <label id="config-label" hidden><span id="config-name">Configuration JSON</span><input id="config" type="file" accept=".json"></label>
+      <label id="inspection-label" hidden>Source delimiter<select id="delimiter"><option value=",">Comma</option><option value=";">Semicolon</option><option value="tab">Tab</option></select></label>
+      <label id="header-label" class="check" hidden><input id="headerless" type="checkbox"> First row contains data</label>
       <label id="port-label" hidden>Allowed serial port<select id="port"></select></label>
       <label id="baud-label" hidden>Baud rate<input id="baud" type="number" min="300" max="1000000" value="9600"></label>
       <label id="epoch-label" hidden>Training epochs<input id="epochs" type="number" min="1" max="300" value="30"></label>
+      <label id="optimizer-label" hidden>Optimizer<select id="optimizer"><option value="adam">Adam</option><option value="sgd">SGD</option></select></label>
+      <label id="loss-label" hidden>Training loss<select id="loss"><option value="huber">Huber</option><option value="mse">Mean squared error</option></select></label>
       <label id="step-label" hidden>Forecast hours<input id="steps" type="number" min="1" max="168" value="6"></label>
       <label id="model-label" hidden>Saved model<select id="model"></select></label>
-      <button type="submit">Queue job</button><p id="notice" role="status"></p>
+      <label id="session-label" hidden>Saved sensor session<select id="session"></select></label>
+      <label id="horizon-label" hidden>Benchmark horizon in hours<input id="horizon" type="number" min="1" max="72" value="12"></label>
+      <label id="seeds-label" hidden>Seeds separated by commas<input id="seeds" type="text" value="42,43,44"></label>
+      <label id="synthetic-label" class="check" hidden><input id="synthetic" type="checkbox"> Synthetic benchmark data</label>
+      <label id="population-label" hidden>Candidate population<input id="population" type="number" min="2" max="8" value="4"></label>
+      <label id="generations-label" hidden>Generations<input id="generations" type="number" min="1" max="10" value="3"></label>
+      <label id="candidate-epochs-label" hidden>Epochs per candidate<input id="candidate-epochs" type="number" min="1" max="20" value="6"></label>
+      <div class="submit"><button type="submit">Queue job</button><p id="notice" role="status"></p></div>
     </form>
   </section>
   <section class="panel">
-    <h2>Jobs and exports</h2><ul id="jobs"></ul>
+    <div class="section-heading">
+      <h2>Jobs and exports</h2>
+      <label>Show
+        <select id="job-filter">
+          <option value="">All operations</option>
+          <option value="datasets">Datasets</option>
+          <option value="experiments">Training and experiments</option>
+          <option value="forecasts">Forecasts</option>
+          <option value="fieldwork">Sensors and maps</option>
+        </select>
+      </label>
+    </div>
+    <ul id="jobs"></ul>
   </section>
   <section id="details" class="panel" hidden>
     <h2 id="detail-title">Result</h2>
-    <canvas id="plot" width="900" height="290" aria-label="Result chart" role="img" hidden></canvas>
-    <canvas id="uncertainty" width="900" height="290" role="img" aria-label="Spatial standard deviation" hidden></canvas>
-    <pre id="report"></pre>
+    <div class="result-controls">
+      <label id="feature-label" hidden>Feature<select id="feature"></select></label>
+      <label id="view-label" hidden>View<select id="view"></select></label>
+    </div>
+    <canvas id="plot" width="900" height="300" aria-label="Result chart" role="img" hidden></canvas>
+    <ul id="legend" class="legend"></ul>
+    <div id="table" class="table-scroll"></div>
+    <pre id="report" hidden></pre>
   </section>
 </main>
 </body>

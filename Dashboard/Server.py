@@ -4,13 +4,15 @@ import base64
 import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-
-import numpy as np
 from pathlib import Path
 import secrets
+import shutil
 from urllib.parse import urlsplit
 
+import numpy as np
+
 from Dashboard.Jobs import Jobs
+from Dashboard.Reports import dataset_report, forecast_series, metrics_csv, research_report, sensor_series
 
 
 STATIC = Path(__file__).with_name("static")
@@ -22,7 +24,11 @@ ROUTES = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascri
 class DashboardServer(ThreadingHTTPServer):
     def __init__(self, port, root, ports=()):
         super().__init__(("127.0.0.1", port), Handler)
-        self.jobs = Jobs(root, ports=ports)
+        try:
+            self.jobs = Jobs(root, ports=ports)
+        except BaseException:
+            super().server_close()
+            raise
         self.token = secrets.token_urlsafe(24)
         self.authority = f"127.0.0.1:{self.server_port}"
 
@@ -32,7 +38,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    def _reply(self, status, payload, content_type="application/json", download=None):
+    def _headers(self, status, size, content_type, download):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -41,9 +47,17 @@ class Handler(BaseHTTPRequestHandler):
                          "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'")
         if download:
             self.send_header("Content-Disposition", f'attachment; filename="{download}"')
-        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Content-Length", str(size))
         self.end_headers()
+
+    def _reply(self, status, payload, content_type="application/json", download=None):
+        self._headers(status, len(payload), content_type, download)
         self.wfile.write(payload)
+
+    def _file(self, artifact, content_type):
+        with artifact.open("rb") as stream:
+            self._headers(200, artifact.stat().st_size, content_type, artifact.name)
+            shutil.copyfileobj(stream, self.wfile)
 
     def _json(self, status, payload):
         self._reply(status, json.dumps(payload).encode())
@@ -68,27 +82,24 @@ class Handler(BaseHTTPRequestHandler):
                 file = self.server.jobs.live_path(path.rsplit("/", 1)[-1])
             except KeyError:
                 return self._json(404, {"error": "Live session not found"})
-            rows = []
-            if file.is_file():
-                with file.open("rb") as stream:
-                    size = file.stat().st_size
-                    stream.seek(max(0, size - 65536))
-                    if size > 65536:
-                        stream.readline()
-                    for line in stream:
-                        try:
-                            row = json.loads(line)
-                            value = row["measurements"].get("air_temperature_c")
-                            if isinstance(value, (int, float)) and np.isfinite(value):
-                                rows.append(value)
-                        except (ValueError, KeyError, TypeError):
-                            continue
-            return self._json(200, {"temperature_c": rows[-120:]})
+            return self._json(200, sensor_series(file))
+        for route, handler in (("dataset", self._dataset), ("forecast", self._forecast),
+                               ("research", self._research), ("metrics", self._metrics)):
+            if path.startswith(f"/api/{route}/"):
+                try:
+                    return handler(path.rsplit("/", 1)[-1])
+                except (KeyError, ValueError, OSError):
+                    return self._json(404, {"error": "Result not available"})
         if path.startswith("/api/maps/"):
             try:
                 file = self.server.jobs.artifact(path.rsplit("/", 1)[-1], "map/field.npz")
                 with np.load(file, allow_pickle=False) as data:
-                    maps = {key: data[key].tolist() for key in ("variational", "std") if key in data}
+                    maps = {}
+                    for key in ("variational", "idw", "kriging", "mean", "std", "lower", "upper",
+                                "split_rhat", "ess"):
+                        if key in data:
+                            grid = np.asarray(data[key])
+                            maps[key] = np.where(np.isfinite(grid), grid, None).tolist()
             except (KeyError, ValueError):
                 return self._json(404, {"error": "Map not found"})
             return self._json(200, maps)
@@ -104,8 +115,28 @@ class Handler(BaseHTTPRequestHandler):
             kind = {".json": "application/json", ".csv": "text/csv", ".log": "text/plain"}.get(
                 artifact.suffix, "application/octet-stream"
             )
-            return self._reply(200, artifact.read_bytes(), kind, artifact.name)
+            return self._file(artifact, kind)
         self._json(404, {"error": "Route not found"})
+
+    def _dataset(self, identifier):
+        report = self.server.jobs.artifact(identifier, "prepared/report.json")
+        hourly = self.server.jobs.artifact(identifier, "prepared/hourly.csv")
+        return self._json(200, dataset_report(hourly, report))
+
+    def _forecast(self, identifier):
+        try:
+            path = self.server.jobs.artifact(identifier, "forecast.csv")
+        except KeyError:
+            path = self.server.jobs.artifact(identifier, "inference/forecast.csv")
+        return self._json(200, forecast_series(path))
+
+    def _research(self, identifier):
+        kind, path = self.server.jobs.research_report(identifier)
+        return self._json(200, research_report(path, kind))
+
+    def _metrics(self, identifier):
+        kind, path = self.server.jobs.research_report(identifier)
+        return self._reply(200, metrics_csv(path, kind), "text/csv; charset=utf-8", "metrics.csv")
 
     def do_POST(self):
         origin = self.headers.get("Origin")
@@ -123,11 +154,16 @@ class Handler(BaseHTTPRequestHandler):
                          for key, value in request["files"].items()}
                 identifier = self.server.jobs.submit(request["kind"], files, request.get("options", {}))
                 return self._json(202, {"id": identifier})
+            if self.path.startswith("/api/resume/"):
+                self.server.jobs.resume(self.path.rsplit("/", 1)[-1])
+                return self._json(202, {"status": "resume queued"})
             if self.path.startswith("/api/cancel/"):
                 self.server.jobs.cancel(self.path.rsplit("/", 1)[-1])
                 return self._json(202, {"status": "cancellation requested"})
             return self._json(404, {"error": "Route not found"})
-        except (ValueError, TypeError, KeyError, AttributeError):
+        except ValueError as error:
+            return self._json(400, {"error": str(error)[:200]})
+        except (TypeError, KeyError, AttributeError):
             return self._json(400, {"error": "Invalid job options, upload, or job identifier"})
 
 
