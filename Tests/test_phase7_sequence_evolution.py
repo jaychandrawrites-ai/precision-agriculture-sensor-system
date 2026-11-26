@@ -84,3 +84,30 @@ class SequenceEvolutionTests(unittest.TestCase):
                 self.assertEqual(csv.shape, (2, 7))
                 self.assertTrue(np.isfinite(csv.iloc[:, 1:].to_numpy()).all())
             self.assertEqual(report["protocol"]["context_hours_required_for_matched_windows"], 24)
+
+    def test_configured_sequence_stacks_have_correct_gradients_and_saved_inference(self):
+        from Framework.GradientCheck import check_model
+
+        specs = (SequenceSpec("convolution", 8, depth=2, context=12, kernel=3, dilation=2),
+                 SequenceSpec("attention", 8, depth=2, context=12, heads=4))
+        frame, values, times = self.fixture()
+        self.assertEqual(specs[0].receptive_field, 9)
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "prepared.csv"
+            frame.to_csv(source, index=False)
+            for spec in specs:
+                with self.subTest(family=spec.family):
+                    backend = create_backend(dtype="float64")
+                    model = make_direct_model(backend, 2, spec.width, spec)
+                    data = backend.normal((2, spec.context * 6))
+                    output, _ = model.forward(data, training=False)
+                    reports = check_model(model, data, backend.normal(output.shape), backend,
+                                          samples=3, atol=2e-6, rtol=1e-4)
+                    self.assertTrue(all(report.passed for report in reports), reports)
+                    checkpoint = Path(directory) / f"{spec.family}.json"
+                    from direct_forecast import train
+                    train(source, checkpoint, TrainingConfig(epochs=1), 2, architecture=spec)
+                    loaded = load_forecaster(checkpoint)
+                    self.assertEqual(loaded.direct.model.architecture, spec)
+                    np.testing.assert_allclose(forecast_csv(source, checkpoint, 2).iloc[:, 1:],
+                                               loaded.forecast(values[-spec.context:], 2))
