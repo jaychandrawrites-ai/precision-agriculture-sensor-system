@@ -64,3 +64,23 @@ def hessian(gradient, point, relative_step=None):
     if matrix.shape != (len(point), len(point)):
         raise ValueError("Gradient must have the same shape as the point")
     return (matrix + matrix.T) / 2
+
+
+def hessian_vector(gradient, point, direction, relative_step=None):
+    """Apply a Hessian to a vector from two centered gradient evaluations."""
+    x, v = (np.asarray(value, dtype=float) for value in (point, direction))
+    step = np.cbrt(np.finfo(float).eps) if relative_step is None else relative_step
+    if (x.ndim != 1 or not x.size or x.shape != v.shape or not np.isfinite(x).all()
+            or not np.isfinite(v).all() or not np.isfinite(step) or step <= 0):
+        raise ValueError("Expected finite, matching vectors and a positive relative step")
+    magnitude = np.max(np.abs(v))
+    if magnitude == 0:
+        return np.zeros_like(x)
+    scale = step * max(1.0, np.max(np.abs(x)))
+    delta = scale * (v / magnitude)
+    if np.array_equal(x + delta, x - delta):
+        raise ValueError("Difference step is below floating point resolution")
+    a, b = (np.asarray(gradient(z), dtype=float) for z in (x + delta, x - delta))
+    if a.shape != x.shape or b.shape != x.shape or not np.isfinite(a).all() or not np.isfinite(b).all():
+        raise FloatingPointError("Invalid gradient in Hessian-vector product")
+    return (a - b) * (magnitude / (2 * scale))

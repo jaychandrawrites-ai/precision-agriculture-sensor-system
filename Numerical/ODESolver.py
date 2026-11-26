@@ -142,3 +142,86 @@ def integrate_implicit(rhs, initial, start, end, *, step=1.0, jac=None,
                 raise RuntimeError("Cannot satisfy implicit integration tolerance")
         dt = max(min_step, dt * (4 if ratio == 0 else np.clip(0.9 / np.sqrt(ratio), .2, 4)))
     return IntegrationResult(np.asarray(times), np.stack(states), accepted, rejected)
+
+
+# Dormand-Prince 5(4) tableau. The final stage is evaluated at the fifth-order solution.
+_DOPRI_STAGES = (
+    (1 / 5, (1 / 5,)),
+    (3 / 10, (3 / 40, 9 / 40)),
+    (4 / 5, (44 / 45, -56 / 15, 32 / 9)),
+    (8 / 9, (19372 / 6561, -25360 / 2187, 64448 / 6561, -212 / 729)),
+    (1, (9017 / 3168, -355 / 33, 46732 / 5247, 49 / 176, -5103 / 18656)),
+)
+_DOPRI_FIFTH = (35 / 384, 0, 500 / 1113, 125 / 192, -2187 / 6784, 11 / 84)
+_DOPRI_ERROR = tuple(
+    high - low for high, low in zip(
+        (*_DOPRI_FIFTH, 0),
+        (5179 / 57600, 0, 7571 / 16695, 393 / 640, -92097 / 339200, 187 / 2100, 1 / 40),
+    )
+)
+
+
+def integrate_rk45(rhs, initial, start, end, *, step=1.0, rtol=1e-6, atol=1e-8,
+                   min_step=1e-10, max_step=np.inf, max_steps=100000, project=None):
+    """Adaptive Dormand-Prince integration for smooth, nonstiff real ODEs.
+
+    An optional projection is applied only after the embedded error estimate
+    accepts a step. It invalidates endpoint derivatives when it changes the
+    state, and the error estimate does not control projection error.
+    """
+    settings = [start, end, step, rtol, atol, min_step]
+    if (not np.isfinite(settings).all() or end < start or min(step, rtol, atol, min_step) <= 0
+            or not max_step >= min_step or not isinstance(max_steps, int) or max_steps < 1):
+        raise ValueError("Invalid RK45 settings")
+    state = np.asarray(initial, dtype=float).copy()
+    if not state.size or not np.isfinite(state).all():
+        raise ValueError("Expected nonempty, finite initial state")
+
+    def evaluate(time, point):
+        result = np.asarray(rhs(time, point), dtype=float)
+        if result.shape != state.shape:
+            raise ValueError("ODE right hand side must match the state")
+        return result
+
+    time = float(start)
+    progress = min(max(step, min_step), max_step)
+    times, states = [time], [state.copy()]
+    accepted = rejected = 0
+    first = None
+    while time < end:
+        if accepted + rejected >= max_steps:
+            raise RuntimeError("RK45 integration budget exhausted")
+        next_time = min(end, time + progress)
+        dt = next_time - time
+        if dt <= 0:
+            raise RuntimeError("Step is below time precision")
+        if first is None:
+            first = evaluate(time, state)
+        stages = [first]
+        for fraction, weights in _DOPRI_STAGES:
+            trial = state + dt * sum(weight * value for weight, value in zip(weights, stages))
+            stages.append(evaluate(time + fraction * dt, trial))
+        proposal = state + dt * sum(weight * value for weight, value in zip(_DOPRI_FIFTH, stages))
+        last = evaluate(next_time, proposal)
+        stages.append(last)
+        error = dt * sum(weight * value for weight, value in zip(_DOPRI_ERROR, stages))
+        scale = atol + rtol * np.maximum(np.abs(state), np.abs(proposal))
+        ratio = float(np.max(np.abs(error) / scale))
+        if not np.isfinite(ratio) or not np.isfinite(last).all():
+            ratio = np.inf
+        if ratio <= 1:
+            candidate = proposal if project is None else np.asarray(project(proposal.copy()), dtype=float)
+            if candidate.shape != state.shape or not np.isfinite(candidate).all():
+                raise FloatingPointError("Invalid accepted state")
+            first = last if np.array_equal(candidate, proposal) else None
+            state, time = candidate, next_time
+            states.append(state.copy())
+            times.append(time)
+            accepted += 1
+        else:
+            rejected += 1
+            if dt <= min_step:
+                raise RuntimeError("Cannot satisfy RK45 integration tolerance")
+        scale_factor = 5.0 if ratio == 0 else min(5.0, max(0.2, 0.9 * ratio**(-0.2)))
+        progress = min(max_step, max(min_step, dt * scale_factor))
+    return IntegrationResult(np.asarray(times), np.stack(states), accepted, rejected)
