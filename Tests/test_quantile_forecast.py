@@ -39,3 +39,17 @@ class QuantileTests(unittest.TestCase):
             np.testing.assert_array_equal(loaded.predict(x), q)
             with self.assertRaisesRegex(ValueError, "outside"):
                 loaded.predict(x, 4)
+
+    def test_block_calibration_scores_all_leads_and_features_jointly(self):
+        from Temporal.QuantileCalibration import QuantileCalibration
+
+        y = np.zeros((24, 2, 2))
+        y[:, 0, 0] = 3.
+        lower, upper = np.full_like(y, -1), np.full_like(y, 1)
+        origins = np.datetime64("2020-01-01") + np.arange(len(y)).astype("timedelta64[h]")
+        model = QuantileCalibration.fit(lower, upper, y, origins, np.ones((2, 2)), mass=.9)
+        self.assertEqual(model.count, 12)
+        report = model.score(lower, upper, y, origins)["results"]
+        self.assertEqual(report["raw"]["simultaneous_coverage"], 0.)
+        self.assertEqual(report["simultaneous"]["simultaneous_coverage"], 1.)
+        self.assertGreater(report["simultaneous"]["mean_width"].sum(), report["marginal"]["mean_width"].sum())
