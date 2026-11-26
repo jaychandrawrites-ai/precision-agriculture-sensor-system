@@ -25,3 +25,15 @@ Status labels describe software and validation evidence separately.
 Prioritize real receiver verification and completing the survey-to-maps
 workflow before expensive benchmark runs. Keep synthetic and observed
 evidence labeled in every experiment report.
+
+## Final checklist checkpoint
+
+The [final development checklist](FINAL_DEVELOPMENT_CHECKLIST.md) tracks all
+96 remaining requirements. It records 17 verified, 57 partially implemented,
+two awaiting browser verification, four unstarted and 16 externally blocked.
+See the build log for the verification commands and commit evidence.
+
+AI Trace now exports shared ensemble trajectories across sites and forecast
+leads. The field loader serves portable direct and sequence checkpoints.
+Adaptive kriging is integrated into measured-site mapping. The five-site
+offline demonstration verified software behavior using synthetic inputs.

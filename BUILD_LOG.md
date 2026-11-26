@@ -717,3 +717,51 @@ Python grew to 16,867 tracked lines across 205 files, with 1,889 insertions
 and 16 deletions. Native AquaMap verification, calibration with real
 instruments, the specified newer Yuma export, broader sequence architecture
 search and forecast-map uncertainty propagation remain open.
+
+## 2026-11-25 — Final checklist checkpoint
+
+Implemented and pushed four functional commits on `jupiter-clean-development`.
+
+- `b203519` added aligned saved-model ensembles to AI Trace, a command to
+  generate time-indexed uncertainty maps, and an offline five-site fixture.
+  Changed `Acquisition/TraceAnalysis.py`, `trace_analysis.py` and
+  `Examples/SyntheticTrace.py`. Added `Tests/test_trace_ensemble.py`.
+- `04e7332` connected portable direct and sequence checkpoints to the
+  shared forecasting entry point. Changed `Temporal/DirectCheckpoint.py`,
+  `Utils/ModelLoader.py` and `Tests/test_phase5_sequence_forecast.py`.
+- `8e14557` integrated fit-only adaptive kriging in `Pipeline.py` and
+  `adaptive_map.py`. `Tests/test_adaptive_grid.py` checks that a held-out
+  outlier cannot affect predictions.
+- `df5915b` exported the shared interpolation weights and verified exact
+  reconstruction of ensemble statistics. Changed `spatial_forecast.py`,
+  `Acquisition/TraceAnalysis.py` and `Tests/test_trace_ensemble.py`.
+
+Functional diff from `9f33690` added 220 Python lines and deleted 28.
+The resulting tree contains 17,059 lines across 206 tracked Python files.
+This documentation update added `FINAL_DEVELOPMENT_CHECKLIST.md` and
+updated `DEVELOPMENT_STATUS.md` and this log.
+
+Verification from the repository root:
+
+```sh
+python -W error::DeprecationWarning -m unittest discover -s Tests -q
+node --check Dashboard/static/trace.js
+python -m Examples.SyntheticTrace /tmp/jupiter-checklist-demo --ensemble
+```
+
+The full suite ran 133 tests, with 131 passes and two optional CUDA skips.
+All four Linux and Windows jobs passed on Python 3.11 and 3.12 at
+`df5915b`. A fresh single-branch clone and virtual environment installed
+`requirements.txt` and ran the offline demo successfully.
+[CI matrix](https://github.com/jaychandrawrites-ai/precision-agriculture-sensor-system/actions/runs/45767131538)
+
+The demo exported two members across five synthetic sites, six hourly leads
+and six features. The test reproduced the mean and spread on each 25 × 25
+grid directly from the saved member values and interpolation weights.
+Intervals summarize checkpoint disagreement. Their predictive coverage in a
+real field is unknown. No new measured-field accuracy estimates were made.
+There were no failures in the final CPU suite or the clean-install smoke test.
+
+Open work and external dependencies are indexed by ID in the final checklist.
+Browser interactions and physical receiver evaluation remain unverified.
+The original firmware and historical branches were preserved.
