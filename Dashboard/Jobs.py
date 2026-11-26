@@ -25,6 +25,10 @@ SPEC = {
     "field": ("config",),
     "benchmark": ("data",),
     "search": ("data",),
+    "direct_train": ("data",),
+    "adaptive_spatial": ("data", "config"),
+    "ensemble_spatial": ("data", "config"),
+    "joint": (),
 }
 ARTIFACTS = {
     "inspect": {"report.json"},
@@ -38,6 +42,10 @@ ARTIFACTS = {
     "field": {"inference/forecast.csv", "inference/coverage.csv"},
     "benchmark": {"report.json"},
     "search": {"report.json"},
+    "direct_train": {"direct-model.json", "direct-model.training.json"},
+    "adaptive_spatial": {"adaptive-map.json"},
+    "ensemble_spatial": {"map/report.json", "map/forecast-field.npz"},
+    "joint": {"report.json"},
 }
 # Restrict shareable bundles to artifacts which don't carry packet/device identifiers,
 # spatial coordinates or field settings.
@@ -46,7 +54,7 @@ RESEARCH_ARTIFACTS = {
     "benchmark": {"report.json"},
     "search": {"report.json"},
 }
-DATASET_INPUTS = {"train", "benchmark", "search"}
+DATASET_INPUTS = {"train", "direct_train", "benchmark", "search"}
 IN_PROGRESS = {"queued", "running"}
 FINAL = {"complete", "failed", "cancelled", "interrupted"}
 ID = re.compile(r"[0-9a-f]{32}")
@@ -190,9 +198,14 @@ class Jobs:
             self._linked(raw["dataset"], {"prepare"}, "prepared/hourly.csv")
             settings["dataset"] = raw["dataset"]
         if kind in {"forecast", "field"}:
-            self._linked(raw.get("model"), {"train"}, "model.json")
-            settings["model"] = raw["model"]
-            settings["steps"] = self._number(raw, "steps", 6, (1, 168))
+            identifier = raw.get("model")
+            candidate = self.store.get(identifier) if isinstance(identifier, str) else None
+            if kind == "forecast" and candidate is not None and candidate.kind == "direct_train":
+                self._linked(identifier, {"direct_train"}, "direct-model.json")
+            else:
+                self._linked(identifier, {"train"}, "model.json")
+                settings["steps"] = self._number(raw, "steps", 6, (1, 168))
+            settings["model"] = identifier
         if kind in {"health", "field"}:
             self._linked(raw.get("session"), {"live", "replay"}, "session/readings.jsonl")
             settings["session"] = raw["session"]
@@ -201,6 +214,15 @@ class Jobs:
         if kind == "train":
             settings["optimizer"] = self._choice(raw, "optimizer", "adam", ("adam", "sgd"))
             settings["loss"] = self._choice(raw, "loss", "huber", ("huber", "mse"))
+        if kind == "direct_train":
+            from Temporal.Direct import DIRECT_ARCHITECTURES
+
+            settings["architecture"] = self._choice(raw, "architecture", "gated", DIRECT_ARCHITECTURES)
+            settings["width"] = self._number(raw, "width", 32, (1, 128))
+            settings["horizon"] = self._number(raw, "horizon", 6, (1, 72))
+        if kind == "joint":
+            settings["epochs"] = self._number(raw, "epochs", 160, (1, 500))
+            settings["seed"] = self._number(raw, "seed", 82, (0, 2**32 - 1))
         if kind == "benchmark":
             settings["horizon"] = self._number(raw, "horizon", 12, (1, 72))
             seeds = raw.get("seeds", [42, 43, 44])
@@ -255,6 +277,16 @@ class Jobs:
                     "--population", opts["population"], "--generations", opts["generations"],
                     "--candidate-epochs", opts["candidate_epochs"], "--seed", opts["seed"],
                     "--search-directory", folder / "search"]
+        if kind == "direct_train":
+            return ["direct_forecast.py", "train", data, folder / "direct-model.json", "--epochs", opts["epochs"],
+                    "--horizon", opts["horizon"], "--width", opts["width"], "--architecture", opts["architecture"]]
+        if kind == "joint":
+            return ["-m", "Examples.SyntheticJoint", folder / "report.json", "--epochs", opts["epochs"],
+                    "--seed", opts["seed"]]
+        if kind == "adaptive_spatial":
+            return ["adaptive_map.py", data, config, folder / "adaptive-map.json"]
+        if kind == "ensemble_spatial":
+            return ["spatial_forecast.py", data, config, folder / "map"]
         if kind == "replay":
             return ["acquire.py", "--replay", data, "--packet-schema", config, folder / "session"]
         if kind == "spatial":
@@ -263,6 +295,9 @@ class Jobs:
             return ["acquire.py", "--port", opts["port"], "--baud", opts["baud"],
                     "--reconnect-attempts", 3, folder / "session"]
         if kind == "forecast":
+            if "steps" not in opts:
+                model = self._linked(opts["model"], {"direct_train"}, "direct-model.json")
+                return ["direct_forecast.py", "predict", data, model, folder / "forecast.csv"]
             model = self._linked(opts["model"], {"train"}, "model.json")
             return ["forecast.py", data, model, "--steps", opts["steps"]]
         source = self._linked(opts["session"], {"live", "replay"}, "session/readings.jsonl")
@@ -282,8 +317,12 @@ class Jobs:
             raise ValueError("Supply exactly the inputs needed for this operation")
         if any(type(data) is not bytes or not data or len(data) > MAX_DECODED for data in files.values()):
             raise ValueError("Input files must be nonempty and at most 12 MiB each")
-        if kind == "spatial":
+        if kind in {"spatial", "ensemble_spatial"}:
             self._check_map(files["config"])
+        if kind == "adaptive_spatial":
+            settings = decode_json(files["config"]).get("refinement", {})
+            self._number(settings, "max_depth", 5, (0, 8))
+            self._number(settings, "max_leaves", 1024, (1, 2048))
         with self.lock:
             if len(self.store) >= self.capacity:
                 raise ValueError("Dashboard workspace job limit reached")
@@ -307,7 +346,7 @@ class Jobs:
                 self._status(job, "cancelled")
                 return
             self._status(job, "running")
-        if job.kind == "forecast":
+        if job.kind == "forecast" and "steps" in job.options:
             output_name = "forecast.csv"
         elif job.kind in {"inspect", "train", "search"}:
             output_name = "report.json"

@@ -6,6 +6,7 @@ const trace = {
   survey: null,
   receiver: null,
   busy: false,
+  readiness: null,
 };
 const el = id => document.getElementById(id);
 const path = (id, action = "") => "/api/trace/" + encodeURIComponent(id) + (action ? "/" + action : "");
@@ -93,13 +94,48 @@ function render() {
   const latest = receiver.latest;
   const connected = ["connected", "connecting", "reconnecting"].includes(receiver.state);
   const blockStart = ["connecting", "reconnecting", "failed"].includes(receiver.state);
-  const entries = [["Status", receiver.state], ["Received bytes", receiver.bytes_received],
-    ["Raw frames", receiver.packets_received], ["GPS", latest?.gps_available ? "Valid fix" : "Unavailable"],
+  const entries = [["Status", receiver.state], ["Port", receiver.port || "Not connected"],
+    ["Baud rate", receiver.baud ?? "—"], ["Received bytes", receiver.bytes_received],
+    ["Raw frames", receiver.packets_received], ["Buffered bytes", receiver.pending_frame_bytes ?? 0],
+    ["Successful parses", receiver.successful_parses ?? 0], ["Parse failures", receiver.parse_failures ?? 0],
+    ["Duplicate packets", receiver.duplicate_packets ?? 0],
+    ["GPS", latest?.gps_validity?.replace("_", " ") || "Not reported"],
+    ["Valid GPS fixes", receiver.valid_gps_fixes ?? 0], ["Invalid GPS reports", receiver.invalid_gps_reports ?? 0],
+    ["Device restarts", receiver.restart_count ?? 0],
+    ["Last frame received", receiver.last_receipt ? shortTime(receiver.last_receipt) : "—"],
+    ["Latest measurement time", latest?.observed_at ? shortTime(latest.observed_at) : "Not supplied"],
     ["Quality", latest ? latest.flags.join(", ") || "No parser flags" : "Awaiting parsed measurements"]];
-  if (receiver.error) entries.push(["Receiver message", receiver.error]);
+  if (receiver.error) entries.push(["Current receiver message", receiver.error]);
+  if (receiver.most_recent_error) {
+    const error = receiver.most_recent_error;
+    entries.push(["Most recent error", error.message],
+      ["Error time", shortTime(error.at)], ["Recovery", error.recoverable ? "Reconnectable" : "Reconnect manually"]);
+  }
+  const report = trace.readiness;
+  el("trace-readiness").textContent = report
+    ? report.ready_locations + " of " + report.locations.length + " locations ready in the last check."
+    : "Forecast readiness has not been checked for these recordings.";
   readout(el("trace-diagnostics"), entries);
   readout(el("trace-measurements"), Object.entries(latest?.measurements || {}).map(
     ([name, value]) => [measurements[name] || name, value]));
+  readout(el("trace-devices"), [
+    ...Object.entries(receiver.device_packet_counts || {}).map(([key, count]) => ["Device " + key, count + " packets"]),
+    ...Object.entries(receiver.missing_measurements || {}).map(([key, count]) => ["Missing " + (measurements[key] || key), count]),
+    ...(receiver.recent_restart_boundaries || []).map(item => ["Restart", [item.device_id || "Unknown device",
+      item.boot_id || "Unknown boot", shortTime(item.at)].join(" · ")]),
+  ]);
+  readout(el("trace-units"), Object.entries(receiver.configured_units || {}).map(
+    ([name, units]) => [measurements[name] || name, units.source + " received · " + units.normalized + " stored"]));
+  readout(el("trace-calibration"), Object.entries(receiver.calibration || {}).flatMap(([name, calibration]) => {
+    const label = name.startsWith("leaf") ? "Leaf wetness calibration" : "Soil moisture calibration";
+    const details = [[label, calibration.state.replaceAll("_", " ")]];
+    if (calibration.raw_field) details.push(["Raw " + (measurements[calibration.raw_field] || calibration.raw_field), calibration.raw_value]);
+    if ("calibrated_value" in calibration) {
+      const calibrated = calibration.calibrated_field === "lwi" ? "Calibrated leaf wetness index" : "Calibrated soil water fraction";
+      details.push([calibrated, calibration.calibrated_value]);
+    }
+    return details;
+  }));
   const recording = (trace.survey?.locations || []).flatMap(location =>
     location.segments.map(segment => ({label: location.label, ...segment}))).find(segment => segment.id === active);
   const elapsed = recording ? Math.max(0, (Date.now() - Date.parse(recording.started_at)) / 1000) : 0;
@@ -110,6 +146,7 @@ function render() {
   setDisabled("trace-revisit", !open || closed || Boolean(active) || blockStart || !trace.survey?.locations.length || trace.busy);
   setDisabled("trace-replay", !open || closed || Boolean(active) || connected || trace.busy);
   setDisabled("trace-forecast-form", !open || trace.busy);
+  setDisabled("trace-ensemble-form", !open || trace.busy);
   setDisabled("trace-map-form", !open || trace.busy);
   el("trace-connect").querySelector("button").disabled =
     !open || closed || Boolean(active) || connected || el("trace-ports").options.length < 2 || trace.busy;
@@ -148,12 +185,15 @@ async function refresh() {
   const id = trace.id;
   const answer = await request(path(id));
   if (id !== trace.id) return;
+  if (trace.survey?.active_segment_id !== answer.survey.active_segment_id) trace.readiness = null;
   trace.survey = answer.survey;
   trace.receiver = answer.receiver;
   render();
 }
 async function perform(action, payload = {}) {
-  return request(path(trace.id, action), payload);
+  const result = await request(path(trace.id, action), payload);
+  if (["start", "stop", "finish", "replay"].includes(action)) trace.readiness = null;
+  return result;
 }
 function operation(fn, success = "") {
   return async event => {
@@ -179,8 +219,8 @@ function showResult(result) {
   el("trace-result").hidden = false;
   el("trace-result").textContent = JSON.stringify(result, null, 2);
 }
-function drawMap(values) {
-  const canvas = el("trace-map");
+function drawMap(values, id = "trace-map", label = "Observational map") {
+  const canvas = el(id);
   canvas.hidden = !Array.isArray(values) || !values.length;
   if (canvas.hidden) return;
   const ctx = canvas.getContext("2d");
@@ -194,18 +234,42 @@ function drawMap(values) {
     const width = canvas.width / cols, height = canvas.height / rows;
     ctx.fillRect(x * width, (rows - 1 - y) * height, width + .6, height + .6);
   }));
-  canvas.setAttribute("aria-label", `Observational map, values from ${min.toFixed(2)} to ${max.toFixed(2)}`);
+  canvas.setAttribute("aria-label", label + ", values from " + min.toFixed(2) + " to " + max.toFixed(2));
+}
+function drawAdaptive(cells, field, id, label) {
+  const canvas = el(id);
+  const values = cells[field].filter((value, i) => cells.inside[i] && Number.isFinite(value));
+  canvas.hidden = !values.length;
+  if (canvas.hidden) return;
+  const ctx = canvas.getContext("2d");
+  const min = Math.min(...values), max = Math.max(...values);
+  const west = Math.min(...cells.bounds_m.map(cell => cell[0]));
+  const south = Math.min(...cells.bounds_m.map(cell => cell[1]));
+  const east = Math.max(...cells.bounds_m.map(cell => cell[2]));
+  const north = Math.max(...cells.bounds_m.map(cell => cell[3]));
+  const sx = canvas.width / (east - west), sy = canvas.height / (north - south);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  cells.bounds_m.forEach(([left, bottom, right, top], index) => {
+    const value = cells[field][index];
+    if (!cells.inside[index] || !Number.isFinite(value)) return;
+    const t = max > min ? (value - min) / (max - min) : .5;
+    ctx.fillStyle = "hsl(" + (215 - 175 * t) + ", 65%, 50%)";
+    ctx.fillRect((left - west) * sx, (north - top) * sy, (right - left) * sx + .6, (top - bottom) * sy + .6);
+  });
+  canvas.setAttribute("aria-label", label + ", values from " + min.toFixed(2) + " to " + max.toFixed(2));
 }
 submit("trace-create", async event => {
   const survey = await request("/api/trace", {label: event.target.elements.label.value});
   trace.id = survey.id;
+  trace.readiness = null;
   event.target.reset();
   await listSurveys();
 }, "Survey created.");
 submit("trace-restore", async event => {
-  const archive = await jsonFile(event.target.elements.archive, true);
-  const survey = await request("/api/trace/restore", {archive});
+  const archive_bytes = await base64File(event.target.elements.archive.files[0]);
+  const survey = await request("/api/trace/restore", {archive_bytes});
   trace.id = survey.id;
+  trace.readiness = null;
   await listSurveys();
 }, "Survey imported.");
 submit("trace-import-csv", async event => {
@@ -213,6 +277,7 @@ submit("trace-import-csv", async event => {
   const survey = await request("/api/trace/import-csv", {label: fields.label.value,
     csv: await base64File(fields.csv.files[0]), mapping: await jsonFile(fields.mapping, true)});
   trace.id = survey.id;
+  trace.readiness = null;
   await listSurveys();
 }, "Measurements imported.");
 submit("trace-connect", async event => perform("connect", {port: event.target.elements.port.value,
@@ -244,14 +309,34 @@ submit("trace-forecast-form", async event => {
   const action = event.submitter.value;
   const fields = event.target.elements;
   if (action === "forecast" && !fields.model.value) throw new Error("Select a saved model.");
-  showResult(await perform(action, {configuration: await jsonFile(fields.configuration, true),
-    model: fields.model.value || undefined, steps: Number(fields.steps.value)}));
+  const report = await perform(action, {configuration: await jsonFile(fields.configuration, true),
+    model: fields.model.value || undefined, steps: Number(fields.steps.value)});
+  trace.readiness = report;
+  showResult(report);
 }, "Forecast report available.");
+submit("trace-ensemble-form", async event => {
+  const fields = event.target.elements;
+  const lead = Number(fields.lead.value);
+  const members = [...fields.members.selectedOptions].map(item => item.value).filter(Boolean);
+  if (members.includes(fields.model.value)) throw new Error("Choose distinct ensemble models.");
+  const result = await perform("ensemble-map", {configuration: await jsonFile(fields.configuration, true),
+    model: fields.model.value, members, origin: new Date(fields.origin.value).toISOString(),
+    steps: lead, lead, feature: fields.feature.value, adaptive: await jsonFile(fields.adaptive)});
+  if (result.adaptive) {
+    drawAdaptive(result.adaptive, "mean", "trace-map", "Adaptive ensemble forecast mean");
+    drawAdaptive(result.adaptive, "spread", "trace-spread", "Adaptive ensemble model spread");
+  } else {
+    drawMap(result.layers.mean, "trace-map", "Ensemble forecast mean");
+    drawMap(result.layers.spread, "trace-spread", "Ensemble model spread");
+  }
+  showResult({feature: result.feature, lead_hours: result.lead_hours, ...result.metadata});
+}, "Ensemble forecast map available.");
 submit("trace-map-form", async event => {
   const fields = event.target.elements;
   const result = await perform("map", {feature: fields.feature.value,
     timestamp: new Date(fields.timestamp.value).toISOString(), window_minutes: Number(fields.window_minutes.value)});
   drawMap(result.estimate);
+  el("trace-spread").hidden = true;
   const summary = {...result};
   delete summary.estimate;
   showResult(summary);
@@ -259,13 +344,17 @@ submit("trace-map-form", async event => {
 el("trace-surveys").addEventListener("change", operation(async event => {
   trace.id = event.target.value;
   trace.survey = trace.receiver = null;
-  el("trace-result").hidden = el("trace-map").hidden = true;
+  trace.readiness = null;
+  el("trace-result").hidden = el("trace-map").hidden = el("trace-spread").hidden = true;
 }));
 async function setup() {
   const [ports, jobs] = await Promise.all([request("/api/ports"), request("/api/jobs"), listSurveys()]);
   setOptions(el("trace-ports"), ports.map(value => [value, value]), "Select an enabled port");
-  setOptions(el("trace-models"), jobs.filter(job => job.kind === "train" && job.status === "complete")
-    .map(job => [job.id, job.label || job.id]), "Check data without a model");
+  const models = jobs.filter(job => job.kind === "train" && job.status === "complete")
+    .map(job => [job.id, job.label || job.id]);
+  setOptions(el("trace-models"), models, "Check data without a model");
+  setOptions(el("trace-ensemble-model"), models, "Select a saved model");
+  el("trace-ensemble-members").replaceChildren(...models.map(([value, name]) => option(value, name)));
   render();
 }
 setup().catch(error => { el("trace-alert").textContent = error.message; });

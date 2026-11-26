@@ -15,6 +15,7 @@ from Acquisition.AITrace import TraceStore
 from Acquisition.TraceReceiver import TraceReceiver
 from Dashboard.Jobs import Jobs
 from Dashboard.TraceAPI import trace_get, trace_post
+from Utils.Serialization import read_json
 from Dashboard.Reports import dataset_report, forecast_series, metrics_csv, research_report, sensor_series
 
 
@@ -101,17 +102,22 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(404, {"error": "Result not available"})
         if path.startswith("/api/maps/"):
             try:
-                file = self.server.jobs.artifact(path.rsplit("/", 1)[-1], "map/field.npz")
+                identifier = path.rsplit("/", 1)[-1]
+                try:
+                    file = self.server.jobs.artifact(identifier, "map/field.npz")
+                except KeyError:
+                    file = self.server.jobs.artifact(identifier, "map/forecast-field.npz")
+                info = read_json(self.server.jobs.artifact(identifier, "map/report.json"))
                 with np.load(file, allow_pickle=False) as data:
                     maps = {}
-                    for key in ("variational", "idw", "kriging", "mean", "std", "lower", "upper",
-                                "split_rhat", "ess"):
+                    for key in ("variational", "idw", "kriging", "mean", "std", "spread", "lower",
+                                "upper", "split_rhat", "ess"):
                         if key in data:
                             grid = np.asarray(data[key])
                             maps[key] = np.where(np.isfinite(grid), grid, None).tolist()
-            except (KeyError, ValueError):
+                return self._json(200, {"layers": maps, "metadata": info})
+            except (KeyError, ValueError, OSError):
                 return self._json(404, {"error": "Map not found"})
-            return self._json(200, maps)
         if path == "/api/jobs":
             return self._json(200, self.server.jobs.snapshot())
         if path.startswith("/api/artifacts/"):

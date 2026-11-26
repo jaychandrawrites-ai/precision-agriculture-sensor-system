@@ -11,3 +11,4 @@ class SensorData:
     observed_at: datetime | None = None
     device_id: str | None = None
     packet_id: str | None = None
+    boot_id: str | None = None

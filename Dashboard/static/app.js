@@ -6,7 +6,9 @@ const labels = {
   inspect: "Schema inspection", prepare: "AZMET preparation", train: "Model training",
   forecast: "CSV forecast", field: "Field forecast", replay: "Packet replay",
   spatial: "Spatial map", live: "Live acquisition", health: "Sensor quality",
-  benchmark: "Forecast benchmark", search: "Architecture search"
+  benchmark: "Forecast benchmark", search: "Architecture search",
+  direct_train: "Direct model training", joint: "Synthetic joint experiment",
+  adaptive_spatial: "Adaptive reconstruction", ensemble_spatial: "Forecast ensemble map"
 };
 const features = {
   air_temperature_c: "Air temperature °C", relative_humidity_pct: "Relative humidity %",
@@ -16,14 +18,15 @@ const features = {
   soil_ec_us_cm: "Soil conductivity µS/cm", soil_ph: "Soil pH", leaf_mv: "Leaf wetness mV"
 };
 const groups = {
-  datasets: ["inspect", "prepare"], experiments: ["train", "benchmark", "search"],
-  forecasts: ["forecast", "field"], fieldwork: ["replay", "live", "health", "spatial"]
+  datasets: ["inspect", "prepare"], experiments: ["train", "benchmark", "search", "direct_train", "joint"],
+  forecasts: ["forecast", "field"], fieldwork: ["replay", "live", "health", "spatial", "adaptive_spatial", "ensemble_spatial"]
 };
 const colors = ["#087e6b", "#9f4b16", "#355b9c", "#8b3278", "#6c681d", "#573ab2", "#374557"];
-const datasetKinds = groups.experiments;
+const datasetKinds = groups.experiments.filter((kind) => kind !== "joint");
 const configLabels = {
   prepare: "AZMET mapping JSON", replay: "Packet schema JSON",
-  field: "Field calibration and settings JSON", spatial: "Grid and reconstruction JSON"
+  field: "Field calibration and settings JSON", spatial: "Grid and reconstruction JSON",
+  adaptive_spatial: "Adaptive reconstruction JSON", ensemble_spatial: "Forecast map JSON"
 };
 const mapLabels = {
   variational: "Variational field", idw: "Inverse distance weighted field", kriging: "Kriging field",
@@ -39,15 +42,16 @@ const metricLabels = {
 function controls() {
   const kind = $("kind").value;
   const useSavedDataset = datasetKinds.includes(kind) && $("dataset").value;
-  const needUpload = !["live", "health", "field"].includes(kind) && !useSavedDataset;
+  const needUpload = !["live", "health", "field", "joint"].includes(kind) && !useSavedDataset;
   $("source-name").textContent = kind === "replay" ? "Raw capture JSONL" : "Input data CSV";
   $("config-name").textContent = configLabels[kind] || "Configuration JSON";
   const visibility = {
     data: needUpload, config: Boolean(configLabels[kind]), dataset: datasetKinds.includes(kind),
-    port: kind === "live", baud: kind === "live", epoch: datasetKinds.includes(kind),
+    port: kind === "live", baud: kind === "live", epoch: datasetKinds.includes(kind) || kind === "joint",
     model: ["forecast", "field"].includes(kind), step: ["forecast", "field"].includes(kind),
     session: ["field", "health"].includes(kind), inspection: kind === "inspect", header: kind === "inspect",
-    optimizer: kind === "train", loss: kind === "train", horizon: kind === "benchmark",
+    optimizer: kind === "train", loss: kind === "train", horizon: ["benchmark", "direct_train"].includes(kind),
+    architecture: kind === "direct_train", width: kind === "direct_train", "joint-seed": kind === "joint",
     seeds: kind === "benchmark", synthetic: kind === "benchmark", population: kind === "search",
     generations: kind === "search", "candidate-epochs": kind === "search"
   };
@@ -215,7 +219,7 @@ function showResult(job, mode, data, live = false) {
   else if (mode === "research") {
     const metrics = Object.entries(metricLabels).filter(([key]) => data.metrics.some((row) => row[key] !== null));
     select("view", {...Object.fromEntries(metrics), ...(data.search ? {search: "Search diagnostics"} : {})});
-  } else if (mode === "map") select("view", Object.fromEntries(Object.keys(data).map((key) => [key, mapLabels[key]])));
+  } else if (mode === "map") select("view", Object.fromEntries(Object.keys(data.layers || data).map((key) => [key, mapLabels[key] || key])));
   else select("view", {});
   renderResult();
   if (!live) $("details").scrollIntoView({block: "nearest"});
@@ -231,7 +235,9 @@ function renderResult() {
   $("table").replaceChildren();
   report(null);
   if (mode === "map") {
-    if (data[view]) heatmap(data[view], mapLabels[view]);
+    const layers = data.layers || data;
+    const grid = layers[view];
+    if (grid) heatmap(grid, mapLabels[view] || view);
   } else if (mode === "forecast" || mode === "sensor") {
     const values = data.series[feature] || [];
     chart({[features[feature]]: values}, features[feature], mode === "forecast" ? "Forecast hour" : "Recent records");
@@ -364,7 +370,7 @@ function jobRow(job) {
     row.append(button("Forecast chart", () => inspectView(job, "forecast", "forecast")));
   }
   if (job.artifacts.includes("session/readings.jsonl")) row.append(button("Reading chart", () => inspectView(job, "live", "sensor")));
-  if (job.artifacts.includes("map/field.npz")) row.append(button("Heatmaps", () => inspectView(job, "maps", "map")));
+  if (job.artifacts.some((name) => ["map/field.npz", "map/forecast-field.npz"].includes(name))) row.append(button("Heatmaps", () => inspectView(job, "maps", "map")));
   if (job.can_export) {
     row.append(button("Metrics and results", () => inspectView(job, "research", "research")));
     row.append(link("Metrics CSV", "/api/metrics/" + job.id));
@@ -396,7 +402,8 @@ async function refresh() {
 function options() {
   return {
     model: $("model").value, dataset: $("dataset").value, session: $("session").value,
-    epochs: Number($("epochs").value), steps: Number($("steps").value),
+    architecture: $("architecture").value, width: Number($("width").value),
+    seed: Number($("joint-seed").value), epochs: Number($("epochs").value), steps: Number($("steps").value),
     baud: Number($("baud").value), port: $("port").value, optimizer: $("optimizer").value,
     loss: $("loss").value, delimiter: $("delimiter").value === "tab" ? "\t" : $("delimiter").value,
     headerless: $("headerless").checked, horizon: Number($("horizon").value),
@@ -406,6 +413,12 @@ function options() {
   };
 }
 
+document.querySelectorAll("[data-operation]").forEach((link) => {
+  link.addEventListener("click", () => {
+    $("kind").value = link.dataset.operation;
+    controls();
+  });
+});
 $("kind").addEventListener("change", controls);
 $("dataset").addEventListener("change", controls);
 $("view").addEventListener("change", renderResult);

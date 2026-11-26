@@ -10,8 +10,22 @@
 </head>
 <body>
 <main>
-  <header><p class="eyebrow">JUPITER</p><h1>Research console</h1><p>Weather datasets, model experiments and field sessions</p><nav aria-label="Application"><a href="/trace">AI Trace field surveys</a></nav></header>
-  <section class="panel">
+  <header id="overview"><p class="eyebrow">JUPITER</p><h1>Research console</h1><p>Weather datasets, model experiments and field sessions</p><nav class="workspace-nav" aria-label="Application">
+    <a href="#overview">Overview</a>
+    <a href="#new-job" data-operation="prepare">Historical datasets</a>
+    <a href="#new-job" data-operation="prepare">Physics and features</a>
+    <a href="#new-job" data-operation="direct_train">Neural training</a>
+    <a href="#new-job" data-operation="search">Architecture search</a>
+    <a href="/trace">AI Trace field surveys</a>
+    <a href="#new-job" data-operation="health">Hardware diagnostics</a>
+    <a href="#new-job" data-operation="forecast">Temporal forecasting</a>
+    <a href="#new-job" data-operation="adaptive_spatial">Spatial reconstruction</a>
+    <a href="#new-job" data-operation="ensemble_spatial">Uncertainty analysis</a>
+    <a href="#new-job" data-operation="joint">Experiments</a>
+    <a href="#results">Results and exports</a>
+    <a href="#new-job" data-operation="field">Settings and calibration</a>
+  </nav></header>
+  <section id="new-job" class="panel">
     <h2>New job</h2>
     <form id="job">
       <label>Operation
@@ -21,17 +35,21 @@
             <option value="prepare">Prepare AZMET dataset</option>
           </optgroup>
           <optgroup label="Forecasts and experiments">
-            <option value="train">Train temporal model</option>
+            <option value="train">Train recursive model</option>
+            <option value="direct_train">Train direct sequence model</option>
             <option value="forecast">Forecast from a CSV</option>
             <option value="field">Forecast from a field session</option>
             <option value="benchmark">Compare forecasts with multiple seeds</option>
             <option value="search">Compare architecture searches</option>
+            <option value="joint">Compare joint and temporal-only training on synthetic data</option>
           </optgroup>
           <optgroup label="Sensors and maps">
             <option value="replay">Replay mapped packets</option>
             <option value="live" id="live-option" hidden>Capture live serial readings</option>
             <option value="health">Summarize sensor session quality</option>
             <option value="spatial">Reconstruct a field snapshot</option>
+            <option value="adaptive_spatial">Map local measurements on an adaptive grid</option>
+            <option value="ensemble_spatial">Map a forecast ensemble</option>
           </optgroup>
         </select>
       </label>
@@ -45,10 +63,17 @@
       <label id="epoch-label" hidden>Training epochs<input id="epochs" type="number" min="1" max="300" value="30"></label>
       <label id="optimizer-label" hidden>Optimizer<select id="optimizer"><option value="adam">Adam</option><option value="sgd">SGD</option></select></label>
       <label id="loss-label" hidden>Training loss<select id="loss"><option value="huber">Huber</option><option value="mse">Mean squared error</option></select></label>
+      <label id="architecture-label" hidden>Direct architecture<select id="architecture">
+        <option value="gated">Gated dense</option><option value="gru">GRU</option>
+        <option value="convolution">Convolution</option><option value="attention">Attention</option>
+        <option value="lstm">LSTM</option><option value="lstm_attention">LSTM plus attention</option>
+      </select></label>
+      <label id="width-label" hidden>Direct layer width<input id="width" type="number" min="1" max="128" value="32"></label>
+      <label id="joint-seed-label" hidden>Joint experiment seed<input id="joint-seed" type="number" min="0" max="4294967295" value="82"></label>
       <label id="step-label" hidden>Forecast hours<input id="steps" type="number" min="1" max="168" value="6"></label>
       <label id="model-label" hidden>Saved model<select id="model"></select></label>
       <label id="session-label" hidden>Saved sensor session<select id="session"></select></label>
-      <label id="horizon-label" hidden>Benchmark horizon in hours<input id="horizon" type="number" min="1" max="72" value="12"></label>
+      <label id="horizon-label" hidden>Output horizon in hours<input id="horizon" type="number" min="1" max="72" value="12"></label>
       <label id="seeds-label" hidden>Seeds separated by commas<input id="seeds" type="text" value="42,43,44"></label>
       <label id="synthetic-label" class="check" hidden><input id="synthetic" type="checkbox"> Synthetic benchmark data</label>
       <label id="population-label" hidden>Candidate population<input id="population" type="number" min="2" max="8" value="4"></label>
@@ -57,7 +82,7 @@
       <div class="submit"><button type="submit">Queue job</button><p id="notice" role="status"></p></div>
     </form>
   </section>
-  <section class="panel">
+  <section id="results" class="panel">
     <div class="section-heading">
       <h2>Jobs and exports</h2>
       <label>Show
@@ -79,6 +104,7 @@
       <label id="view-label" hidden>View<select id="view"></select></label>
     </div>
     <canvas id="plot" width="900" height="300" aria-label="Result chart" role="img" hidden></canvas>
+    <button id="save-chart" type="button" hidden>Download PNG figure</button>
     <ul id="legend" class="legend"></ul>
     <div id="table" class="table-scroll"></div>
     <pre id="report" hidden></pre>

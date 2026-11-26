@@ -13,6 +13,8 @@ def _save_reading(file, reading):
         record["device_id"] = reading.device_id
     if reading.packet_id is not None:
         record["packet_id"] = reading.packet_id
+    if reading.boot_id is not None:
+        record["boot_id"] = reading.boot_id
     write_json(file, record)
 
 

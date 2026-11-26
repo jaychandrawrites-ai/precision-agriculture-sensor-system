@@ -3,6 +3,7 @@ import base64
 from urllib.parse import parse_qs, urlsplit
 
 from Acquisition.TraceImport import import_csv
+from Utils.Serialization import decode_json
 
 
 def _metadata(status):
@@ -50,7 +51,7 @@ def trace_get(handler):
 
 
 def trace_post(handler, body):
-    from Acquisition.TraceAnalysis import observational_map, survey_forecasts
+    from Acquisition.TraceAnalysis import ensemble_forecast_maps, observational_map, survey_forecasts
 
     suffix = urlsplit(handler.path).path.removeprefix("/api/trace").strip("/")
     store, receiver = handler.server.trace, handler.server.trace_receiver
@@ -58,7 +59,9 @@ def trace_post(handler, body):
         survey = store.create(body["label"])
         return handler._json(201, _metadata(survey))
     if suffix == "restore":
-        survey = store.restore(body["archive"])
+        archive = (decode_json(base64.b64decode(body["archive_bytes"], validate=True))
+                   if "archive_bytes" in body else body["archive"])
+        survey = store.restore(archive)
         return handler._json(201, _metadata(survey))
     if suffix == "import-csv":
         payload = base64.b64decode(body["csv"], validate=True)
@@ -91,6 +94,39 @@ def trace_post(handler, body):
         checkpoint = handler.server.jobs.artifact(body["model"], "model.json")
         return handler._json(200, survey_forecasts(store, identifier, body["configuration"], checkpoint,
                                                     steps=steps))
+    elif action == "ensemble-map":
+        steps, lead = body.get("steps", 6), body.get("lead", 1)
+        if type(steps) is not int or type(lead) is not int or not 1 <= lead <= steps <= 72:
+            raise ValueError("Choose a map lead within the 1–72-hour forecast horizon")
+        members = body.get("members", [])
+        if not isinstance(members, list) or not 1 <= len(members) <= 5 or not all(
+            isinstance(member, str) for member in members
+        ):
+            raise ValueError("Choose one to five additional saved models")
+        checkpoint = handler.server.jobs.artifact(body["model"], "model.json")
+        other = [handler.server.jobs.artifact(member, "model.json") for member in members]
+        forecast = survey_forecasts(store, identifier, body["configuration"], checkpoint, steps,
+                                    ensemble=other)
+        adaptive = body.get("adaptive")
+        if adaptive is not None and not isinstance(adaptive, dict):
+            raise ValueError("Adaptive map configuration must be an object")
+        arrays, report = ensemble_forecast_maps(store, identifier, forecast, body["origin"],
+                                                steps=steps, adaptive=adaptive)
+        feature = body["feature"]
+        if feature not in report["features"]:
+            raise ValueError("Choose a supported forecast feature")
+        index = report["features"].index(feature)
+        layers = {key: value[lead - 1, :, :, index].tolist() for key, value in arrays.items()
+                  if key in ("mean", "spread", "lower", "upper")}
+        result = {"metadata": report, "feature": feature, "lead_hours": lead, "layers": layers}
+        if adaptive is not None:
+            result["adaptive"] = {
+                "bounds_m": arrays["adaptive_bounds_m"].tolist(),
+                "inside": arrays["adaptive_inside"].tolist(),
+                **{key: arrays["adaptive_" + key][lead - 1, :, index].tolist()
+                   for key in ("mean", "spread", "lower", "upper")},
+            }
+        return handler._json(200, result)
     elif action == "map":
         return handler._json(200, observational_map(store, identifier, body["feature"], body["timestamp"],
                                                     window_minutes=body.get("window_minutes", 60)))

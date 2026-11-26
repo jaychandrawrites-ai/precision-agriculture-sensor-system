@@ -6,6 +6,7 @@ from threading import Event, RLock, Thread
 
 from Acquisition.MappedPackets import GPS_FIELDS, MappedPacketParser, PacketSchema
 from Acquisition.PacketParser import PacketParser
+from Acquisition.TraceDiagnostics import TraceDiagnostics, calibration_readout, units_for
 from Acquisition.TraceImport import replay_segment, store_record
 
 
@@ -38,13 +39,16 @@ class TraceReceiver:
         self._parser = None
         self._recording = False
         self._state = "disconnected"
-        self._port = None
+        self._port = self._baud = None
         self._error = None
         self._latest = None
         self._bytes = 0
         self._packets = 0
         self._last_receipt = None
         self._pending = bytearray()
+        self._monitor = TraceDiagnostics()
+        self._calibration = {}
+        self._segment_last_receipt = None
 
     def _reset_parser(self):
         self._parser = PacketParser() if self._schema is None else MappedPacketParser(self._schema)
@@ -64,7 +68,9 @@ class TraceReceiver:
             self._survey = survey_id
             self._schema = schema
             self._reset_parser()
-            self._port, self._state, self._error = port, "connecting", None
+            self._port, self._baud, self._state, self._error = port, baud, "connecting", None
+            self._monitor = TraceDiagnostics()
+            self._last_receipt = None
             self._bytes, self._packets, self._latest = 0, 0, None
             self._stop = Event()
             self._worker = Thread(target=self._run, args=(self._stop, port, baud),
@@ -83,9 +89,10 @@ class TraceReceiver:
                     while not stop.is_set():
                         with self._lock:
                             raw = link.read_until(size=8192 - len(self._pending))
+                            self._bytes += len(raw)
                             self._pending.extend(raw)
                             if self._pending.endswith(b"\n") or len(self._pending) >= 8192:
-                                self.feed(self._survey, bytes(self._pending), datetime.now(timezone.utc))
+                                self.feed(self._survey, bytes(self._pending), datetime.now(timezone.utc), count_bytes=False)
                                 self._pending.clear()
                         stop.wait(.001)
             except (OSError, ValueError, ImportError) as exc:
@@ -94,7 +101,9 @@ class TraceReceiver:
                     self._pending.clear()
                     self._reset_parser()
                     self._latest = None
-                    if not _recoverable(exc):
+                    recoverable = _recoverable(exc)
+                    self._monitor.error(message=str(exc), timestamp=datetime.now(timezone.utc), recoverable=recoverable)
+                    if not recoverable:
                         self._state, self._error = "failed", str(exc)
                         break
                     self._state, self._error = "reconnecting", str(exc)
@@ -116,7 +125,8 @@ class TraceReceiver:
             result = self.store.start(survey_id, label=label, location_id=location_id,
                                       coordinates=coordinates, **metadata)
             self._pending.clear()
-            self._last_receipt = None
+            self._segment_last_receipt = None
+            self._calibration = metadata.get("calibration") or {}
             self._survey, self._recording = survey_id, True
             if self._schema is None:
                 self._reset_parser()
@@ -127,10 +137,12 @@ class TraceReceiver:
             if self._pending:
                 self.store.ingest(self._survey, bytes(self._pending), datetime.now(timezone.utc), None)
                 self._pending.clear()
-            if self._schema is None and self._last_receipt is not None:
-                reading = self._parser.finish(self._last_receipt)
+            if self._schema is None and self._segment_last_receipt is not None:
+                reading = self._parser.finish(self._segment_last_receipt)
                 if reading is not None:
-                    self.store.ingest(self._survey, None, self._last_receipt, store_record(reading))
+                    parsed = store_record(reading)
+                    self._readout(parsed, self._segment_last_receipt)
+                    self.store.ingest(self._survey, None, self._segment_last_receipt, parsed)
             result = self.store.stop(self._survey, interrupted=interrupted)
             self._recording = False
             if self._schema is None:
@@ -152,30 +164,41 @@ class TraceReceiver:
             self.disconnect(survey_id)
         return result
 
-    def feed(self, survey_id, raw, received_at):
+    def feed(self, survey_id, raw, received_at, *, count_bytes=True):
         with self._lock:
             if survey_id != self._survey:
                 raise ValueError("Receiver belongs to another survey")
             if self._parser is None:
                 self._reset_parser()
-            self._bytes += len(raw)
+            if count_bytes:
+                self._bytes += len(raw)
             self._packets += 1
             self._last_receipt = received_at
             if self._recording:
+                self._segment_last_receipt = received_at
                 self.store.ingest(survey_id, raw, received_at)
             reading = self._parser.feed(raw.decode("utf-8", errors="replace"), received_at)
             parsed = store_record(reading) if reading is not None else None
             if parsed is not None:
-                self._latest = {
-                    "received_at": received_at.isoformat(),
-                    "observed_at": parsed["observed_at"],
-                    "measurements": {key: value for key, value in parsed["measurements"].items()
-                                     if key not in GPS_FIELDS},
-                    "gps_available": GPS_FIELDS <= parsed["measurements"].keys(),
-                    "flags": parsed["flags"],
-                }
-            if self._recording and parsed is not None:
-                self.store.ingest(survey_id, None, received_at, parsed)
+                self._readout(parsed, received_at)
+                if self._recording:
+                    self.store.ingest(survey_id, None, received_at, parsed)
+
+    def _readout(self, parsed, received_at):
+        self._monitor.reading(parsed, received_at)
+        measurements = parsed["measurements"]
+        self._latest = {
+            "received_at": received_at.isoformat(),
+            "observed_at": parsed["observed_at"],
+            "measurements": {key: value for key, value in measurements.items() if key not in GPS_FIELDS},
+            "gps_available": GPS_FIELDS <= measurements.keys(),
+            "gps_validity": ("valid" if GPS_FIELDS <= measurements.keys() else "invalid"
+                             if any(flag.startswith(("invalid:gps", "incomplete:gps"))
+                                    for flag in parsed["flags"]) else "not_reported"),
+            "flags": parsed["flags"],
+            "device_id": parsed["device_id"],
+            "boot_id": parsed.get("boot_id"),
+        }
 
     def replay(self, survey_id, payload, *, label=None, location_id=None, mapping=None):
         with self._lock:
@@ -203,7 +226,8 @@ class TraceReceiver:
         with self._lock:
             self._stop_recording()
             self._state = "disconnected"
-            self._survey, self._port = None, None
+            self._survey, self._port, self._baud = None, None, None
+            self._calibration = {}
             self._schema, self._parser, self._latest = None, None, None
             return self.diagnostics(survey_id)
 
@@ -212,5 +236,11 @@ class TraceReceiver:
             if survey_id is not None and self._survey != survey_id:
                 return {"state": "disconnected", "bytes_received": 0, "packets_received": 0,
                         "latest": None, "error": None}
-            return {"state": self._state, "port": self._port, "bytes_received": self._bytes,
-                    "packets_received": self._packets, "latest": self._latest, "error": self._error}
+            return {"state": self._state, "port": self._port, "baud": self._baud,
+                    "bytes_received": self._bytes, "packets_received": self._packets,
+                    "recording": self._recording, "pending_frame_bytes": len(self._pending),
+                    "last_receipt": self._last_receipt.isoformat() if self._last_receipt else None,
+                    "latest": self._latest, "error": self._error, "configured_units": units_for(self._schema),
+                    "calibration": calibration_readout(self._calibration,
+                                                       (self._latest or {}).get("measurements", {})),
+                    **self._monitor.snapshot()}

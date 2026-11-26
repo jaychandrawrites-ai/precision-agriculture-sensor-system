@@ -169,7 +169,7 @@ class MappedPacketParser:
                 not any(config and value is None for _, config, value in pairs)):
             if key in self.seen:
                 self.seen.move_to_end(key)
-                return SensorData(received_at, {}, (*flags, "duplicate_packet"), observed, device, identifier)
+                return SensorData(received_at, {}, (*flags, "duplicate_packet"), observed, device, identifier, boot)
             self.seen[key] = None
             if len(self.seen) > self.schema.duplicate_cache:
                 self.seen.popitem(last=False)
@@ -177,7 +177,7 @@ class MappedPacketParser:
             sequence_flags = self.sequence.update(device, boot, message.get(self.schema.sequence_key))
             flags.extend(sequence_flags)
             if "duplicate_sequence" in sequence_flags:
-                return SensorData(received_at, {}, (*flags, "duplicate_packet"), observed, device, identifier)
+                return SensorData(received_at, {}, (*flags, "duplicate_packet"), observed, device, identifier, boot)
         for name, spec in self.schema.fields.items():
             raw = message.get(spec.key)
             if raw is None:
@@ -215,4 +215,4 @@ class MappedPacketParser:
                 if any(flag.endswith("_quality") for flag in flags):
                     for name in GPS_FIELDS:
                         measurements.pop(name, None)
-        return SensorData(received_at, measurements, tuple(flags), observed, device, identifier)
+        return SensorData(received_at, measurements, tuple(flags), observed, device, identifier, boot)

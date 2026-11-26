@@ -47,7 +47,15 @@
       </form>
       <div>
         <dl id="trace-diagnostics" class="trace-reading"><dt>Status</dt><dd>Disconnected</dd></dl>
+        <h3>Latest normalized readings</h3>
         <dl id="trace-measurements" class="trace-reading"></dl>
+        <details>
+          <summary>Devices, units and calibration</summary>
+          <dl id="trace-devices" class="trace-reading"></dl>
+          <dl id="trace-units" class="trace-reading"></dl>
+          <dl id="trace-calibration" class="trace-reading"></dl>
+        </details>
+        <p id="trace-readiness">Forecast readiness has not been checked.</p>
       </div>
     </div>
   </section>
@@ -99,6 +107,23 @@
           <button value="forecast">Forecast Eligible Locations</button>
         </div>
       </form>
+      <form id="trace-ensemble-form">
+        <label>Ensemble field configuration<input name="configuration" type="file" accept=".json,application/json" required></label>
+        <label>Primary ensemble model<select name="model" id="trace-ensemble-model" required></select></label>
+        <label>Additional models<select name="members" id="trace-ensemble-members" multiple required></select></label>
+        <label>Forecast origin (local time)<input name="origin" type="datetime-local" required></label>
+        <label>Forecast map lead (hours)<input name="lead" type="number" min="1" max="72" value="1" required></label>
+        <label>Forecast measurement<select name="feature">
+          <option value="air_temperature_c">Air temperature</option>
+          <option value="relative_humidity_pct">Relative humidity</option>
+          <option value="lwi">Leaf wetness index</option>
+          <option value="eto_mm_interval">Reference evapotranspiration</option>
+          <option value="eta_mm_interval">Actual evapotranspiration</option>
+          <option value="cotton_heat_stress">Cotton heat stress index</option>
+        </select></label>
+        <label>Adaptive map configuration (optional)<input name="adaptive" type="file" accept=".json,application/json"></label>
+        <button>Map Ensemble Forecast</button>
+      </form>
       <form id="trace-map-form">
         <label>Measurement<select name="feature">
           <option value="air_temperature_c">Air temperature</option>
@@ -115,6 +140,7 @@
       </form>
     </div>
     <canvas id="trace-map" width="500" height="500" role="img" aria-label="Observational map in local meter coordinates" hidden></canvas>
+    <canvas id="trace-spread" width="500" height="500" role="img" aria-label="Ensemble model spread in local meter coordinates" hidden></canvas>
     <pre id="trace-result" hidden></pre>
   </section>
 </main>
