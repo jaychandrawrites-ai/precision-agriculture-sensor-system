@@ -961,10 +961,10 @@ reanalysis of a previously used station-year.
   posterior means and changed residual scores. R051 remains externally
   blocked pending actual paired field observations.
 
- (8a5ffae) renders local-metric predictive mean and
+`spatial_figures.py` (8a5ffae) renders local-metric predictive mean and
 interval-width maps with masks, site overlays, lead times and units.
 The synthetic export produced a 1980 × 990 PNG and an SVG. Run
- with Matplotlib
+`python spatial_figures.py maps.json figures --lead 1` with Matplotlib
 installed. R082 is verified.
 
 The full suite after the covariance and holdout changes ran 173 tests,
