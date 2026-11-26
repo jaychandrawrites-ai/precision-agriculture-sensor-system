@@ -21,7 +21,7 @@ class CovarianceModel:
                                        self.angle_deg, self.minor_ratio)))
                 or min(self.range_m, self.sill) <= 0 or self.nugget < 0
                 or not 0 < self.minor_ratio <= 1
-                or self.shape not in {"exponential", "gaussian", "matern32", "spherical"}):
+                or self.shape not in {"exponential", "gaussian", "matern32", "matern52", "spherical"}):
             raise ValueError("Invalid spatial covariance parameters")
 
     def scaled_distance(self, left, right):

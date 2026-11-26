@@ -46,9 +46,13 @@ def covariance(distance_scaled, model):
     if model == "spherical":
         distance = np.minimum(distance_scaled, 1.0)
         return 1.0 - 1.5 * distance + 0.5 * distance**3
-    if model == "matern32":
-        distance = np.sqrt(3) * distance_scaled
-        return (1 + distance) * np.exp(-distance)
+    if model in {"matern32", "matern52"}:
+        # Beyond 750 the covariance rounds to zero at float64 precision.
+        distance = np.sqrt(3 if model == "matern32" else 5) * np.minimum(distance_scaled, 750.)
+        polynomial = 1 + distance
+        if model == "matern52":
+            polynomial += distance**2 / 3
+        return polynomial * np.exp(-distance)
     raise ValueError("Unknown covariance model")
 
 
