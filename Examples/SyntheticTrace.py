@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 
 from Acquisition.AITrace import TraceStore
-from Acquisition.TraceAnalysis import observational_map, survey_forecasts
+from Acquisition.TraceAnalysis import forecast_map, observational_map, survey_forecasts
 from Acquisition.TraceImport import replay_segment
 from Examples.SyntheticPhase3 import historical_fixture, session_fixture
 from Pipeline import train_historical
@@ -34,6 +34,9 @@ def run(output):
     train_historical(source, mapping, checkpoint, TrainingConfig(epochs=3, hidden=(16,), dropout=0))
     forecasts = survey_forecasts(trace, survey_id, configuration, checkpoint, steps=6)
     mapped = observational_map(trace, survey_id, "air_temperature_c", "2020-07-02T07:00:00Z")
+    predicted_map = forecast_map(trace, survey_id, forecasts, "air_temperature_c",
+                                 "2020-07-02T10:00:00Z", "2020-07-02T07:00:00Z")
+    write_json(output / "forecast-map.json", predicted_map)
     (output / "survey.json").write_bytes(trace.export(survey_id))
     write_json(output / "forecasts.json", forecasts)
     write_json(output / "observed-map.json", mapped)

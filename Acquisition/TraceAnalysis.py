@@ -178,17 +178,78 @@ def observational_map(store, survey_id, feature, timestamp, window_minutes=60,
                         "segment_id": segment_id, "sample_at": observed.isoformat(),
                         "received_at": received.isoformat(), "coordinate_source": source,
                         "value": value})
+    raster = _raster(sites, samples, grid_size)
+    return {"survey_id": survey_id, "feature": feature, "provenance": "measured_window_composite",
+            "unit": next(iter(FIELDS[feature][2])), "interpolation": "IDW", "clock": clock,
+            "window_start_exclusive": start.isoformat(),
+            "window_end_inclusive": end.isoformat(), "excluded_locations": len(locations) - len(sites),
+            "samples": samples, **raster}
+
+def _raster(sites, samples, grid_size):
     if len(set(sites)) < 2:
-        raise ValueError("At least two distinct locations with measurements and coordinates are needed in the window")
+        raise ValueError("At least two distinct locations with values and coordinates are required")
     points = local_coordinates(sites, sites[0])
     limits = points.min(axis=0), points.max(axis=0)
     padding = max(1.0, float(np.max(limits[1] - limits[0])) * 0.05)
     east, north = [np.linspace(low - padding, high + padding, grid_size) for low, high in zip(*limits)]
     grid = SpatialGrid(east, north)
     estimate = idw(points, [sample["value"] for sample in samples], grid.points()).reshape(grid.shape)
-    return {"survey_id": survey_id, "feature": feature, "provenance": "measured_window_composite",
-            "unit": next(iter(FIELDS[feature][2])), "interpolation": "IDW", "clock": clock,
-            "window_start_exclusive": start.isoformat(),
-            "window_end_inclusive": end.isoformat(), "excluded_locations": len(locations) - len(sites),
-            "samples": samples, "east_m": east.tolist(), "north_m": north.tolist(),
-            "estimate": estimate.tolist()}
+    return {"east_m": east.tolist(), "north_m": north.tolist(), "estimate": estimate.tolist()}
+
+
+def forecast_map(store, survey_id, report, feature, valid_at, origin, *, gps_minutes=60, grid_size=25):
+    """Map point forecasts at one issued and valid time using GPS known at issue."""
+    if (report.get("survey_id") != survey_id or feature not in FEATURES
+            or type(gps_minutes) not in (int, float) or not 0 < gps_minutes <= 1440
+            or type(grid_size) is not int or not 2 <= grid_size <= 100):
+        raise ValueError("Choose a single survey, forecast feature and valid map settings")
+    issued, valid = _aware(origin), _aware(valid_at)
+    lead = (valid - issued).total_seconds() / 3600
+    if lead < 1 or not lead.is_integer():
+        raise ValueError("Forecast validity must be a positive whole-hour lead")
+    locations = {item["id"]: item for item in store.status(survey_id)["locations"]}
+    points, samples = [], []
+    for details in report["locations"]:
+        location = locations[details["id"]]
+        candidates = []
+        for segment in details["segments"]:
+            forecasts = segment.get("forecast", [])
+            if not forecasts or _aware(forecasts[0]["timestamp"]) != issued + timedelta(hours=1):
+                continue
+            supported = {item["id"] for item in location["segments"] if item["ended_at"] is not None}
+            if segment["id"] not in supported:
+                continue
+            for prediction in forecasts:
+                if _aware(prediction["timestamp"]) == valid:
+                    candidates.append((segment, prediction))
+        if not candidates:
+            continue
+        if len(candidates) > 1:
+            raise ValueError("Multiple visits have the same issue time at a location; resolve the duplicate forecasts")
+        segment, forecast = candidates[0]
+        coordinate = None
+        received_at = None
+        for row in store.segment_readings(survey_id, segment["id"]):
+            if {"duplicate_packet", "previous_boot_packet"}.intersection(row["flags"]):
+                continue
+            received = _aware(row["received_at"])
+            observed = _aware(row["observed_at"]) if row.get("observed_at") else received
+            if received > issued or not issued - timedelta(minutes=gps_minutes) < observed <= issued:
+                continue
+            fix = _coordinates(row["measurements"], location, row["flags"])
+            if fix and fix[2] != "manual_location" and (received_at is None or received > received_at):
+                coordinate, received_at = fix, received
+        if coordinate is None:
+            coordinate = _coordinates({}, location, ())
+        value = forecast.get(feature)
+        if coordinate is None or type(value) not in (int, float) or not math.isfinite(value):
+            continue
+        points.append(coordinate[:2])
+        samples.append({"location_id": location["id"], "segment_id": segment["id"],
+                        "coordinate_source": coordinate[2], "value": value,
+                        "checkpoint_sha256": segment.get("checkpoint_sha256")})
+    return {"survey_id": survey_id, "feature": feature, "forecast_origin": issued.isoformat(),
+            "valid_at": valid.isoformat(), "lead_hours": int(lead), "interpolation": "IDW",
+            "provenance": "point_model_forecasts", "uncertainty": "not estimated",
+            "excluded_locations": len(locations) - len(samples), "samples": samples,
+            **_raster(points, samples, grid_size)}

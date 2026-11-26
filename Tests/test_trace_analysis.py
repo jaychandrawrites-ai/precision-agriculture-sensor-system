@@ -128,3 +128,17 @@ class TraceAnalysisTests(unittest.TestCase):
         self.assertNotIn("latitude_deg", str(result))
         self.assertEqual(len(result["estimate"]), 5)
         self.assertEqual(len(result["estimate"][0]), 5)
+
+class TraceForecastMapTests(unittest.TestCase):
+    def test_demo_keeps_observed_and_forecast_map_times_and_sources_separate(self):
+        from Examples.SyntheticTrace import run
+
+        with TemporaryDirectory() as directory:
+            target = Path(directory) / "demo"
+            report = run(target)
+            self.assertEqual(report["ready_locations"], 5)
+            result = json.loads((target / "forecast-map.json").read_text())
+            self.assertEqual(result["lead_hours"], 3)
+            self.assertEqual(result["provenance"], "point_model_forecasts")
+            self.assertEqual(len(result["samples"]), 5)
+            self.assertTrue(all("latitude" not in sample for sample in result["samples"]))
