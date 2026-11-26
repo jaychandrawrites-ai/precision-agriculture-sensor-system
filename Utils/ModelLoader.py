@@ -19,9 +19,13 @@ class Forecaster:
     provenance: dict
     direct: object | None = None
     quantile: object | None = None
+    blend: object | None = None
+    members: tuple = ()
 
     @property
     def history_hours(self):
+        if self.members:
+            return max(model.history_hours for model in self.members)
         return self.direct.context_hours if self.direct is not None else 3
 
     def forecast(self, history, steps):
@@ -30,6 +34,15 @@ class Forecaster:
 
     def forecast_bundle(self, history, steps):
         """Return point predictions and optional [lead, feature, probability] quantiles."""
+        if self.blend is not None:
+            import numpy as np
+
+            cap = len(self.blend.weights)
+            if type(steps) is not int or not 1 <= steps <= cap:
+                raise ValueError(f"Blend supports 1–{cap} forecast hours")
+            predictions = np.asarray([model.forecast(history[-model.history_hours:], steps)
+                                      for model in self.members])
+            return np.einsum("mlf,lfm->lf", predictions, self.blend.weights[:steps]), None
         if self.quantile is not None:
             from Temporal.Quantile import quantile_center
 
@@ -43,6 +56,8 @@ class Forecaster:
 
     def require_compatible_field(self, field_provenance):
         """Compare the method, history and configured physics shared by both domains."""
+        if self.members:
+            return all([model.require_compatible_field(field_provenance) for model in self.members])
         if "reference_et" not in self.provenance:
             return False
         if self.provenance["reference_et"]["history_hours"] != field_provenance["reference_et"]["history_hours"]:
@@ -55,11 +70,31 @@ class Forecaster:
 
 def load_forecaster(path, device="cpu"):
     payload = Path(path).read_bytes()
-    record = decode_json(payload)
+    return _load_record(decode_json(payload), sha256(payload).hexdigest(), device)
+
+
+def _load_record(record, digest, device, *, allow_blend=True):
     provenance = record.get("provenance", {})
     if not isinstance(provenance, dict):
         raise ValueError("Invalid training provenance")
-    digest = sha256(payload).hexdigest()
+    if record.get("format") == "jupiter-validation-blend-v1":
+        import numpy as np
+        from Temporal.ForecastUncertainty import ValidationBlend
+
+        members = record["members"]
+        names = [item["name"] for item in members]
+        weights = np.asarray(record["weights"], dtype=float)
+        if (not allow_blend or len(names) < 2 or len(names) != len(set(names))
+                or weights.ndim != 3 or weights.shape[1:] != (6, len(names))
+                or not 1 <= len(weights) <= 72 or not np.isfinite(weights).all()
+                or (weights < 0).any() or not np.allclose(weights.sum(axis=-1), 1)):
+            raise ValueError("Invalid validation blend")
+        models = tuple(_load_record(item["state"], item["checkpoint_sha256"], device, allow_blend=False)
+                       for item in members)
+        first = models[0]
+        return Forecaster(first.model, first.backend, first.inputs, first.targets, digest, provenance,
+                          blend=ValidationBlend(weights, provenance["validation_origins"], 0), members=models)
+
     if record.get("format") in ("jupiter-direct-v1", "jupiter-direct-v2", "jupiter-direct-v3"):
         from Temporal.DirectCheckpoint import load_direct_state
 

@@ -18,6 +18,8 @@ SPEC = {
     "prepare": ("data", "config"),
     "train": ("data",),
     "forecast": ("data",),
+    "blend": ("data",),
+    "figure": (),
     "replay": ("data", "config"),
     "spatial": ("data", "config"),
     "live": (),
@@ -36,6 +38,8 @@ ARTIFACTS = {
     "prepare": {"prepared/hourly.csv", "prepared/flags.csv", "prepared/report.json"},
     "train": {"report.json", "model.json"},
     "forecast": {"forecast.csv"},
+    "blend": {"blend.json"},
+    "figure": {"figure.png", "figure.svg"},
     "replay": {"session/readings.jsonl"},
     "spatial": {"map/report.json", "map/field.npz"},
     "live": {"session/readings.jsonl", "session/raw.jsonl"},
@@ -59,6 +63,17 @@ RESEARCH_ARTIFACTS = {
 }
 SEARCH_MODELS = ("fixed", "random", "classical_ga", "quantum_inspired", "hybrid_amplitude")
 ARTIFACTS["search"].update(f"models/{method}.json" for method in SEARCH_MODELS)
+
+BLEND_INPUTS = {"train": "model.json", "direct_train": "direct-model.json",
+                "quantile_train": "quantile-model.json", "search": "models/classical_ga.json"}
+
+FIGURE_SOURCE = {
+    "train": ("training", "report.json"),
+    "direct_train": ("training", "direct-model.training.json"),
+    "forecast": ("forecast", "forecast.csv"),
+    "field": ("forecast", "inference/forecast.csv"),
+    "search": ("pareto", "report.json"),
+}
 
 DATASET_INPUTS = {"train", "direct_train", "quantile_train", "benchmark", "search"}
 IN_PROGRESS = {"queued", "running"}
@@ -206,7 +221,12 @@ class Jobs:
         if kind in {"forecast", "field"}:
             identifier = raw.get("model")
             candidate = self.store.get(identifier) if isinstance(identifier, str) else None
-            if candidate is not None and candidate.kind == "search":
+            if candidate is not None and candidate.kind == "blend":
+                settings["model_artifact"] = "blend.json"
+                self._linked(identifier, {"blend"}, "blend.json")
+                limit = candidate.options["horizon"]
+                settings["steps"] = self._number(raw, "steps", limit, (1, limit))
+            elif candidate is not None and candidate.kind == "search":
                 method = self._choice(raw, "search_model", "classical_ga", SEARCH_MODELS)
                 settings["model_artifact"] = f"models/{method}.json"
                 self._linked(identifier, {"search"}, settings["model_artifact"])
@@ -231,12 +251,47 @@ class Jobs:
         if kind == "train":
             settings["optimizer"] = self._choice(raw, "optimizer", "adam", ("adam", "sgd"))
             settings["loss"] = self._choice(raw, "loss", "huber", ("huber", "mse"))
+        if kind == "figure":
+            from config import FEATURES
+
+            identifier = raw.get("figure_source")
+            candidate = self.store.get(identifier) if isinstance(identifier, str) else None
+            if candidate is None or candidate.kind not in FIGURE_SOURCE:
+                raise ValueError("Choose a completed training, forecast or sequence search job")
+            figure_kind, artifact = FIGURE_SOURCE[candidate.kind]
+            self._linked(identifier, {candidate.kind}, artifact)
+            settings.update(figure_source=identifier, figure_kind=figure_kind, artifact=artifact,
+                            feature=self._choice(raw, "feature", FEATURES[0], FEATURES))
+        if kind == "blend":
+            from datetime import datetime
+
+            members = raw.get("members")
+            if (not isinstance(members, list) or not 2 <= len(members) <= 6
+                    or not all(isinstance(x, str) for x in members) or len(set(members)) != len(members)):
+                raise ValueError("Choose two to six distinct saved checkpoints")
+            for identifier in members:
+                candidate = self.store.get(identifier)
+                if candidate is None or candidate.kind not in BLEND_INPUTS:
+                    raise ValueError("Unknown ensemble member")
+                self._linked(identifier, {candidate.kind}, BLEND_INPUTS[candidate.kind])
+            try:
+                start, end = (datetime.fromisoformat(raw[key]) for key in ("validation_start", "validation_end"))
+            except (KeyError, ValueError, TypeError) as error:
+                raise ValueError("Enter an ordered validation period in UTC") from error
+            if start.tzinfo is not None or end.tzinfo is not None or start >= end:
+                raise ValueError("Enter an ordered validation period in UTC")
+            settings.update(members=members, validation_start=start.isoformat(), validation_end=end.isoformat(),
+                            horizon=self._number(raw, "horizon", 6, (1, 72)))
         if kind == "direct_train":
             from Temporal.Direct import DIRECT_ARCHITECTURES
 
             settings["architecture"] = self._choice(raw, "architecture", "gated", DIRECT_ARCHITECTURES)
             settings["width"] = self._number(raw, "width", 32, (1, 128))
             settings["horizon"] = self._number(raw, "horizon", 6, (1, 72))
+            settings["direct_optimizer"] = self._choice(raw, "direct_optimizer", "adam",
+                                                        ("adam", "adamw", "sgd", "rmsprop", "adagrad"))
+            settings["scheduler"] = self._choice(raw, "scheduler", "cosine", ("cosine", "plateau"))
+            settings["memory_bytes"] = self._number(raw, "memory_bytes", 0, (0, 2**30))
         if kind == "quantile_train":
             levels = raw.get("levels", [.05, .5, .95])
             if (not isinstance(levels, list) or not 2 <= len(levels) <= 9
@@ -310,9 +365,25 @@ class Jobs:
             if opts.get("sequence_search"):
                 args += ["--sequence-space", "--export-selected", folder / "models"]
             return args
+        if kind == "figure":
+            candidate = self.store[opts["figure_source"]]
+            source = self._linked(candidate.identifier, {candidate.kind}, opts["artifact"])
+            return ["research_figures.py", opts["figure_kind"], source, folder / "figure",
+                    "--feature", opts["feature"]]
+        if kind == "blend":
+            args = ["blend_forecast.py", data, folder / "blend.json", "--start", opts["validation_start"],
+                    "--end", opts["validation_end"], "--steps", opts["horizon"]]
+            for identifier in opts["members"]:
+                candidate = self.store[identifier]
+                args += ["--member", self._linked(identifier, {candidate.kind}, BLEND_INPUTS[candidate.kind]),
+                         "--name", identifier]
+            return args
         if kind == "direct_train":
-            return ["direct_forecast.py", "train", data, folder / "direct-model.json", "--epochs", opts["epochs"],
-                    "--horizon", opts["horizon"], "--width", opts["width"], "--architecture", opts["architecture"]]
+            args = ["direct_forecast.py", "train", data, folder / "direct-model.json", "--epochs", opts["epochs"],
+                    "--horizon", opts["horizon"], "--width", opts["width"], "--architecture", opts["architecture"],
+                    "--optimizer", opts.get("direct_optimizer", "adam"), "--scheduler", opts.get("scheduler", "cosine"),
+                    "--progress", folder / "direct-progress.json"]
+            return args + (["--memory-bytes", opts["memory_bytes"]] if opts.get("memory_bytes") else [])
         if kind == "quantile_train":
             levels = [item for level in opts["levels"] for item in ("--level", level)]
             return ["quantile_forecast.py", data, folder / "quantile-model.json", folder / "report.json",
@@ -463,9 +534,13 @@ class Jobs:
                 record = read_json(state)
                 return {"stage": "epoch", "completed": record["epoch"],
                         "total": record["recipe"]["settings"]["epochs"]}
+        if job.kind == "direct_train":
+            state = job.folder / "direct-progress.json"
+            if state.is_file():
+                return {"stage": "epoch", **read_json(state)}
         if job.kind == "search":
             done = {}
-            for name in ("classical_ga", "quantum_inspired", "random"):
+            for name in ("classical_ga", "quantum_inspired", "random", "hybrid_amplitude"):
                 state = job.folder / "search" / f"{name}.json"
                 if state.is_file():
                     done[name] = len(read_json(state)["history"])
@@ -494,7 +569,7 @@ class Jobs:
                 records.append({"id": job.identifier, "kind": job.kind, "status": job.status,
                                 "created_at": job.created_at, "can_resume": self._can_resume(job),
                                 "forecast_horizon": job.options.get("horizon")
-                                if job.kind in {"direct_train", "quantile_train"} else None,
+                                if job.kind in {"direct_train", "quantile_train", "blend"} else None,
                                 "progress": self._progress(job), "artifacts": sorted(artifacts),
                                 "can_export": bool(RESEARCH_ARTIFACTS.get(job.kind, set()) & set(artifacts))})
             return records

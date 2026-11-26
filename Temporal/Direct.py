@@ -153,7 +153,7 @@ def _forecast_anchor(histories, horizon, anchor):
 def fit_direct(training, validation, target_scaler, backend, settings, *, width=32,
                horizon_weights=None, training_anchor=None, validation_anchor=None,
                architecture="gated", memory_budget_bytes=None, optimizer="adam", weight_decay=0.,
-               scheduler="cosine", warmup_epochs=0, patience=None):
+               scheduler="cosine", warmup_epochs=0, patience=None, progress=None):
     if (not len(training.starts) or not len(validation.starts)
             or training.targets.shape[1:] != validation.targets.shape[1:]):
         raise ValueError("Need matching nonempty direct forecast windows")
@@ -241,6 +241,9 @@ def fit_direct(training, validation, target_scaler, backend, settings, *, width=
                 schedule.step()
             else:
                 schedule.step(score)
+            if progress is not None:
+                progress({"completed": len(val_trace), "total": settings.epochs,
+                          "training_loss": train_trace, "validation_loss": val_trace})
             if stop:
                 break
     model.load_state_dict(weights, backend)

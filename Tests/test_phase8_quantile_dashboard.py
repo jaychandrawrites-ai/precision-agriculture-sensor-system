@@ -88,3 +88,37 @@ class QuantileDashboardTests(unittest.TestCase):
             status, body = request(f"/api/forecast/{forecast}")
             self.assertEqual(status, 200, body)
             self.assertEqual(len(json.loads(body)["timestamps"]), 2)
+
+    def test_direct_controls_and_portable_blend_in_jobs(self):
+        frame = synthetic_history(300)
+        source = encoded(frame.to_csv(index=False).encode())
+        with TemporaryDirectory() as directory, dashboard(Path(directory) / "dashboard") as request:
+            members = []
+            for width in (8, 12):
+                job = self._submit(request, "direct_train", {"data": source}, {
+                    "width": width, "epochs": 1, "horizon": 3, "direct_optimizer": "adagrad",
+                    "scheduler": "plateau", "memory_bytes": 50000,
+                })
+                self._wait(request, job)
+                status, data = request(f"/api/artifacts/{job}/direct-model.training.json")
+                self.assertEqual(status, 200)
+                report = json.loads(data)
+                self.assertEqual(report["optimizer"], "adagrad")
+                self.assertEqual(report["memory"]["plan"]["budget_bytes"], 50000)
+                members.append(job)
+            blend = self._submit(request, "blend", {"data": source}, {
+                "members": members, "horizon": 3,
+                "validation_start": frame.timestamp.iloc[260].tz_localize(None).isoformat(),
+                "validation_end": frame.timestamp.iloc[290].tz_localize(None).isoformat(),
+            })
+            self._wait(request, blend)
+            forecast = self._submit(request, "forecast", {"data": source}, {"model": blend, "steps": 2})
+            self._wait(request, forecast)
+            status, data = request(f"/api/forecast/{forecast}")
+            self.assertEqual(status, 200)
+            self.assertEqual(len(json.loads(data)["timestamps"]), 2)
+            figure = self._submit(request, "figure", {}, {"figure_source": forecast})
+            self._wait(request, figure)
+            status, svg = request(f"/api/artifacts/{figure}/figure.svg")
+            self.assertEqual(status, 200)
+            self.assertIn(b"<svg", svg)

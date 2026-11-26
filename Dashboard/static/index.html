@@ -38,6 +38,8 @@
             <option value="train">Train recursive model</option>
             <option value="direct_train">Train direct sequence model</option>
             <option value="quantile_train">Train quantile forecasts</option>
+            <option value="figure">Generate publication figure</option>
+            <option value="blend">Fit validation ensemble</option>
             <option value="forecast">Forecast from a CSV</option>
             <option value="field">Forecast from a field session</option>
             <option value="benchmark">Compare forecasts with multiple seeds</option>
@@ -62,6 +64,18 @@
       <label id="port-label" hidden>Allowed serial port<select id="port"></select></label>
       <label id="baud-label" hidden>Baud rate<input id="baud" type="number" min="300" max="1000000" value="9600"></label>
       <label id="epoch-label" hidden>Training epochs<input id="epochs" type="number" min="1" max="300" value="30"></label>
+      <label id="direct-optimizer-label" hidden>Direct optimizer<select id="direct-optimizer"><option>adam</option><option>adamw</option><option>sgd</option><option>rmsprop</option><option>adagrad</option></select></label>
+      <label id="scheduler-label" hidden>Direct scheduler<select id="scheduler"><option>cosine</option><option>plateau</option></select></label>
+      <label id="figure-source-label" hidden>Figure source<select id="figure-source"></select></label>
+      <label id="figure-feature-label" hidden>Forecast figure feature<select id="figure-feature">
+        <option value="air_temperature_c">Air temperature</option><option value="relative_humidity_pct">Relative humidity</option>
+        <option value="lwi">Leaf wetness</option><option value="eto_mm_interval">Reference ET</option>
+        <option value="eta_mm_interval">Actual ET</option><option value="cotton_heat_stress">Cotton heat stress</option>
+      </select></label>
+      <label id="members-label" hidden>Ensemble members<select id="members" multiple></select></label>
+      <label id="validation-start-label" hidden>Validation start (UTC)<input type="datetime-local" id="validation-start"></label>
+      <label id="validation-end-label" hidden>Validation end (exclusive, UTC)<input type="datetime-local" id="validation-end"></label>
+      <label id="memory-bytes-label" hidden>Training allocation in bytes (0 for default)<input id="memory-bytes" type="number" min="0" max="1073741824" value="0"></label>
       <label id="optimizer-label" hidden>Optimizer<select id="optimizer"><option value="adam">Adam</option><option value="sgd">SGD</option></select></label>
       <label id="loss-label" hidden>Training loss<select id="loss"><option value="huber">Huber</option><option value="mse">Mean squared error</option></select></label>
       <label id="architecture-label" hidden>Direct architecture<select id="architecture">

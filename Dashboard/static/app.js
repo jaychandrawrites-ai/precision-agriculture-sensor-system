@@ -7,7 +7,7 @@ const labels = {
   forecast: "CSV forecast", field: "Field forecast", replay: "Packet replay",
   spatial: "Spatial map", live: "Live acquisition", health: "Sensor quality",
   benchmark: "Forecast benchmark", search: "Architecture search",
-  direct_train: "Direct model training", quantile_train: "Quantile model training", joint: "Synthetic joint experiment",
+  figure: "Publication figure", blend: "Validation ensemble", direct_train: "Direct model training", quantile_train: "Quantile model training", joint: "Synthetic joint experiment",
   adaptive_spatial: "Adaptive reconstruction", ensemble_spatial: "Forecast ensemble map"
 };
 const features = {
@@ -19,7 +19,7 @@ const features = {
 };
 const groups = {
   datasets: ["inspect", "prepare"], experiments: ["train", "benchmark", "search", "direct_train", "quantile_train", "joint"],
-  forecasts: ["forecast", "field"], fieldwork: ["replay", "live", "health", "spatial", "adaptive_spatial", "ensemble_spatial"]
+  forecasts: ["forecast", "field", "blend"], fieldwork: ["replay", "live", "health", "spatial", "adaptive_spatial", "ensemble_spatial"]
 };
 const colors = ["#087e6b", "#9f4b16", "#355b9c", "#8b3278", "#6c681d", "#573ab2", "#374557"];
 const datasetKinds = groups.experiments.filter((kind) => kind !== "joint");
@@ -43,15 +43,18 @@ const metricLabels = {
 function controls() {
   const kind = $("kind").value;
   const useSavedDataset = datasetKinds.includes(kind) && $("dataset").value;
-  const needUpload = !["live", "health", "field", "joint"].includes(kind) && !useSavedDataset;
+  const needUpload = !["live", "health", "field", "joint", "figure"].includes(kind) && !useSavedDataset;
   $("source-name").textContent = kind === "replay" ? "Raw capture JSONL" : "Input data CSV";
   $("config-name").textContent = configLabels[kind] || "Configuration JSON";
   const visibility = {
+    "figure-source": kind === "figure", "figure-feature": kind === "figure",
+    members: kind === "blend", "validation-start": kind === "blend", "validation-end": kind === "blend",
     data: needUpload, config: Boolean(configLabels[kind]), dataset: datasetKinds.includes(kind),
     port: kind === "live", baud: kind === "live", epoch: datasetKinds.includes(kind) || kind === "joint",
     model: ["forecast", "field"].includes(kind), step: ["forecast", "field"].includes(kind),
     session: ["field", "health"].includes(kind), inspection: kind === "inspect", header: kind === "inspect",
-    optimizer: kind === "train", loss: kind === "train", horizon: ["benchmark", "direct_train", "quantile_train"].includes(kind),
+    "direct-optimizer": kind === "direct_train", scheduler: kind === "direct_train",
+    "memory-bytes": kind === "direct_train", optimizer: kind === "train", loss: kind === "train", horizon: ["benchmark", "direct_train", "quantile_train", "blend"].includes(kind),
     "quantile-levels": kind === "quantile_train", architecture: kind === "direct_train", width: kind === "direct_train", "joint-seed": kind === "joint",
     seeds: kind === "benchmark", synthetic: kind === "benchmark", population: kind === "search",
     "sequence-search": kind === "search",
@@ -314,6 +317,9 @@ function renderResult() {
     }
   } else {
     report(data);
+    if (job.kind === "direct_train" && data.training_loss) {
+      chart({"Validation": data.validation_loss, "Training": data.training_loss}, "Epoch loss", "Epoch");
+    }
     if (job.kind === "train" && data.fit_diagnostics) {
       chart({"Validation": data.fit_diagnostics.validation_loss || [],
         "Training": data.fit_diagnostics.training_loss || []}, "Epoch loss", "Epoch");
@@ -362,11 +368,14 @@ function availableSelections(jobs) {
   const sets = {
     dataset: ["Upload prepared CSV", "prepare", "prepared/hourly.csv"],
     session: ["Choose a session", ["replay", "live"], "session/readings.jsonl"],
-    model: ["Choose a model", ["train", "direct_train", "quantile_train", "search"], ["model.json", "direct-model.json", "quantile-model.json", "models/classical_ga.json"]]
+    "figure-source": ["Choose completed results", ["train", "direct_train", "forecast", "field", "search"],
+      ["report.json", "direct-model.training.json", "forecast.csv", "inference/forecast.csv"]],
+    model: ["Choose a model", ["train", "direct_train", "quantile_train", "search", "blend"], ["model.json", "direct-model.json", "quantile-model.json", "models/classical_ga.json", "blend.json"]]
   };
   for (const [id, [placeholder, kinds, artifact]] of Object.entries(sets)) {
     const item = $(id), current = item.value;
-    const entries = jobs.filter((job) => [kinds].flat().includes(job.kind) && [artifact].flat().some((name) => job.artifacts.includes(name)));
+    const entries = jobs.filter((job) => [kinds].flat().includes(job.kind) && [artifact].flat().some((name) => job.artifacts.includes(name)) &&
+      (id !== "figure-source" || job.kind !== "search" || job.artifacts.includes("models/classical_ga.json")));
     item.replaceChildren(new Option(placeholder, ""), ...entries.map((job) => {
       const option = new Option(labels[job.kind] + " · " + new Date(job.created_at).toLocaleString(), job.id);
       if (job.kind === "search") {
@@ -378,6 +387,11 @@ function availableSelections(jobs) {
     }));
     if (entries.some((job) => job.id === current)) item.value = current;
   }
+  const members = $("members");
+  const selected = new Set([...members.selectedOptions].map(option => option.value));
+  members.replaceChildren(...[...$("model").options].filter(option => option.value &&
+    jobs.find(job => job.id === option.value)?.kind !== "blend").map(option =>
+      new Option(option.text, option.value, false, selected.has(option.value))));
   controls();
 }
 
@@ -415,7 +429,7 @@ function jobRow(job) {
   }
   for (const artifact of job.artifacts) {
     row.append(link(artifact, "/api/artifacts/" + job.id + "/" + artifact));
-    if (artifact.endsWith("report.json") || artifact.endsWith("failure.log")) {
+    if (artifact.endsWith("report.json") || artifact.endsWith(".training.json") || artifact.endsWith("failure.log")) {
       row.append(button(artifact.endsWith("failure.log") ? "See error" : "View report", () => inspectArtifact(job, artifact)));
     }
   }
@@ -441,7 +455,11 @@ function options() {
   return {
     sequence_search: $("sequence-search").checked, search_model: $("search-model").value,
     model: $("model").value, dataset: $("dataset").value, session: $("session").value,
-    architecture: $("architecture").value, width: Number($("width").value),
+    figure_source: $("figure-source").value, feature: $("figure-feature").value,
+    members: [...$("members").selectedOptions].map(option => option.value),
+    validation_start: $("validation-start").value, validation_end: $("validation-end").value,
+    direct_optimizer: $("direct-optimizer").value, scheduler: $("scheduler").value,
+    memory_bytes: Number($("memory-bytes").value), architecture: $("architecture").value, width: Number($("width").value),
     seed: Number($("joint-seed").value), epochs: Number($("epochs").value), steps: Number($("steps").value),
     baud: Number($("baud").value), port: $("port").value, optimizer: $("optimizer").value,
     loss: $("loss").value, delimiter: $("delimiter").value === "tab" ? "\t" : $("delimiter").value,

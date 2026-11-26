@@ -62,6 +62,7 @@ def main():
             sub.add_argument("--horizon", type=int, default=24)
             sub.add_argument("--width", type=int, default=32)
             sub.add_argument("--architecture", choices=DIRECT_ARCHITECTURES, default="gated")
+            sub.add_argument("--progress", type=Path)
             sub.add_argument("--memory-bytes", type=int)
             sub.add_argument("--optimizer", choices=("adam", "adamw", "sgd", "rmsprop", "adagrad"), default="adam")
             sub.add_argument("--weight-decay", type=float, default=0.)
@@ -81,7 +82,8 @@ def main():
         report = train(args.source, args.checkpoint, settings, args.horizon, args.width,
                        architecture=architecture, memory_budget_bytes=args.memory_bytes,
                        optimizer=args.optimizer, weight_decay=args.weight_decay,
-                       scheduler=args.scheduler, warmup_epochs=args.warmup_epochs, patience=args.patience)
+                       scheduler=args.scheduler, warmup_epochs=args.warmup_epochs, patience=args.patience,
+                       progress=(lambda state: write_json(args.progress, state)) if args.progress else None)
         write_json(args.checkpoint.with_suffix(".training.json"), report)
     else:
         with atomic_output(args.output) as file:
