@@ -1,6 +1,6 @@
 """Generation-boundary recovery for reproducible validation-only search."""
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from hashlib import sha256
 import json
 import sys
@@ -24,6 +24,7 @@ class SearchOptions:
     elite: int = 1
     tournament: int = 3
     extended: bool = False
+    sequence: bool = False
     adaptive_amplitude: bool = False
     hybrid_fraction: float = 0.25
     entropy_floor: float = 0.35
@@ -74,9 +75,9 @@ def validation_fingerprint(dataset, settings, windows):
 
 
 def _pack(candidate):
-    return {"bits": candidate.genome.bits, "score": candidate.score,
-            "validation_loss": candidate.validation_loss, "parameters": candidate.parameters,
-            "model_sample_steps": candidate.model_sample_steps, "epochs": candidate.epochs}
+    data = asdict(candidate)
+    del data["genome"]
+    return {"bits": candidate.genome.bits, **data}
 
 
 def _unpack(item):
@@ -147,15 +148,17 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
         diagnostics = state["diagnostics"]
         cache = {name: _unpack(candidate) for name, candidate in state["cache"].items()}
         pool = [Genome(tuple(bits)) for bits in state["population"]]
-        amplitudes = [QuantumGenome(extended=options.extended, angles=angles)
+        amplitudes = [QuantumGenome(extended=options.extended, sequence=options.sequence, angles=angles)
                       for angles in state["angles"]]
         best = min((item for generation in history for item in generation), key=lambda item: item.score)
         stale = state["stale"]
     elif amplitude_mode:
-        amplitudes = [QuantumGenome(extended=options.extended) for _ in range(settings.population)]
+        amplitudes = [QuantumGenome(extended=options.extended, sequence=options.sequence) for _ in range(settings.population)]
     elif mode == "classical_ga":
-        pool = [Genome.random(rng, extended=options.extended) for _ in range(settings.population)]
+        pool = [Genome.random(rng, extended=options.extended, sequence=options.sequence) for _ in range(settings.population)]
 
+    options_horizon = getattr(score, "horizon", 1)
+    options_cap = getattr(score, "max_parameters", options.max_parameters)
     stop = settings.generations if stop_after is None else min(stop_after, settings.generations)
     if stop < 1:
         raise ValueError("Generation limit must permit evaluation")
@@ -180,8 +183,8 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
                                                         size=injected, preserve_elite=False)
                     pool.extend(offspring)
             elif mode == "random":
-                pool = [Genome.random(rng, extended=options.extended) for _ in range(settings.population)]
-            repaired = [genome.repair(options.max_parameters) for genome in pool]
+                pool = [Genome.random(rng, extended=options.extended, sequence=options.sequence) for _ in range(settings.population)]
+            repaired = [genome.repair(options_cap, horizon=options_horizon) for genome in pool]
             repairs = sum(before != after for before, after in zip(pool, repaired))
             pool = repaired
 
@@ -193,8 +196,7 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
                         pending[key] = genome
                 actual = list(workers.map(score, pending.values()))
                 cache.update(zip(pending, actual))
-                candidates = [Candidate(genome, hit.score, hit.validation_loss, hit.parameters,
-                                        hit.model_sample_steps, hit.epochs)
+                candidates = [replace(hit, genome=genome)
                               for genome in pool for hit in (cache[_key(genome)],)]
             else:
                 actual = candidates = list(workers.map(score, pool))

@@ -7,15 +7,14 @@ import pandas as pd
 from config import FEATURES
 from Data.ForecastHistory import require_history
 from Data.Preprocessing import read_hourly
-from Temporal.Predictor import forecast
-from Utils.Checkpoints import load
+from Utils.ModelLoader import load_forecaster
 
 
 def forecast_csv(source, checkpoint, steps, device="cpu"):
     values, timestamps = read_hourly(source)
-    history = require_history(values, timestamps)
-    model, backend, inputs, targets = load(checkpoint, device)
-    predictions = forecast(model, history, inputs, targets, backend, steps)
+    model = load_forecaster(checkpoint, device)
+    history = require_history(values, timestamps, hours=model.history_hours)
+    predictions = model.forecast(history, steps)
     start = pd.Timestamp(timestamps[-1] + np.timedelta64(1, "h"), tz="UTC")
     frame = pd.DataFrame(predictions, columns=FEATURES)
     frame.insert(0, "timestamp", pd.date_range(start, periods=steps, freq="h"))

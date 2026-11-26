@@ -3,12 +3,12 @@ import math
 
 import numpy as np
 
-from Evolution.Genome import BIT_COUNT, EXTENDED_BIT_COUNT, Genome
+from Evolution.Genome import BIT_COUNT, EXTENDED_BIT_COUNT, SEQUENCE_BIT_COUNT, Genome
 
 
 class QuantumGenome:
-    def __init__(self, *, extended=False, angles=None):
-        count = EXTENDED_BIT_COUNT if extended else BIT_COUNT
+    def __init__(self, *, extended=False, sequence=False, angles=None):
+        count = SEQUENCE_BIT_COUNT if sequence else EXTENDED_BIT_COUNT if extended else BIT_COUNT
         self.angles = (np.full(count, math.pi / 4) if angles is None
                        else np.asarray(angles, dtype=float).copy())
         if (self.angles.shape != (count,) or not np.isfinite(self.angles).all()

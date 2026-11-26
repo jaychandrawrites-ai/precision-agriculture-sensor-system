@@ -68,8 +68,10 @@ def forecast_field(prepared, forecaster, steps):
     if not provenance["complete_hour_bins_only"]:
         raise ValueError("Forecasting requires closed hourly bins")
     verified = forecaster.require_compatible_field(provenance)
+    hours = forecaster.history_hours
     history = require_history(features.to_numpy(), features.index.to_numpy(dtype="datetime64[ns]"),
-                              "Latest three hours need all six valid features and sufficient ET history")
+                              f"Latest {hours} hours need all six valid features and sufficient ET history",
+                              hours=hours)
     prediction = SpatiotemporalModel(forecaster).forecast(history, steps)
     future = pd.date_range(features.index[-1] + pd.offsets.Hour(), periods=steps, freq="h",
                            name="timestamp")
@@ -92,7 +94,8 @@ def check_session(readings, configuration, checkpoint=None):
 def check_prepared_session(prepared, forecaster=None):
     """Check an already prepared field history against an optional loaded model."""
     features, flags, provenance, _, _ = prepared
-    result = inspect_history(features.to_numpy(), features.index.to_numpy(dtype="datetime64[ns]"))
+    hours = forecaster.history_hours if forecaster is not None else 3
+    result = inspect_history(features.to_numpy(), features.index.to_numpy(dtype="datetime64[ns]"), hours=hours)
     history_hours = provenance["reference_et"]["history_hours"]
     result.update({
         "closed_hour_bins": bool(provenance["complete_hour_bins_only"]),

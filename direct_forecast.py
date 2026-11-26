@@ -16,15 +16,19 @@ from Data.TimeSeries import calendar_cutoffs
 from Framework.Backend import create_backend
 from Temporal.Direct import DIRECT_ARCHITECTURES, fit_direct
 from Temporal.DirectCheckpoint import load_direct, save_direct
-from Utils.Serialization import atomic_output, write_json
+from Temporal.SequenceForecast import SequenceSpec
+from Utils.Serialization import atomic_output, read_json, write_json
 
 
 def train(source, checkpoint, settings, horizon, width=32, *, architecture="gated"):
     values, times = read_hourly(source)
     cuts = calendar_cutoffs(times, settings.train_fraction, settings.validation_fraction)
     data = build_dataset(values, times, cutoffs=cuts)
-    train_windows = rollout_windows(data, data.train, values, times, horizon)
-    validation = rollout_windows(data, data.validation, values, times, horizon)
+    context = architecture.context if isinstance(architecture, SequenceSpec) else 3
+    if isinstance(architecture, SequenceSpec):
+        width = architecture.width
+    train_windows = rollout_windows(data, data.train, values, times, horizon, context=context)
+    validation = rollout_windows(data, data.validation, values, times, horizon, context=context)
     model, report = fit_direct(train_windows, validation, data.target_scaler,
                                create_backend(settings.device, settings.dtype, settings.seed),
                                settings, width=width, architecture=architecture)
@@ -38,8 +42,8 @@ def train(source, checkpoint, settings, horizon, width=32, *, architecture="gate
 
 def predict(source, checkpoint):
     values, times = read_hourly(source)
-    history = require_history(values, times, "Direct forecasts require three valid consecutive observations")
     model = load_direct(checkpoint)
+    history = require_history(values, times, hours=model.context_hours)
     prediction = model.predict(history[None])[0]
     start = pd.Timestamp(times[-1] + np.timedelta64(1, "h"), tz="UTC")
     return pd.DataFrame(prediction, columns=FEATURES,
@@ -58,13 +62,18 @@ def main():
             sub.add_argument("--horizon", type=int, default=24)
             sub.add_argument("--width", type=int, default=32)
             sub.add_argument("--architecture", choices=DIRECT_ARCHITECTURES, default="gated")
+            sub.add_argument("--sequence-config", type=Path, help="Sequence architecture JSON, such as an exported search recipe")
         else:
             sub.add_argument("output", type=Path)
     args = parser.parse_args()
     if args.command == "train":
         settings = replace(TrainingConfig(), epochs=args.epochs, dropout=0)
+        architecture = args.architecture
+        if args.sequence_config is not None:
+            record = read_json(args.sequence_config)
+            architecture = SequenceSpec(**record.get("architecture", record))
         report = train(args.source, args.checkpoint, settings, args.horizon, args.width,
-                       architecture=args.architecture)
+                       architecture=architecture)
         write_json(args.checkpoint.with_suffix(".training.json"), report)
     else:
         with atomic_output(args.output) as file:

@@ -17,6 +17,10 @@ class Candidate:
     parameters: int
     model_sample_steps: int = 0
     epochs: int = 0
+    training_seconds: float | None = None
+    prediction_batch_seconds: float | None = None
+    prediction_batch_size: int | None = None
+    raw_invalid_fraction: float | None = None
 
 
 def validation_fitness(dataset, training, evolution, *, rollout_windows_pair=None,
@@ -58,4 +62,58 @@ def validation_fitness(dataset, training, evolution, *, rollout_windows_pair=Non
         adjusted = result.validation_loss + evolution.complexity_penalty * count / 1000
         return Candidate(genome, adjusted, result.validation_loss, count, epochs * samples_per_epoch, epochs)
 
+    return score
+
+
+def sequence_fitness(dataset, training, evolution, windows, *, parameter_count_limit=None):
+    """Real direct-model validation under the shared context and target windows."""
+    from statistics import median
+    from time import perf_counter
+
+    from Data.DataQuality import invalid_rows
+    from Evolution.Genome import SEQUENCE_BIT_COUNT, Genome
+    from Temporal.Direct import fit_direct
+
+    train_windows, validation = windows
+    horizon = train_windows.targets.shape[1]
+    samples_per_epoch = len(train_windows.starts) * horizon
+    if not samples_per_epoch or not len(validation.starts):
+        raise ValueError("Evolution requires complete matched sequence windows")
+    minimum = Genome((0,) * SEQUENCE_BIT_COUNT).decode().parameter_count(horizon)
+    upper = min(50_000, parameter_count_limit) if parameter_count_limit is not None else 50_000
+    cap = evolution.candidate_parameter_step_limit
+    if upper < minimum:
+        raise ValueError("Parameter cap excludes even the smallest dense candidate")
+    if cap is not None:
+        upper = min(upper, cap // samples_per_epoch)
+        if upper < minimum:
+            raise ValueError("Work cap cannot train the smallest dense candidate for one epoch")
+
+    def score(genome):
+        spec = genome.decode()
+        size = spec.parameter_count(horizon)
+        if size > upper:
+            raise ValueError("Repair the candidate against its parameter and work caps before evaluation")
+        epochs = evolution.candidate_epochs if cap is None else min(
+            evolution.candidate_epochs, cap // (samples_per_epoch * size))
+        backend = create_backend(training.device, training.dtype, training.seed)
+        started = perf_counter()
+        model, diagnostics = fit_direct(train_windows, validation, dataset.target_scaler, backend,
+                                        replace(training, epochs=epochs), width=spec.width, architecture=spec)
+        seconds = perf_counter() - started
+        sample = validation.histories[:16]
+        model.predict(sample)
+        timings = []
+        for _ in range(3):
+            started = perf_counter()
+            model.predict(sample)
+            timings.append(perf_counter() - started)
+        raw = model.predict(validation.histories, physical=False)
+        rate = float(invalid_rows(raw.reshape(-1, 6)).mean())
+        adjusted = min(diagnostics["validation_loss"]) + evolution.complexity_penalty * size / 1000
+        return Candidate(genome, adjusted, min(diagnostics["validation_loss"]), size,
+                         epochs * samples_per_epoch, epochs, seconds, median(timings), len(sample), rate)
+
+    score.horizon = horizon
+    score.max_parameters = upper
     return score

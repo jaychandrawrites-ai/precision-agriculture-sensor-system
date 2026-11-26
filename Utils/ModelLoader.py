@@ -18,6 +18,10 @@ class Forecaster:
     provenance: dict
     direct: object | None = None
 
+    @property
+    def history_hours(self):
+        return self.direct.context_hours if self.direct is not None else 3
+
     def forecast(self, history, steps):
         if self.direct is not None:
             if type(steps) is not int or not 1 <= steps <= self.direct.model.horizon:
@@ -44,7 +48,7 @@ def load_forecaster(path, device="cpu"):
     if not isinstance(provenance, dict):
         raise ValueError("Invalid training provenance")
     digest = sha256(payload).hexdigest()
-    if record.get("format") in ("jupiter-direct-v1", "jupiter-direct-v2"):
+    if record.get("format") in ("jupiter-direct-v1", "jupiter-direct-v2", "jupiter-direct-v3"):
         from Temporal.DirectCheckpoint import load_direct_state
 
         direct = load_direct_state(record, device)

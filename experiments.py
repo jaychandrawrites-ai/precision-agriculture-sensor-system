@@ -15,6 +15,7 @@ from Evolution.Diagnostics import diversity, pareto_front, random_search
 from Evolution.Fitness import validation_fitness
 from Evolution.GeneticAlgorithm import search as genetic_search
 from Evolution.Genome import Architecture
+from Evolution.SequenceSearch import compare_sequences
 from Evolution.Resumable import SearchOptions, run_search, validation_fingerprint
 from Framework.Backend import create_backend
 from QuantumInspired.QuantumEvolution import search as amplitude_search
@@ -175,6 +176,10 @@ def main():
     parser.add_argument("--max-parameters", type=int)
     parser.add_argument("--parent-selection", choices=("tournament", "rank"), default="tournament")
     parser.add_argument("--crossover", choices=("uniform", "single_point"), default="uniform")
+    parser.add_argument("--sequence-space", action="store_true",
+                        help="Compare all five methods on matched direct sequence windows")
+    parser.add_argument("--export-selected", type=Path,
+                        help="Save each retrained direct sequence winner as a forecast checkpoint")
     parser.add_argument("--legacy", action="store_true")
     parser.add_argument("--synthetic", action="store_true", help="Label the input as synthetic in the report")
     args = parser.parse_args()
@@ -182,16 +187,25 @@ def main():
     budget = EvolutionConfig(population=args.population, generations=args.generations,
                              candidate_epochs=args.candidate_epochs,
                              candidate_parameter_step_limit=args.candidate_parameter_step_limit)
-    report = compare(*read_hourly(args.source), settings, budget, recursive=not args.legacy,
-                     include_random=args.random_baseline, include_hybrid=args.hybrid_baseline,
-                     search_directory=args.search_directory,
-                     search_options=SearchOptions(workers=args.workers, cache=args.cache_fitness,
-                                                  extended=args.extended_space,
-                                                  adaptive_amplitude=args.adaptive_amplitude,
-                                                  max_parameters=args.max_parameters,
-                                                  parent_selection=args.parent_selection,
-                                                  crossover=args.crossover))
-    report["source_sha256"] = sha256(Path(args.source).read_bytes()).hexdigest()
+    source_hash = sha256(Path(args.source).read_bytes()).hexdigest()
+    series = read_hourly(args.source)
+    options = SearchOptions(workers=args.workers, cache=args.cache_fitness,
+                            extended=args.extended_space, adaptive_amplitude=args.adaptive_amplitude,
+                            max_parameters=args.max_parameters, parent_selection=args.parent_selection,
+                            crossover=args.crossover)
+    if args.sequence_space:
+        if args.legacy:
+            parser.error("Direct sequence search cannot use the legacy one-step protocol")
+        report = compare_sequences(*series, settings, budget, options,
+                                   search_directory=args.search_directory, export_directory=args.export_selected,
+                                   provenance={"source_sha256": source_hash, "synthetic": args.synthetic})
+    else:
+        if args.export_selected is not None:
+            parser.error("Saved winner export currently requires --sequence-space")
+        report = compare(*series, settings, budget, recursive=not args.legacy,
+                         include_random=args.random_baseline, include_hybrid=args.hybrid_baseline,
+                         search_directory=args.search_directory, search_options=options)
+    report["source_sha256"] = source_hash
     report["synthetic"] = args.synthetic
     print(json.dumps(report, allow_nan=False, indent=2))
 

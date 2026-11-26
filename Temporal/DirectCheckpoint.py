@@ -5,6 +5,7 @@ from config import FEATURES
 from Data.Normalization import Standardizer
 from Framework.Backend import create_backend
 from Temporal.Direct import DirectForecast, make_direct_model
+from Temporal.SequenceForecast import SequenceSpec
 from Utils.Serialization import read_json, write_json
 
 
@@ -17,7 +18,10 @@ def save_direct(path, forecast, width, *, provenance=None):
         "parameters": forecast.model.state_dict(forecast.backend),
         "provenance": provenance or {},
     }
-    if forecast.model.architecture != "gated":
+    if isinstance(forecast.model.architecture, SequenceSpec):
+        record["format"] = "jupiter-direct-v3"
+        record["architecture"] = forecast.model.architecture.as_dict()
+    elif forecast.model.architecture != "gated":
         record["format"] = "jupiter-direct-v2"
         record["architecture"] = forecast.model.architecture
     write_json(path, record)
@@ -29,14 +33,17 @@ def load_direct(path, device="cpu"):
 
 def load_direct_state(record, device="cpu"):
     version = record.get("format")
-    if version not in ("jupiter-direct-v1", "jupiter-direct-v2") or tuple(record.get("features", ())) != FEATURES:
+    if version not in ("jupiter-direct-v1", "jupiter-direct-v2", "jupiter-direct-v3") or tuple(record.get("features", ())) != FEATURES:
         raise ValueError("Unsupported experimental forecast checkpoint")
     backend = create_backend(device=device, dtype=record["dtype"])
     architecture = "gated" if version == "jupiter-direct-v1" else record["architecture"]
+    if version == "jupiter-direct-v3":
+        architecture = SequenceSpec(**architecture)
     model = make_direct_model(backend, record["horizon"], record["width"], architecture)
     inputs = Standardizer.from_state(record["inputs"])
     targets = Standardizer.from_state(record["targets"])
-    if inputs.mean.shape != (18,) or targets.mean.shape != (6,):
+    context = architecture.context if isinstance(architecture, SequenceSpec) else 3
+    if inputs.mean.shape != (6 * context,) or targets.mean.shape != (6,):
         raise ValueError("Invalid experimental checkpoint feature transforms")
     parameters = {key: np.asarray(array, dtype=record["dtype"])
                   for key, array in record["parameters"].items()}
