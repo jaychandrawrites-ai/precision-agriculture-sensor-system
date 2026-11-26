@@ -71,7 +71,7 @@ def validation_fitness(dataset, training, evolution, *, rollout_windows_pair=Non
 
 
 def sequence_fitness(dataset, training, evolution, windows, *, parameter_count_limit=None,
-                     artifact_directory=None):
+                     artifact_directory=None, memory_budget_bytes=None):
     """Real direct-model validation under the shared context and target windows."""
     from hashlib import sha256
     from pathlib import Path
@@ -113,7 +113,8 @@ def sequence_fitness(dataset, training, evolution, windows, *, parameter_count_l
         backend = create_backend(training.device, training.dtype, training.seed)
         started = perf_counter()
         model, diagnostics = fit_direct(train_windows, validation, dataset.target_scaler, backend,
-                                        replace(training, epochs=epochs), width=spec.width, architecture=spec)
+                                        replace(training, epochs=epochs), width=spec.width, architecture=spec,
+                                        memory_budget_bytes=memory_budget_bytes)
         seconds = perf_counter() - started
         sample = validation.histories[:16]
         started = perf_counter()
@@ -129,6 +130,8 @@ def sequence_fitness(dataset, training, evolution, windows, *, parameter_count_l
         # CPU RSS is process-lifetime, not candidate-isolated. Keep it as diagnostic only.
         memory = estimate_memory(model.model, backend,
                                  model.inputs.transform(direct_features(sample[:1], spec)))
+        planned_bytes = (diagnostics["memory"]["plan"]["estimate_bytes"] if "memory" in diagnostics
+                         else memory.batch_bytes(training.batch_size))
         peak = observed_process_peak()
         filename = digest = None
         if artifact_root is not None:
@@ -141,7 +144,7 @@ def sequence_fitness(dataset, training, evolution, windows, *, parameter_count_l
         adjusted = min(diagnostics["validation_loss"]) + evolution.complexity_penalty * size / 1000
         return Candidate(genome, adjusted, min(diagnostics["validation_loss"]), size,
                          epochs * samples_per_epoch, epochs, seconds, median(timings), len(sample), rate,
-                         memory.batch_bytes(training.batch_size), None if peak is None else peak["bytes"],
+                         planned_bytes, None if peak is None else peak["bytes"],
                          warmup_seconds, filename, digest)
 
     def verify_artifact(candidate):

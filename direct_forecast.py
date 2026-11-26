@@ -20,7 +20,7 @@ from Temporal.SequenceForecast import SequenceSpec
 from Utils.Serialization import atomic_output, read_json, write_json
 
 
-def train(source, checkpoint, settings, horizon, width=32, *, architecture="gated"):
+def train(source, checkpoint, settings, horizon, width=32, *, architecture="gated", **fit_options):
     values, times = read_hourly(source)
     cuts = calendar_cutoffs(times, settings.train_fraction, settings.validation_fraction)
     data = build_dataset(values, times, cutoffs=cuts)
@@ -31,7 +31,7 @@ def train(source, checkpoint, settings, horizon, width=32, *, architecture="gate
     validation = rollout_windows(data, data.validation, values, times, horizon, context=context)
     model, report = fit_direct(train_windows, validation, data.target_scaler,
                                create_backend(settings.device, settings.dtype, settings.seed),
-                               settings, width=width, architecture=architecture)
+                               settings, width=width, architecture=architecture, **fit_options)
     save_direct(checkpoint, model, width, provenance={
         "source_sha256": sha256(Path(source).read_bytes()).hexdigest(),
         "cutoffs_utc": [str(value) + "Z" for value in cuts],
@@ -62,6 +62,12 @@ def main():
             sub.add_argument("--horizon", type=int, default=24)
             sub.add_argument("--width", type=int, default=32)
             sub.add_argument("--architecture", choices=DIRECT_ARCHITECTURES, default="gated")
+            sub.add_argument("--memory-bytes", type=int)
+            sub.add_argument("--optimizer", choices=("adam", "adamw", "sgd", "rmsprop", "adagrad"), default="adam")
+            sub.add_argument("--weight-decay", type=float, default=0.)
+            sub.add_argument("--scheduler", choices=("cosine", "plateau"), default="cosine")
+            sub.add_argument("--warmup-epochs", type=int, default=0)
+            sub.add_argument("--patience", type=int)
             sub.add_argument("--sequence-config", type=Path, help="Sequence architecture JSON, such as an exported search recipe")
         else:
             sub.add_argument("output", type=Path)
@@ -73,7 +79,9 @@ def main():
             record = read_json(args.sequence_config)
             architecture = SequenceSpec(**record.get("architecture", record))
         report = train(args.source, args.checkpoint, settings, args.horizon, args.width,
-                       architecture=architecture)
+                       architecture=architecture, memory_budget_bytes=args.memory_bytes,
+                       optimizer=args.optimizer, weight_decay=args.weight_decay,
+                       scheduler=args.scheduler, warmup_epochs=args.warmup_epochs, patience=args.patience)
         write_json(args.checkpoint.with_suffix(".training.json"), report)
     else:
         with atomic_output(args.output) as file:

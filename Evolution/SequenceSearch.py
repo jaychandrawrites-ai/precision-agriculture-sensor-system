@@ -2,6 +2,7 @@
 
 from collections import Counter
 from dataclasses import asdict, replace
+from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
 
@@ -42,7 +43,7 @@ def _classification(candidate, policy):
 
 def compare_sequences(values, timestamps, settings, budget, options, *, search_directory=None,
                       export_directory=None, provenance=None, policy=ObjectivePolicy(),
-                      pareto_index=None, candidate_devices=(), candidate_timeout=300.):
+                      pareto_index=None, candidate_devices=(), candidate_timeout=300., memory_budget_bytes=None):
     if pareto_index is not None and (type(pareto_index) is not int or pareto_index < 0):
         raise ValueError("Pareto index must be a nonnegative integer")
     if settings.device != "cpu" and options.workers > 1 and not candidate_devices:
@@ -63,10 +64,13 @@ def compare_sequences(values, timestamps, settings, budget, options, *, search_d
                     for rows in (dataset.train, dataset.validation))
     fingerprint = validation_fingerprint(dataset, settings, windows)
     artifacts = None if search_directory is None else search_directory / f"candidates-{fingerprint}"
-    kwargs = dict(parameter_count_limit=options.max_parameters, artifact_directory=artifacts)
+    if memory_budget_bytes is not None:
+        fingerprint = sha256(repr((fingerprint, memory_budget_bytes)).encode()).hexdigest()
+        artifacts = None if search_directory is None else search_directory / f"candidates-{fingerprint}"
+    kwargs = dict(parameter_count_limit=options.max_parameters, artifact_directory=artifacts,
+                  memory_budget_bytes=memory_budget_bytes)
     if candidate_devices:
         import math
-        from hashlib import sha256
         from Evolution.Isolated import isolated_fitness
 
         if not math.isfinite(candidate_timeout):
@@ -87,7 +91,7 @@ def compare_sequences(values, timestamps, settings, budget, options, *, search_d
     if not len(test.starts):
         raise ValueError("No complete held-out windows at the requested matched context")
     persistence, seasonal, fallback = baseline_forecasts(values, timestamps, test)
-    report = {"protocol": {"candidate_devices": list(candidate_devices), "seed": settings.seed, "settings": asdict(settings), "budget": asdict(budget),
+    report = {"protocol": {"candidate_devices": list(candidate_devices), "candidate_memory_bytes": memory_budget_bytes, "seed": settings.seed, "settings": asdict(settings), "budget": asdict(budget),
                            "options": asdict(options), "effective_parameter_cap": scorer.max_parameters,
                            "context_hours_required_for_matched_windows": MAX_SEQUENCE_CONTEXT,
                            "training_windows": len(windows[0].starts), "validation_windows": len(windows[1].starts),
