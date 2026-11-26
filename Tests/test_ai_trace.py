@@ -61,3 +61,23 @@ class SurveyArchiveTests(unittest.TestCase):
             self.assertAlmostEqual(reading["measurements"]["air_temperature_c"], 20)
             self.assertIn("receipt_is_import_time", reading["flags"])
             self.assertEqual(first["raw_count"], 0)
+
+    def test_replay_keeps_original_segment_time(self):
+        import base64
+        from Acquisition.TraceImport import replay_segment
+
+        with TemporaryDirectory() as tmp:
+            source = Path(tmp) / "saved.jsonl"
+            stamp = "2025-01-01T02:00:00+00:00"
+            source.write_text(json.dumps({"received_at": stamp,
+                                          "line_b64": base64.b64encode(b'{"t":22}').decode()}) + "\n")
+            store = TraceStore(Path(tmp) / "trace")
+            survey = store.create("Replay")["id"]
+            result = replay_segment(store, survey, source, label="First location", schema={
+                "fields": {"air_temperature_c": {"key": "t", "unit": "C"}},
+            })
+            segment = result["locations"][0]["segments"][0]
+            self.assertEqual(segment["started_at"], "2025-01-01T02:00:00.000000+00:00")
+            self.assertEqual(segment["ended_at"], segment["started_at"])
+            self.assertEqual(segment["raw_count"], 1)
+            self.assertEqual(store.segment_readings(survey, segment["id"])[0]["measurements"]["air_temperature_c"], 22)

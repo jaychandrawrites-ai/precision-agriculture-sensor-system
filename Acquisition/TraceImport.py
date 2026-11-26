@@ -3,6 +3,7 @@ from dataclasses import asdict
 from datetime import datetime
 from hashlib import sha256
 from io import StringIO
+from itertools import chain
 import csv
 from uuid import uuid4
 
@@ -71,10 +72,17 @@ def import_csv(store, payload, label, mapping):
 
 def replay_segment(store, survey_id, source, *, label=None, location_id=None, schema=None):
     parser = PacketParser() if schema is None else MappedPacketParser(PacketSchema.from_dict(schema))
-    store.start(survey_id, label=label, location_id=location_id)
-    last = None
+    records = iter(replay(source))
+    first = next(records, None)
+    if first is None:
+        raise ValueError("Replay source contains no packets")
+    last = first[0]
+    store.start(survey_id, label=label, location_id=location_id, recorded_at=last,
+                calibration={"ingestion_source": "raw_replay"})
     try:
-        for received, raw in replay(source):
+        for received, raw in chain((first,), records):
+            if received < last:
+                raise ValueError("Raw replay receipt timestamps must be nondecreasing")
             last = received
             # Persist raw bytes before attempting to parse them.
             store.ingest(survey_id, raw, received)
@@ -85,9 +93,9 @@ def replay_segment(store, survey_id, source, *, label=None, location_id=None, sc
         if last_reading is not None:
             store.ingest(survey_id, None, last, store_record(last_reading))
     except BaseException:
-        store.stop(survey_id, interrupted=True)
+        store.stop(survey_id, interrupted=True, recorded_at=last)
         raise
-    return store.stop(survey_id)
+    return store.stop(survey_id, recorded_at=last)
 
 
 def store_record(reading):

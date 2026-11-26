@@ -157,7 +157,7 @@ class TraceStore:
         return {**survey, "locations": locations, "active_segment_id": active_segment,
                 "active_location_id": active_location}
 
-    def start(self, identifier, label=None, location_id=None, coordinates=None, calibration=None):
+    def start(self, identifier, label=None, location_id=None, coordinates=None, calibration=None, *, recorded_at=None):
         if calibration is not None and not isinstance(calibration, dict):
             raise ValueError("Calibration metadata must be an object")
         with self._database(write=True) as db:
@@ -176,19 +176,19 @@ class TraceStore:
                 if row is None:
                     raise KeyError("Location not found in this survey")
             db.execute("INSERT INTO segment VALUES (?, ?, ?, NULL, 'recording', ?)",
-                       (uuid4().hex, location_id, _time(), _json(calibration or {})))
+                       (uuid4().hex, location_id, _time(recorded_at), _json(calibration or {})))
         return self.status(identifier)
 
-    def _stop(self, db, identifier, interrupted):
+    def _stop(self, db, identifier, interrupted, recorded_at=None):
         active = self._active(db, identifier)
         if active is not None:
             db.execute("UPDATE segment SET status=?, ended_at=? WHERE id=?",
-                       ("interrupted" if interrupted else "complete", _time(), active["id"]))
+                       ("interrupted" if interrupted else "complete", _time(recorded_at), active["id"]))
 
-    def stop(self, identifier, interrupted=False):
+    def stop(self, identifier, interrupted=False, *, recorded_at=None):
         with self._database(write=True) as db:
             self._survey(db, identifier)
-            self._stop(db, identifier, interrupted)
+            self._stop(db, identifier, interrupted, recorded_at)
         return self.status(identifier)
 
     def finish(self, identifier):
