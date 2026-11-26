@@ -299,3 +299,97 @@ def laplacian_neumann(field, backend, dy=1.0, dx=1.0):
 def biharmonic_neumann(field, backend, dy=1.0, dx=1.0):
     return laplacian_neumann(laplacian_neumann(field, backend, dy, dx),
                              backend, dy, dx)
+
+
+def batched_matmul_forward(left, right, backend):
+    """Backend matrix product with a cache that preserves broadcast operands."""
+    if not left.ndim or not right.ndim:
+        raise ValueError("Matrix multiplication requires nonscalar operands")
+    if left.dtype.kind != "f" or right.dtype.kind != "f":
+        raise ValueError("The matrix product adjoint requires floating-point operands")
+    result = backend.matmul(left, right)
+    return result, (left, right, result.shape)
+
+
+def batched_matmul_backward(gradient, cache, backend):
+    """Adjoint of real-valued matmul, including vectors and batch broadcasting."""
+    left, right, output_shape = cache
+    if gradient.shape != output_shape:
+        raise ValueError("Matrix product adjoint shape mismatch")
+    with backend.scope():
+        a = left[None, :] if left.ndim == 1 else left
+        b = right[:, None] if right.ndim == 1 else right
+        batch = gradient.ndim - 2 + int(left.ndim == 1) + int(right.ndim == 1)
+        upstream = gradient.reshape((*gradient.shape[:batch], a.shape[-2], b.shape[-1]))
+        da = unbroadcast(upstream @ b.swapaxes(-1, -2), a.shape)
+        db = unbroadcast(a.swapaxes(-1, -2) @ upstream, b.shape)
+        return da.reshape(left.shape), db.reshape(right.shape)
+
+
+@dataclass(frozen=True)
+class ContractionCache:
+    left_shape: tuple
+    right_shape: tuple
+    left_permutation: tuple
+    right_permutation: tuple
+    left_matrix: object
+    right_matrix: object
+    output_shape: tuple
+
+
+def _contraction_axes(ndim, axes):
+    result = []
+    for index in axes:
+        if not isinstance(index, int) or not -ndim <= index < ndim:
+            raise ValueError("Contraction axis out of range")
+        result.append(index % ndim)
+    if len(result) != len(set(result)):
+        raise ValueError("Duplicate contraction axes")
+    return tuple(result)
+
+
+def contract_forward(left, right, axes, backend):
+    """Real tensor contraction with NumPy tensordot axis semantics."""
+    if left.dtype.kind != "f" or right.dtype.kind != "f":
+        raise ValueError("Tensor contraction adjoints require floating-point operands")
+    if isinstance(axes, int):
+        if not 0 <= axes <= min(left.ndim, right.ndim):
+            raise ValueError("Contraction axis count out of range")
+        l_contract = tuple(range(left.ndim - axes, left.ndim))
+        r_contract = tuple(range(axes))
+    else:
+        a, b = axes
+        l_contract = _contraction_axes(left.ndim, (a,) if isinstance(a, int) else a)
+        r_contract = _contraction_axes(right.ndim, (b,) if isinstance(b, int) else b)
+    if tuple(left.shape[i] for i in l_contract) != tuple(right.shape[i] for i in r_contract):
+        raise ValueError("Contracted dimensions must match in order")
+    l_free = tuple(i for i in range(left.ndim) if i not in l_contract)
+    r_free = tuple(i for i in range(right.ndim) if i not in r_contract)
+    left_order, right_order = l_free + l_contract, r_contract + r_free
+    left_shape = tuple(left.shape[i] for i in l_free)
+    right_shape = tuple(right.shape[i] for i in r_free)
+    joined = math.prod(left.shape[i] for i in l_contract)
+    with backend.scope():
+        a = left.transpose(left_order).reshape(math.prod(left_shape), joined)
+        b = right.transpose(right_order).reshape(joined, math.prod(right_shape))
+        output_shape = left_shape + right_shape
+        result = backend.matmul(a, b).reshape(output_shape)
+        cache = ContractionCache(left.shape, right.shape, left_order, right_order, a, b, output_shape)
+        return result, cache
+
+
+def _unpermute(matrix, shape, order):
+    inverse = sorted(range(len(order)), key=order.__getitem__)
+    return matrix.reshape(tuple(shape[i] for i in order)).transpose(inverse)
+
+
+def contract_backward(gradient, cache, backend):
+    """Propagate an adjoint through a contraction without explicit Jacobians."""
+    if gradient.shape != cache.output_shape:
+        raise ValueError("Tensor contraction adjoint shape mismatch")
+    with backend.scope():
+        a, b = cache.left_matrix, cache.right_matrix
+        upstream = gradient.reshape(a.shape[0], b.shape[1])
+        da = _unpermute(upstream @ b.T, cache.left_shape, cache.left_permutation)
+        db = _unpermute(a.T @ upstream, cache.right_shape, cache.right_permutation)
+        return da, db
