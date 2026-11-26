@@ -103,15 +103,28 @@ def predictive_fields(points, members, geometry, settings, mass, *, operator=Non
             innovation = root @ rng.normal(size=(n, features))
             field[index][:, inside, :] = mean + innovation * scales
         report.append({"id": item["id"], "weight": float(weights[i]), "covariance": asdict(covariance),
-                       "trend": model.trend, "realized_draws": int((chosen == i).sum())})
-    summary = np.full((6, leads, len(queries), features), np.nan)
+                       "trend": model.trend, "conditioning_jitter": float(model.jitter),
+                       "observation_condition_number": float(np.linalg.cond(model.factor)**2),
+                       "realized_draws": int((chosen == i).sum())})
+    summary = np.full((8, leads, len(queries), features), np.nan)
+    groups = [chosen == value for value in np.unique(chosen)]
     for start in range(0, len(indices), chunk):
         cells = indices[start:start + chunk]
         values = field[:, :, cells, :]
         low, median, high = np.quantile(values, [(1 - mass) / 2, .5, (1 + mass) / 2], axis=0)
-        summary[:, :, cells, :] = [values.mean(axis=0), median, values.std(axis=0), low, high, high - low]
+        mean = values.mean(axis=0)
+        within = np.zeros_like(mean)
+        between = np.zeros_like(mean)
+        for group in groups:
+            subset = values[group]
+            frequency = group.mean()
+            within += frequency * subset.var(axis=0)
+            between += frequency * (subset.mean(axis=0) - mean)**2
+        summary[:, :, cells, :] = [mean, median, values.std(axis=0), low, high, high - low,
+                                   within, between]
     arrays = dict(zip(("predictive_mean", "predictive_median", "predictive_std",
-                       "predictive_lower", "predictive_upper", "predictive_width"), summary))
+                       "predictive_lower", "predictive_upper", "predictive_width",
+                       "predictive_within_covariance_variance", "predictive_between_covariance_variance"), summary))
     arrays.update(predictive_draws=field, predictive_inside=inside, predictive_centers_m=queries,
                   predictive_site_draws=site_draws, predictive_member_index=member_ids,
                   predictive_residual_index=residual_ids, predictive_covariance_index=chosen)

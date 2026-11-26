@@ -46,6 +46,10 @@ class SurveyUncertaintyTests(unittest.TestCase):
             np.testing.assert_allclose(np.quantile(draws, .5, axis=0), arrays["predictive_median"])
             self.assertEqual(draws.shape[:2] + draws.shape[3:], (20, 6, 6))
             self.assertEqual(len(set(arrays["predictive_covariance_index"])), 2)
+            np.testing.assert_allclose(arrays["predictive_std"]**2,
+                                       arrays["predictive_within_covariance_variance"]
+                                       + arrays["predictive_between_covariance_variance"])
+
             self.assertNotIn(0, arrays["predictive_member_index"])
             np.testing.assert_allclose(
                 arrays["predictive_site_draws"],
