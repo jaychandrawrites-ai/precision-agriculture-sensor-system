@@ -1011,3 +1011,27 @@ Final verification should extend Chromium coverage to circle controls,
 test circle-plus-irregular meshes and verify device execution when available.
 The full regression and cross-platform acceptance runs are deferred for
 the final restore as requested.
+
+### Final restore integration
+
+- be79c65 connects direct optimizer, scheduler and allocation settings
+  to the console. Atomic epoch progress is emitted during direct training.
+  Saved reports display training and validation loss.
+- The console fits portable validation blends and serves them through the
+  common CSV and field forecaster. Embedded checkpoint snapshots remove
+  the runtime dependency on the original member files.
+- Publication jobs render training, forecasts and sequence Pareto figures
+  as PNG and SVG. The loopback suite exercised direct training controls,
+  saved blend inference and forecast SVG export.
+- Examples.FinalIntegration ran successfully on synthetic inputs from
+  schema inspection and feature preparation through training, sequence
+  search, saved winner inference, radius-limited survey forecasts and
+  PNG/SVG outputs. This establishes software interoperability.
+
+The full local suite ran 177 tests with actual Chromium enabled. 175 passed
+and two CUDA tests skipped. Remaining implementation gaps include automatic
+validation-period provenance enforcement across checkpoint types, ensemble
+calibration and abstention in the console, separate measurement scenarios,
+resumable survey exports, exact direct optimizer/scheduler recovery and a
+unified equal-compute experiment runner. Independent scientific acceptance,
+full requirement crosswalk and real-world validation remain open.

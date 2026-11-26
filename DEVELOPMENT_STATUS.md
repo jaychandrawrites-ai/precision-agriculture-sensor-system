@@ -81,3 +81,9 @@ The sustained-run checkpoint adds geographic circle domains and measured
 candidate worker peak RSS as a selection objective. R038 is implemented
 with final verification pending. The checklist retains 43 verified
 requirements, 36 partial, one awaiting verification and 16 external blockers.
+
+Final restore integrated direct training controls and progress, named saved
+validation blends, and publication figure jobs. The offline synthetic
+acceptance example runs from import to a circular predictive map and figure
+exports. See the runbook for exact reproduction. Broader P0–P4 acceptance
+remains partial.

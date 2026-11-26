@@ -45,3 +45,25 @@ python -m unittest Tests.test_survey_uncertainty Tests.test_trace_analysis Tests
 JUPITER_TRACE_BROWSER=1 OPENBLAS_NUM_THREADS=1 python -W error::DeprecationWarning -m unittest discover -s Tests -q
 python experiments.py hourly.csv --sequence-space --epochs 1 --population 2 --generations 1 --candidate-epochs 1 --candidate-device cpu --workers 2 --pareto-use-isolated-peak
 ```
+
+## Final restore integration verification
+
+```sh
+python -m pip install -r requirements.txt
+OPENBLAS_NUM_THREADS=1 python -m Examples.FinalIntegration /tmp/jupiter-final-demo
+python -m Dashboard.Server --workspace ./jupiter-dashboard
+JUPITER_TRACE_BROWSER=1 OPENBLAS_NUM_THREADS=1 python -W error::DeprecationWarning -m unittest discover -s Tests -q
+```
+
+Choose an unused demo output directory. The demo labels its station and
+survey inputs synthetic, fits on chronological splits, and uses a selected
+search checkpoint for CSV and survey forecasting. It emits SVG and PNG
+for training loss, forecasts, Pareto fronts and the circular spatial map.
+
+For a portable ensemble use the console's **Fit validation ensemble** job
+or run `python blend_forecast.py hourly.csv blend.json --member a.json
+--member b.json --start START_UTC --end END_UTC --steps 6`. The caller
+must reserve this window before model selection and keep later evaluation
+data separate. The ensemble stores one convex weight vector per feature
+and lead. It serves point forecasts through the shared loader. Calibration
+and abstention remain available as separate workflows.
