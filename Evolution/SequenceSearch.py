@@ -42,10 +42,10 @@ def _classification(candidate, policy):
 
 def compare_sequences(values, timestamps, settings, budget, options, *, search_directory=None,
                       export_directory=None, provenance=None, policy=ObjectivePolicy(),
-                      pareto_index=None):
+                      pareto_index=None, candidate_devices=(), candidate_timeout=300.):
     if pareto_index is not None and (type(pareto_index) is not int or pareto_index < 0):
         raise ValueError("Pareto index must be a nonnegative integer")
-    if settings.device != "cpu" and options.workers > 1:
+    if settings.device != "cpu" and options.workers > 1 and not candidate_devices:
         raise ValueError("Parallel sequence candidates require CPU workers")
     options = replace(options, sequence=True)
     if search_directory is not None:
@@ -63,8 +63,20 @@ def compare_sequences(values, timestamps, settings, budget, options, *, search_d
                     for rows in (dataset.train, dataset.validation))
     fingerprint = validation_fingerprint(dataset, settings, windows)
     artifacts = None if search_directory is None else search_directory / f"candidates-{fingerprint}"
-    scorer = sequence_fitness(dataset, settings, budget, windows, parameter_count_limit=options.max_parameters,
-                              artifact_directory=artifacts)
+    kwargs = dict(parameter_count_limit=options.max_parameters, artifact_directory=artifacts)
+    if candidate_devices:
+        import math
+        from hashlib import sha256
+        from Evolution.Isolated import isolated_fitness
+
+        if not math.isfinite(candidate_timeout):
+            raise ValueError("Candidate timeout must be finite")
+        fingerprint = sha256(repr((fingerprint, tuple(candidate_devices))).encode()).hexdigest()
+        kwargs["artifact_directory"] = None if search_directory is None else search_directory / f"candidates-{fingerprint}"
+        scorer = isolated_fitness(dataset, settings, budget, windows, devices=tuple(candidate_devices),
+                                  timeout=candidate_timeout, **kwargs)
+    else:
+        scorer = sequence_fitness(dataset, settings, budget, windows, **kwargs)
     searches = {}
     for method in METHODS:
         checkpoint = None if search_directory is None else search_directory / f"{method}.json"
@@ -75,7 +87,7 @@ def compare_sequences(values, timestamps, settings, budget, options, *, search_d
     if not len(test.starts):
         raise ValueError("No complete held-out windows at the requested matched context")
     persistence, seasonal, fallback = baseline_forecasts(values, timestamps, test)
-    report = {"protocol": {"seed": settings.seed, "settings": asdict(settings), "budget": asdict(budget),
+    report = {"protocol": {"candidate_devices": list(candidate_devices), "seed": settings.seed, "settings": asdict(settings), "budget": asdict(budget),
                            "options": asdict(options), "effective_parameter_cap": scorer.max_parameters,
                            "context_hours_required_for_matched_windows": MAX_SEQUENCE_CONTEXT,
                            "training_windows": len(windows[0].starts), "validation_windows": len(windows[1].starts),

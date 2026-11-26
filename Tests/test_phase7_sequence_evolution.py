@@ -111,3 +111,26 @@ class SequenceEvolutionTests(unittest.TestCase):
                     self.assertEqual(loaded.direct.model.architecture, spec)
                     np.testing.assert_allclose(forecast_csv(source, checkpoint, 2).iloc[:, 1:],
                                                loaded.forecast(values[-spec.context:], 2))
+
+    def test_isolated_cpu_candidate_and_timeout(self):
+        from Evolution.Fitness import sequence_fitness
+        from Evolution.Genome import SEQUENCE_BIT_COUNT
+        from Evolution.Isolated import isolated_fitness
+
+        _, values, times = self.fixture()
+        dataset = build_dataset(values, times)
+        settings = TrainingConfig(epochs=1, batch_size=64)
+        budget = EvolutionConfig(population=2, generations=1, candidate_epochs=1)
+        windows = tuple(rollout_windows(dataset, rows, values, times, 2)
+                        for rows in (dataset.train, dataset.validation))
+        genome = Genome((0,) * SEQUENCE_BIT_COUNT)
+        inputs = dataset, settings, budget, windows
+        baseline = sequence_fitness(*inputs)(genome)
+        worker = isolated_fitness(*inputs, devices=("cpu",), timeout=30.)
+        actual = worker(genome)
+        self.assertEqual(actual.validation_loss, baseline.validation_loss)
+        self.assertEqual(actual.parameters, baseline.parameters)
+        blocked = isolated_fitness(*inputs, devices=("cpu",), timeout=.001)
+        with self.assertRaises(TimeoutError):
+            blocked(genome)
+        self.assertEqual(worker(genome).validation_loss, baseline.validation_loss)

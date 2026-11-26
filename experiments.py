@@ -167,6 +167,10 @@ def main():
     parser.add_argument("--seed", type=int, default=TrainingConfig().seed)
     parser.add_argument("--search-directory", type=Path)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--candidate-device", action="append", default=[],
+                        help="Run sequence candidates in separate processes on cpu or cuda:N. Repeat for multiple GPUs.")
+    parser.add_argument("--candidate-timeout", type=float, default=300.,
+                        help="Maximum seconds per isolated candidate")
     parser.add_argument("--cache-fitness", action="store_true")
     parser.add_argument("--random-baseline", action="store_true")
     parser.add_argument("--extended-space", action="store_true",
@@ -212,8 +216,11 @@ def main():
         report = compare_sequences(*series, settings, budget, options,
                                    search_directory=args.search_directory, export_directory=args.export_selected,
                                    policy=policy, pareto_index=args.pareto_index,
+                                   candidate_devices=args.candidate_device, candidate_timeout=args.candidate_timeout,
                                    provenance={"source_sha256": source_hash, "synthetic": args.synthetic})
     else:
+        if args.candidate_device:
+            parser.error("--candidate-device requires --sequence-space")
         if args.export_selected is not None:
             parser.error("Saved winner export currently requires --sequence-space")
         report = compare(*series, settings, budget, recursive=not args.legacy,
