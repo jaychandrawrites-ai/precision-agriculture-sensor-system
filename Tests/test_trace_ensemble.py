@@ -23,5 +23,9 @@ class TraceEnsembleTests(unittest.TestCase):
             with np.load(output / "ensemble-maps.npz", allow_pickle=False) as arrays:
                 self.assertEqual(arrays["site_member_forecasts"].shape, (2, 5, 6, 6))
                 self.assertEqual(arrays["mean"].shape, (6, 25, 25, 6))
+                draws = np.einsum("yxs,mslf->mlyxf", arrays["interpolation_weights"],
+                                  arrays["site_member_forecasts"])
+                np.testing.assert_allclose(draws.mean(axis=0), arrays["mean"], atol=1e-10)
+                np.testing.assert_allclose(draws.std(axis=0), arrays["spread"], atol=1e-10)
                 self.assertTrue(np.any(arrays["spread"] > 0))
                 self.assertTrue(np.all(arrays["lower"] <= arrays["upper"]))

@@ -12,7 +12,7 @@ from Spatial.SpatialGrid import SpatialGrid, local_coordinates
 from Utils.Serialization import read_json, write_arrays, write_json
 
 
-def _weights(points, queries, power):
+def interpolation_weights(points, queries, power):
     distance = np.linalg.norm(queries[:, None] - points[None], axis=2)
     exact = distance == 0
     nearest = distance.min(axis=1, keepdims=True)
@@ -35,7 +35,7 @@ def ensemble_maps(grid, points, members, probability=.9, power=2., batch_size=51
     arrays = {name: [] for name in ("mean", "spread", "lower", "upper")}
     tail = (1 - probability) / 2
     for start in range(0, len(queries), batch_size):
-        weights = _weights(points, queries[start:start + batch_size], power)
+        weights = interpolation_weights(points, queries[start:start + batch_size], power)
         draws = weights @ members
         lower, upper = np.quantile(draws, [tail, 1-tail], axis=0)
         for label, value in (("mean", draws.mean(axis=0)), ("spread", draws.std(axis=0)),

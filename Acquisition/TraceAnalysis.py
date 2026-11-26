@@ -282,7 +282,7 @@ def _forecast_sites(store, survey_id, report, feature, valid_at, origin, gps_min
 
 def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probability=.9, grid_size=25):
     """Propagate shared model draws, keeping site, lead and feature dependencies."""
-    from spatial_forecast import ensemble_maps
+    from spatial_forecast import ensemble_maps, interpolation_weights
 
     hashes = report.get("member_checkpoint_sha256", [])
     if (len(hashes) < 2 or len(set(hashes)) != len(hashes)
@@ -313,11 +313,14 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
                            probability=probability)
     result = {name: value.reshape(*grid.shape, steps, len(FEATURES)).transpose(2, 0, 1, 3)
               for name, value in arrays.items()}
-    result.update(east_m=grid.east, north_m=grid.north, site_member_forecasts=members)
+    result.update(east_m=grid.east, north_m=grid.north, site_member_forecasts=members,
+                  interpolation_weights=interpolation_weights(xy, grid.points(), 2).reshape(*grid.shape, len(points)))
     return result, {
         "survey_id": survey_id, "issued_at": issued.isoformat(), "features": FEATURES,
         "valid_at": [(issued + timedelta(hours=i)).isoformat() for i in range(1, steps + 1)],
         "sites": ids, "checkpoint_sha256": hashes, "central_mass": probability,
         "axes": ["lead", "north", "east", "feature"],
+        "member_axes": ["member", "site", "lead", "feature"],
+        "weight_axes": ["north", "east", "site"],
         "interpretation": "propagated empirical model disagreement; field coverage is unverified",
     }
