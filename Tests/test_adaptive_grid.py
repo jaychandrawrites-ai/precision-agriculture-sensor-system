@@ -28,3 +28,26 @@ class AdaptiveGridTests(unittest.TestCase):
         self.assertGreater(result["leaf_count"], 4)
         self.assertTrue(any(not cell["inside"] for cell in result["cells"]))
         self.assertTrue(all(cell["center_variance"] >= 0 for cell in result["cells"]))
+
+    def test_main_pipeline_adaptive_uses_fit_sites_only(self):
+        import json
+        import pandas as pd
+        from Pipeline import map_measurements
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "observations.csv"
+            pd.DataFrame({"timestamp": ["2025-01-01T00:00:00Z"] * 4,
+                          "latitude_deg": [0., 0., .0001, .00005],
+                          "longitude_deg": [0., .0001, 0., .00005],
+                          "role": ["fit", "fit", "fit", "test"],
+                          "measurement": [10., 12., 15., 400.]}).to_csv(source, index=False)
+            result = map_measurements(source, {"timestamp": "2025-01-01T00:00:00Z", "feature": "measurement",
+                "split_column": "role", "origin_lat_lon": [0, 0], "east_m": [0, 4, 8, 12],
+                "north_m": [0, 4, 8, 12], "adaptive": {"covariance": {"range_m": 8},
+                "refinement": {"max_variation": 1.}}}, root / "map")
+            adaptive = json.loads((root / "map/adaptive.json").read_text())
+        self.assertEqual(result["adaptive"]["training_sites"], 3)
+        self.assertEqual(adaptive["observations"], 3)
+        self.assertGreater(adaptive["leaf_count"], 1)
+        self.assertLess(max(cell["center_mean"] for cell in adaptive["cells"]), 20)

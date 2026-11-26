@@ -190,9 +190,28 @@ def map_measurements(source, configuration, output):
             queries, held_out[field_name].to_numpy(dtype=float),
             configuration.get("kriging_range_m"), result.sampling,
         )
+    adaptive = configuration.get("adaptive")
+    if adaptive is not None:
+        from adaptive_map import adaptive_kriging
+
+        if not isinstance(adaptive, dict):
+            raise ValueError("Adaptive map settings must be an object")
+        adaptive_settings = {"bounds_m": [grid.east[0], grid.north[0], grid.east[-1], grid.north[-1]],
+                             **adaptive}
+        sites = local_coordinates(snapshot[["latitude_deg", "longitude_deg"]].to_numpy(),
+                                  configuration["origin_lat_lon"])
+        variance_key = adaptive.get("measurement_variance_column")
+        refined = adaptive_kriging(sites, snapshot[field_name], adaptive_settings,
+                                   variance=snapshot[variance_key] if variance_key else None)
+        report["adaptive"] = {
+            "artifact": "adaptive.json", "training_sites": len(sites), "leaf_count": refined["leaf_count"],
+            "source_kind": "model forecasts" if predicted_source else "measurements",
+        }
     output = Path(output)
     output.mkdir()
     write_arrays(output / "field.npz", **arrays)
+    if adaptive is not None:
+        write_json(output / "adaptive.json", refined)
     write_json(output / "report.json", report)
     return report
 

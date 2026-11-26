@@ -17,9 +17,15 @@ def adaptive_map(source, configuration):
     points = frame[["east_m", "north_m"]].to_numpy(dtype=float)
     feature = configuration["feature"]
     measurement_variance = configuration.get("measurement_variance_column")
-    model = KrigingModel(points, frame[feature], CovarianceModel(**configuration["covariance"]),
+    result = adaptive_kriging(points, frame[feature], configuration,
+                              variance=frame[measurement_variance] if measurement_variance else None)
+    return {"source_sha256": sha256(payload).hexdigest(), "feature": feature, **result}
+
+
+def adaptive_kriging(points, values, configuration, *, variance=None):
+    model = KrigingModel(points, values, CovarianceModel(**configuration["covariance"]),
                          trend=configuration.get("trend", "constant"),
-                         measurement_variance=frame[measurement_variance] if measurement_variance else None)
+                         measurement_variance=variance)
 
     def predictor(query):
         output = model.predict(query)
@@ -28,8 +34,7 @@ def adaptive_map(source, configuration):
     result = refine(configuration["bounds_m"], predictor,
                     Refinement(**configuration.get("refinement", {})),
                     observed_xy=points, polygon=configuration.get("field_polygon_m"))
-    return {"source_sha256": sha256(payload).hexdigest(), "feature": feature,
-            "observations": len(points), "conditioning_jitter": model.jitter,
+    return {"observations": len(points), "conditioning_jitter": model.jitter,
             "uncertainty": "conditional kriging variance", **result}
 
 
