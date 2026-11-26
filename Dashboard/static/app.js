@@ -7,7 +7,7 @@ const labels = {
   forecast: "CSV forecast", field: "Field forecast", replay: "Packet replay",
   spatial: "Spatial map", live: "Live acquisition", health: "Sensor quality",
   benchmark: "Forecast benchmark", search: "Architecture search",
-  direct_train: "Direct model training", joint: "Synthetic joint experiment",
+  direct_train: "Direct model training", quantile_train: "Quantile model training", joint: "Synthetic joint experiment",
   adaptive_spatial: "Adaptive reconstruction", ensemble_spatial: "Forecast ensemble map"
 };
 const features = {
@@ -18,7 +18,7 @@ const features = {
   soil_ec_us_cm: "Soil conductivity µS/cm", soil_ph: "Soil pH", leaf_mv: "Leaf wetness mV"
 };
 const groups = {
-  datasets: ["inspect", "prepare"], experiments: ["train", "benchmark", "search", "direct_train", "joint"],
+  datasets: ["inspect", "prepare"], experiments: ["train", "benchmark", "search", "direct_train", "quantile_train", "joint"],
   forecasts: ["forecast", "field"], fieldwork: ["replay", "live", "health", "spatial", "adaptive_spatial", "ensemble_spatial"]
 };
 const colors = ["#087e6b", "#9f4b16", "#355b9c", "#8b3278", "#6c681d", "#573ab2", "#374557"];
@@ -36,7 +36,8 @@ const mapLabels = {
 const metricLabels = {
   rmse: "RMSE", mae: "MAE", bias: "Bias", r2: "R squared",
   persistence_skill: "Persistence skill", seasonal_skill: "Seasonal persistence skill",
-  coverage: "Marginal interval coverage", mean_width: "Mean interval width"
+  coverage: "Marginal interval coverage", mean_width: "Mean interval width",
+  pinball: "Pinball loss", fraction_below: "Observed fraction at or below quantile"
 };
 
 function controls() {
@@ -50,8 +51,8 @@ function controls() {
     port: kind === "live", baud: kind === "live", epoch: datasetKinds.includes(kind) || kind === "joint",
     model: ["forecast", "field"].includes(kind), step: ["forecast", "field"].includes(kind),
     session: ["field", "health"].includes(kind), inspection: kind === "inspect", header: kind === "inspect",
-    optimizer: kind === "train", loss: kind === "train", horizon: ["benchmark", "direct_train"].includes(kind),
-    architecture: kind === "direct_train", width: kind === "direct_train", "joint-seed": kind === "joint",
+    optimizer: kind === "train", loss: kind === "train", horizon: ["benchmark", "direct_train", "quantile_train"].includes(kind),
+    "quantile-levels": kind === "quantile_train", architecture: kind === "direct_train", width: kind === "direct_train", "joint-seed": kind === "joint",
     seeds: kind === "benchmark", synthetic: kind === "benchmark", population: kind === "search",
     generations: kind === "search", "candidate-epochs": kind === "search"
   };
@@ -60,7 +61,10 @@ function controls() {
   $("config").required = Boolean(configLabels[kind]);
   $("model").required = visibility.model;
   $("session").required = visibility.session;
-  $("epochs").max = kind === "train" ? 300 : 50;
+  $("epochs").max = kind === "joint" ? 500 : kind === "train" ? 300 : 50;
+  const max = Number($("model").selectedOptions[0]?.dataset.horizon || 168);
+  $("steps").max = max;
+  if (Number($("steps").value) > max) $("steps").value = max;
 }
 
 async function api(url, payload) {
@@ -218,8 +222,8 @@ function showResult(job, mode, data, live = false) {
   else select("feature", {});
   if (mode === "dataset") select("view", {distribution: "Distribution", seasonal: "Monthly profile", quality: "Quality"});
   else if (mode === "research") {
-    const metrics = Object.entries(metricLabels).filter(([key]) => data.metrics.some((row) => row[key] !== null));
-    select("view", {...Object.fromEntries(metrics), ...(data.search ? {search: "Search diagnostics"} : {})});
+    const metrics = Object.entries(metricLabels).filter(([key]) => data.metrics.some((row) => Number.isFinite(row[key])));
+    select("view", {...Object.fromEntries(metrics), ...(data.search ? {search: "Search diagnostics"} : {}), ...(data.calibration ? {calibration: "Calibration summary"} : {})});
   } else if (mode === "map") select("view", Object.fromEntries(Object.keys(data.layers || data).map((key) => [key, mapLabels[key] || key])));
   else select("view", {});
   renderResult();
@@ -246,9 +250,15 @@ function renderResult() {
     }
   } else if (mode === "forecast" || mode === "sensor") {
     const values = data.series[feature] || [];
-    chart({[features[feature]]: values}, features[feature], mode === "forecast" ? "Forecast hour" : "Recent records");
-    if (mode === "forecast") table(["Time UTC", features[feature]], data.timestamps.map((time, index) => [time, values[index]]));
-    else if (!values.length) report("Waiting for sensor readings");
+    const quantiles = data.quantiles?.[feature] || [];
+    const distribution = Object.fromEntries(quantiles.map((entry) => ["Quantile " + entry.level, entry.value]));
+    chart(quantiles.length ? distribution : {[features[feature]]: values}, features[feature],
+      mode === "forecast" ? "Forecast hour" : "Recent records");
+    if (mode === "forecast") {
+      table(["Time UTC", features[feature], ...Object.keys(distribution)], data.timestamps.map((time, index) =>
+        [time, values[index], ...quantiles.map((entry) => entry.value[index])]));
+      if (quantiles.length) report("Ordered model quantiles. Held-out coverage and calibration diagnostics are in the training job.");
+    } else if (!values.length) report("Waiting for sensor readings");
   } else if (mode === "dataset") {
     if (view === "quality") report({quality: data.quality, provenance: data.provenance});
     if (view === "distribution" && data.distributions[feature]) {
@@ -267,7 +277,10 @@ function renderResult() {
         rows.map(([month, item]) => [month, item.mean, item.p05, item.p95, item.missing]));
     }
   } else if (mode === "research") {
-    if (view === "search") {
+    if (view === "calibration") {
+      chart({"Validation pinball loss": data.calibration.validation_pinball}, "Validation loss", "Epoch");
+      report(data.calibration);
+    } else if (view === "search") {
       const rows = Object.entries(data.search);
       table(["Method", "Parameters", "Candidates", "Sample steps", "Parameter sample steps", "Winning bits"],
         rows.map(([name, item]) => [name, item.parameters, item.candidate_count, item.candidate_model_sample_steps,
@@ -277,7 +290,7 @@ function renderResult() {
       chart(traces, "Best validation selection score", "Generation");
       report({protocol: data.protocol, pareto_fronts: Object.fromEntries(rows.map(([name, item]) => [name, item.validation_pareto_front]))});
     } else {
-      const metrics = data.metrics.filter((row) => row.feature === feature && row[view] !== null);
+      const metrics = data.metrics.filter((row) => row.feature === feature && Number.isFinite(row[view]));
       const series = {};
       for (const row of metrics) {
         (series[row.label] ??= [])[row.lead_hours - 1] = row[view];
@@ -337,13 +350,16 @@ function availableSelections(jobs) {
   const sets = {
     dataset: ["Upload prepared CSV", "prepare", "prepared/hourly.csv"],
     session: ["Choose a session", ["replay", "live"], "session/readings.jsonl"],
-    model: ["Choose a model", ["train", "direct_train"], ["model.json", "direct-model.json"]]
+    model: ["Choose a model", ["train", "direct_train", "quantile_train"], ["model.json", "direct-model.json", "quantile-model.json"]]
   };
   for (const [id, [placeholder, kinds, artifact]] of Object.entries(sets)) {
     const item = $(id), current = item.value;
     const entries = jobs.filter((job) => [kinds].flat().includes(job.kind) && [artifact].flat().some((name) => job.artifacts.includes(name)));
-    item.replaceChildren(new Option(placeholder, ""), ...entries.map((job) =>
-      new Option(labels[job.kind] + " · " + new Date(job.created_at).toLocaleString(), job.id)));
+    item.replaceChildren(new Option(placeholder, ""), ...entries.map((job) => {
+      const option = new Option(labels[job.kind] + " · " + new Date(job.created_at).toLocaleString(), job.id);
+      if (job.forecast_horizon) option.dataset.horizon = job.forecast_horizon;
+      return option;
+    }));
     if (entries.some((job) => job.id === current)) item.value = current;
   }
   controls();
@@ -414,6 +430,7 @@ function options() {
     loss: $("loss").value, delimiter: $("delimiter").value === "tab" ? "\t" : $("delimiter").value,
     headerless: $("headerless").checked, horizon: Number($("horizon").value),
     seeds: $("seeds").value.split(",").filter((seed) => seed.trim()).map(Number),
+    levels: $("quantile-levels").value.split(",").filter((level) => level.trim()).map(Number),
     synthetic: $("synthetic").checked, population: Number($("population").value),
     generations: Number($("generations").value), candidate_epochs: Number($("candidate-epochs").value)
   };
@@ -427,6 +444,7 @@ document.querySelectorAll("[data-operation]").forEach((link) => {
 });
 $("kind").addEventListener("change", controls);
 $("dataset").addEventListener("change", controls);
+$("model").addEventListener("change", controls);
 $("view").addEventListener("change", renderResult);
 $("feature").addEventListener("change", renderResult);
 $("job-filter").addEventListener("change", () => refresh().catch((error) => { $("notice").textContent = error.message; }));

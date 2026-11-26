@@ -2,15 +2,20 @@
 import argparse
 from hashlib import sha256
 from pathlib import Path
+import sys
 
 import numpy as np
+import pandas as pd
 
+from config import FEATURES
 from Data.DataQuality import invalid_rows
+from Data.ForecastHistory import require_history
 from Data.Preprocessing import read_hourly
 from Data.RolloutWindows import evaluation_windows
 from Framework.Backend import Backend, BackendConfig
-from Temporal.Quantile import QuantileForecaster, quantile_scores
-from Utils.Serialization import write_json
+from Temporal.Quantile import QuantileForecaster, quantile_columns, quantile_scores
+from Utils.ModelLoader import load_forecaster
+from Utils.Serialization import atomic_output, write_json
 
 
 def train_quantiles(source, checkpoint, *, horizon=6, epochs=20, batch_size=64, seed=42,
@@ -51,7 +56,38 @@ def train_quantiles(source, checkpoint, *, horizon=6, epochs=20, batch_size=64, 
             "test": quantile_scores(model.predict(test.histories), test.targets, model.levels)}
 
 
-if __name__ == "__main__":
+def predict_quantiles(source, checkpoint, *, steps=None, device="cpu"):
+    """Return a CSV-ready record with central estimates and all trained levels."""
+    values, timestamps = read_hourly(source)
+    model = load_forecaster(checkpoint, device)
+    if model.quantile is None:
+        raise ValueError("Expected a Jupiter quantile checkpoint")
+    history = require_history(values, timestamps, hours=model.history_hours)
+    central, trajectories = model.forecast_bundle(history, steps)
+    index = pd.date_range(pd.Timestamp(timestamps[-1] + np.timedelta64(1, "h"), tz="UTC"),
+                          periods=len(central), freq="h", name="timestamp")
+    return pd.DataFrame(
+        np.column_stack((central, trajectories.reshape(len(central), -1))),
+        index=index, columns=[*FEATURES, *quantile_columns(model.quantile.levels)],
+    )
+
+
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args[:1] == ["predict"]:
+        parser = argparse.ArgumentParser(description="Predict from a trained quantile checkpoint")
+        parser.add_argument("hourly_csv")
+        parser.add_argument("checkpoint")
+        parser.add_argument("output")
+        parser.add_argument("--steps", type=int)
+        parser.add_argument("--device", default="cpu")
+        options = parser.parse_args(args[1:])
+        result = predict_quantiles(options.hourly_csv, options.checkpoint,
+                                   steps=options.steps, device=options.device)
+        with atomic_output(options.output) as handle:
+            result.to_csv(handle)
+        return
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("hourly_csv")
     parser.add_argument("checkpoint")
@@ -60,7 +96,11 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--level", type=float, action="append")
-    args = parser.parse_args()
-    write_json(args.report, train_quantiles(args.hourly_csv, args.checkpoint, horizon=args.horizon,
-                                           epochs=args.epochs, seed=args.seed,
-                                           levels=args.level or (.05, .5, .95)))
+    options = parser.parse_args(args)
+    write_json(options.report, train_quantiles(options.hourly_csv, options.checkpoint, horizon=options.horizon,
+                                               epochs=options.epochs, seed=options.seed,
+                                               levels=options.level or (.05, .5, .95)))
+
+
+if __name__ == "__main__":
+    main()

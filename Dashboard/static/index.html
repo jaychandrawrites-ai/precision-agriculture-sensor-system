@@ -37,6 +37,7 @@
           <optgroup label="Forecasts and experiments">
             <option value="train">Train recursive model</option>
             <option value="direct_train">Train direct sequence model</option>
+            <option value="quantile_train">Train quantile forecasts</option>
             <option value="forecast">Forecast from a CSV</option>
             <option value="field">Forecast from a field session</option>
             <option value="benchmark">Compare forecasts with multiple seeds</option>
@@ -69,6 +70,7 @@
         <option value="lstm">LSTM</option><option value="lstm_attention">LSTM plus attention</option>
       </select></label>
       <label id="width-label" hidden>Direct layer width<input id="width" type="number" min="1" max="128" value="32"></label>
+      <label id="quantile-levels-label" hidden>Quantile levels, separated by commas<input id="quantile-levels" type="text" value="0.05, 0.50, 0.95"></label>
       <label id="joint-seed-label" hidden>Joint experiment seed<input id="joint-seed" type="number" min="0" max="4294967295" value="82"></label>
       <label id="step-label" hidden>Forecast hours<input id="steps" type="number" min="1" max="168" value="6"></label>
       <label id="model-label" hidden>Saved model<select id="model"></select></label>

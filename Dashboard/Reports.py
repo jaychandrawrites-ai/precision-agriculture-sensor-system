@@ -31,8 +31,28 @@ def _optional(value):
     return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else None
 
 
+def quantile_rows(report):
+    """Keep probabilities and marginal calibration aligned with their original leads."""
+    levels, test = report["levels"], report["test"]
+    rows = []
+    for lead, lead_scores in enumerate(test["pinball"]):
+        for index, feature in enumerate(FEATURES):
+            rows.append({"method": "quantile_interval", "label": "Outermost quantile interval",
+                         "lead_hours": lead + 1, "feature": feature, "quantile_level": None,
+                         "coverage": _optional(test["coverage"][lead][index]),
+                         "mean_width": _optional(test["mean_width"][lead][index])})
+            for level_index, level in enumerate(levels):
+                rows.append({"method": f"quantile_{level}", "label": f"Quantile {level:g}",
+                             "lead_hours": lead + 1, "feature": feature, "quantile_level": level,
+                             "pinball": _optional(lead_scores[index][level_index]),
+                             "fraction_below": _optional(test["fraction_below"][lead][index][level_index])})
+    return rows
+
+
 def metric_rows(report, kind):
     """Flatten saved metrics without modifying scores or evaluation groups."""
+    if kind == "quantile_train":
+        return quantile_rows(report)
     if kind == "benchmark":
         methods = report["metrics"]
     elif kind == "search":
@@ -67,7 +87,8 @@ def metrics_csv(path, kind):
     rows = metric_rows(read_json(path), kind)
     output = io.StringIO(newline="")
     fields = ("method", "label", "lead_hours", "feature", "rmse", "mae", "bias", "r2",
-              "persistence_skill", "seasonal_skill", "coverage", "mean_width")
+              "persistence_skill", "seasonal_skill", "coverage", "mean_width", "quantile_level",
+              "pinball", "fraction_below")
     writer = csv.DictWriter(output, fields)
     writer.writeheader()
     writer.writerows(rows)
@@ -77,6 +98,16 @@ def metrics_csv(path, kind):
 def research_report(path, kind):
     report = read_json(path)
     result = {"metrics": metric_rows(report, kind)}
+    if kind == "quantile_train":
+        result["calibration"] = {
+            "levels": report["levels"],
+            "validation_pinball": report["validation_pinball"],
+            "selection_epoch": report["selection_epoch"],
+            "test_origins": report["test"]["origins"],
+            "nominal_interval_mass": report["test"]["nominal_interval_mass"],
+            "simultaneous_coverage": report["test"]["simultaneous_coverage"],
+            "outcomes": "Held-out diagnostic outcomes; no post-training coverage calibration was applied.",
+        }
     if kind == "benchmark":
         result.update({"manifest": report.get("manifest", {}),
                        "windows": report.get("windows", {}),
@@ -113,9 +144,18 @@ def dataset_report(hourly, report):
 
 def forecast_series(path):
     with path.open(encoding="utf-8", newline="") as stream:
-        rows = list(csv.DictReader(stream))
-    return {"timestamps": [row["timestamp"] for row in rows],
-            "series": {name: [float(row[name]) for row in rows] for name in FEATURES}}
+        reader = csv.DictReader(stream)
+        header = reader.fieldnames or []
+        rows = list(reader)
+    point = {name: [float(row[name]) for row in rows] for name in FEATURES}
+    quantiles = {}
+    for name in FEATURES:
+        prefix = name + "_q"
+        columns = sorted((float(key[len(prefix):]), key) for key in header if key.startswith(prefix))
+        if columns:
+            quantiles[name] = [{"level": level, "value": [float(row[key]) for row in rows]}
+                               for level, key in columns]
+    return {"timestamps": [row["timestamp"] for row in rows], "series": point, "quantiles": quantiles}
 
 
 def sensor_series(path):

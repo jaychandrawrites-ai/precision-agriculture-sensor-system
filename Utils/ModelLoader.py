@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
+from Data.Normalization import Standardizer
 from Temporal.Predictor import forecast
 from Utils.Checkpoints import load_state
 from Utils.Serialization import decode_json
@@ -17,17 +18,28 @@ class Forecaster:
     checkpoint_sha256: str
     provenance: dict
     direct: object | None = None
+    quantile: object | None = None
 
     @property
     def history_hours(self):
         return self.direct.context_hours if self.direct is not None else 3
 
     def forecast(self, history, steps):
+        point, _ = self.forecast_bundle(history, steps)
+        return point
+
+    def forecast_bundle(self, history, steps):
+        """Return point predictions and optional [lead, feature, probability] quantiles."""
+        if self.quantile is not None:
+            from Temporal.Quantile import quantile_center
+
+            trajectories = self.quantile.predict(history[None], steps)[0]
+            return quantile_center(trajectories, self.quantile.levels), trajectories
         if self.direct is not None:
             if type(steps) is not int or not 1 <= steps <= self.direct.model.horizon:
                 raise ValueError(f"Direct checkpoint supports 1–{self.direct.model.horizon} forecast hours")
-            return self.direct.predict(history[None])[0, :steps]
-        return forecast(self.model, history, self.inputs, self.targets, self.backend, steps)
+            return self.direct.predict(history[None])[0, :steps], None
+        return forecast(self.model, history, self.inputs, self.targets, self.backend, steps), None
 
     def require_compatible_field(self, field_provenance):
         """Compare the method, history and configured physics shared by both domains."""
@@ -53,5 +65,13 @@ def load_forecaster(path, device="cpu"):
 
         direct = load_direct_state(record, device)
         return Forecaster(direct.model, direct.backend, direct.inputs, direct.targets, digest, provenance, direct)
+    if record.get("format") == "jupiter-quantile-v1":
+        from Temporal.Quantile import QuantileForecaster
+
+        quantile = QuantileForecaster.from_state(record, device)
+        normalization = Standardizer.from_state({"mean": quantile.center, "scale": quantile.scale,
+                                                  "epsilon": 1e-8})
+        return Forecaster(quantile.network, quantile.backend, normalization, normalization,
+                          digest, provenance, quantile=quantile)
     model, backend, inputs, targets = load_state(record, device)
     return Forecaster(model, backend, inputs, targets, digest, provenance)

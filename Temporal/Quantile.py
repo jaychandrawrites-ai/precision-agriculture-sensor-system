@@ -1,6 +1,7 @@
 """Portable ordered direct quantile forecasts with manual pinball gradients."""
 import numpy as np
 
+from config import FEATURES
 from Framework.Backend import Backend, BackendConfig
 from Framework.Layers import ActivationLayer, Dense, Sequential
 from Framework.Optimizer import Adam
@@ -78,14 +79,34 @@ class QuantileForecaster:
 
     @classmethod
     def load(cls, path, device="cpu"):
-        state = read_json(path)
-        if state.pop("format") != "jupiter-quantile-v1":
+        return cls.from_state(read_json(path), device)
+
+    @classmethod
+    def from_state(cls, state, device="cpu"):
+        if state.get("format") != "jupiter-quantile-v1":
             raise ValueError("Expected a Jupiter quantile checkpoint")
-        network = state.pop("network")
-        backend = Backend(BackendConfig(device=device, dtype=state.pop("dtype")))
-        forecaster = cls(backend, **state)
-        forecaster.network.load_state_dict({key: backend.array(value) for key, value in network.items()}, backend)
+        parameters = {key: state[key] for key in ("center", "scale", "horizon", "levels", "width")}
+        backend = Backend(BackendConfig(device=device, dtype=state["dtype"]))
+        forecaster = cls(backend, **parameters)
+        weights = {key: backend.array(value) for key, value in state["network"].items()}
+        for value in weights.values():
+            backend.require_finite(value)
+        forecaster.network.load_state_dict(weights, backend)
         return forecaster
+
+
+def quantile_columns(levels):
+    """Feature-major CSV labels using reversible decimal probabilities."""
+    return [f"{feature}_q{float(level)!r}" for feature in FEATURES for level in levels]
+
+
+def quantile_center(trajectories, levels):
+    """Interpolate the median or use the nearest available endpoint."""
+    upper = int(np.searchsorted(levels, .5))
+    if upper == 0 or upper == len(levels):
+        return trajectories[..., min(upper, len(levels) - 1)]
+    fraction = (.5 - levels[upper - 1]) / (levels[upper] - levels[upper - 1])
+    return (1 - fraction) * trajectories[..., upper - 1] + fraction * trajectories[..., upper]
 
 
 def quantile_scores(predictions, observations, levels):

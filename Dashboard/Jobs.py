@@ -26,6 +26,7 @@ SPEC = {
     "benchmark": ("data",),
     "search": ("data",),
     "direct_train": ("data",),
+    "quantile_train": ("data",),
     "adaptive_spatial": ("data", "config"),
     "ensemble_spatial": ("data", "config"),
     "joint": (),
@@ -39,10 +40,11 @@ ARTIFACTS = {
     "spatial": {"map/report.json", "map/field.npz"},
     "live": {"session/readings.jsonl", "session/raw.jsonl"},
     "health": {"report.json"},
-    "field": {"inference/forecast.csv", "inference/coverage.csv"},
+    "field": {"inference/forecast.csv", "inference/coverage.csv", "inference/report.json"},
     "benchmark": {"report.json"},
     "search": {"report.json"},
     "direct_train": {"direct-model.json", "direct-model.training.json"},
+    "quantile_train": {"quantile-model.json", "report.json"},
     "adaptive_spatial": {"adaptive-map.json"},
     "ensemble_spatial": {"map/report.json", "map/forecast-field.npz"},
     "joint": {"report.json"},
@@ -53,8 +55,9 @@ RESEARCH_ARTIFACTS = {
     "train": {"report.json"},
     "benchmark": {"report.json"},
     "search": {"report.json"},
+    "quantile_train": {"report.json"},
 }
-DATASET_INPUTS = {"train", "direct_train", "benchmark", "search"}
+DATASET_INPUTS = {"train", "direct_train", "quantile_train", "benchmark", "search"}
 IN_PROGRESS = {"queued", "running"}
 FINAL = {"complete", "failed", "cancelled", "interrupted"}
 ID = re.compile(r"[0-9a-f]{32}")
@@ -200,7 +203,11 @@ class Jobs:
         if kind in {"forecast", "field"}:
             identifier = raw.get("model")
             candidate = self.store.get(identifier) if isinstance(identifier, str) else None
-            if candidate is not None and candidate.kind == "direct_train":
+            if candidate is not None and candidate.kind == "quantile_train":
+                self._linked(identifier, {"quantile_train"}, "quantile-model.json")
+                limit = candidate.options["horizon"]
+                settings["steps"] = self._number(raw, "steps", limit, (1, limit))
+            elif candidate is not None and candidate.kind == "direct_train":
                 self._linked(identifier, {"direct_train"}, "direct-model.json")
                 if kind == "field":
                     settings["steps"] = self._number(raw, "steps", 6, (1, 72))
@@ -222,6 +229,15 @@ class Jobs:
             settings["architecture"] = self._choice(raw, "architecture", "gated", DIRECT_ARCHITECTURES)
             settings["width"] = self._number(raw, "width", 32, (1, 128))
             settings["horizon"] = self._number(raw, "horizon", 6, (1, 72))
+        if kind == "quantile_train":
+            levels = raw.get("levels", [.05, .5, .95])
+            if (not isinstance(levels, list) or not 2 <= len(levels) <= 9
+                    or any(type(level) not in (int, float) or not 0 < level < 1 for level in levels)
+                    or any(a >= b for a, b in zip(levels, levels[1:]))):
+                raise ValueError("Use two to nine strictly increasing quantile levels between 0 and 1")
+            settings["levels"] = levels
+            settings["horizon"] = self._number(raw, "horizon", 6, (1, 72))
+            settings["seed"] = self._number(raw, "seed", 42, (0, 2**32 - 1))
         if kind == "joint":
             settings["epochs"] = self._number(raw, "epochs", 160, (1, 500))
             settings["seed"] = self._number(raw, "seed", 82, (0, 2**32 - 1))
@@ -282,6 +298,10 @@ class Jobs:
         if kind == "direct_train":
             return ["direct_forecast.py", "train", data, folder / "direct-model.json", "--epochs", opts["epochs"],
                     "--horizon", opts["horizon"], "--width", opts["width"], "--architecture", opts["architecture"]]
+        if kind == "quantile_train":
+            levels = [item for level in opts["levels"] for item in ("--level", level)]
+            return ["quantile_forecast.py", data, folder / "quantile-model.json", folder / "report.json",
+                    "--horizon", opts["horizon"], "--epochs", opts["epochs"], "--seed", opts["seed"], *levels]
         if kind == "joint":
             return ["-m", "Examples.SyntheticJoint", folder / "report.json", "--epochs", opts["epochs"],
                     "--seed", opts["seed"]]
@@ -297,6 +317,11 @@ class Jobs:
             return ["acquire.py", "--port", opts["port"], "--baud", opts["baud"],
                     "--reconnect-attempts", 3, folder / "session"]
         if kind == "forecast":
+            candidate = self.store[opts["model"]]
+            if candidate.kind == "quantile_train":
+                model = self._linked(opts["model"], {"quantile_train"}, "quantile-model.json")
+                return ["quantile_forecast.py", "predict", data, model, folder / "forecast.csv",
+                        "--steps", opts["steps"]]
             if "steps" not in opts:
                 model = self._linked(opts["model"], {"direct_train"}, "direct-model.json")
                 return ["direct_forecast.py", "predict", data, model, folder / "forecast.csv"]
@@ -306,7 +331,8 @@ class Jobs:
         if kind == "health":
             return ["Pipeline.py", "session-health", source, folder / "report.json"]
         candidate = self.store[opts["model"]]
-        artifact = "direct-model.json" if candidate.kind == "direct_train" else "model.json"
+        artifact = {"direct_train": "direct-model.json", "quantile_train": "quantile-model.json"}.get(
+            candidate.kind, "model.json")
         model = self._linked(opts["model"], {candidate.kind}, artifact)
         return ["Pipeline.py", "forecast-session", source, config, folder / "inference",
                 "--checkpoint", model, "--steps", opts["steps"]]
@@ -350,7 +376,8 @@ class Jobs:
                 self._status(job, "cancelled")
                 return
             self._status(job, "running")
-        if job.kind == "forecast" and "steps" in job.options:
+        if (job.kind == "forecast" and "steps" in job.options
+                and self.store[job.options["model"]].kind != "quantile_train"):
             output_name = "forecast.csv"
         elif job.kind in {"inspect", "train", "search"}:
             output_name = "report.json"
@@ -451,6 +478,8 @@ class Jobs:
                         artifacts.append(name)
                 records.append({"id": job.identifier, "kind": job.kind, "status": job.status,
                                 "created_at": job.created_at, "can_resume": self._can_resume(job),
+                                "forecast_horizon": job.options.get("horizon")
+                                if job.kind in {"direct_train", "quantile_train"} else None,
                                 "progress": self._progress(job), "artifacts": sorted(artifacts),
                                 "can_export": bool(RESEARCH_ARTIFACTS.get(job.kind, set()) & set(artifacts))})
             return records

@@ -24,6 +24,7 @@ from Spatial.MonteCarlo import SamplingConfig
 from Spatial.SpatialGrid import SpatialGrid, local_coordinates
 from Spatial.Validation import score_snapshot
 from SpatiotemporalModel import SpatiotemporalModel
+from Temporal.Quantile import quantile_columns
 from train import train_values
 from Utils.Diagnostics import forecast_diagnostics
 from Utils.ModelLoader import load_forecaster
@@ -72,7 +73,7 @@ def forecast_field(prepared, forecaster, steps):
     history = require_history(features.to_numpy(), features.index.to_numpy(dtype="datetime64[ns]"),
                               f"Latest {hours} hours need all six valid features and sufficient ET history",
                               hours=hours)
-    prediction = SpatiotemporalModel(forecaster).forecast(history, steps)
+    prediction, quantiles = forecaster.forecast_bundle(history, steps)
     future = pd.date_range(features.index[-1] + pd.offsets.Hour(), periods=steps, freq="h",
                            name="timestamp")
     forecast = pd.DataFrame(prediction, index=future, columns=FEATURES)
@@ -81,6 +82,14 @@ def forecast_field(prepared, forecaster, steps):
               "field_provenance": provenance,
               "quality": quality_report(features, flags),
               "forecast": forecast_diagnostics(history, prediction, forecaster.targets)}
+    if quantiles is not None:
+        report["quantiles"] = {
+            "levels": forecaster.quantile.levels.tolist(),
+            "features": list(FEATURES),
+            "values": quantiles.tolist(),
+            "axes": ["lead_hour", "feature", "quantile"],
+            "interpretation": "trained quantiles without post-training calibration",
+        }
     return forecast, report, gps, coverage
 
 
@@ -265,6 +274,12 @@ def main():
         else:
             frame, report, gps, coverage = forecast_session(args.source, configuration, args.checkpoint,
                                                             args.steps)
+            if quantiles := report.get("quantiles"):
+                tail = pd.DataFrame(
+                    [sum(lead, []) for lead in quantiles["values"]],
+                    index=frame.index, columns=quantile_columns(quantiles["levels"]),
+                )
+                frame = pd.concat((frame, tail), axis=1)
             name = "forecast.csv"
         args.output.mkdir()
         frame.to_csv(args.output / name)
