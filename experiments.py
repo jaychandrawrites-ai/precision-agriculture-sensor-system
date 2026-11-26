@@ -169,6 +169,8 @@ def main():
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--candidate-device", action="append", default=[],
                         help="Run sequence candidates in separate processes on cpu or cuda:N. Repeat for multiple GPUs.")
+    parser.add_argument("--pareto-use-isolated-peak", action="store_true",
+                        help="Include measured candidate process peak RSS in Pareto ranking")
     parser.add_argument("--candidate-memory-bytes", type=int, help="Training allocation budget per sequence candidate")
     parser.add_argument("--candidate-timeout", type=float, default=300.,
                         help="Maximum seconds per isolated candidate")
@@ -211,6 +213,7 @@ def main():
         if args.pareto_index is not None and args.pareto_index < 0:
             parser.error("--pareto-index must be nonnegative")
         policy = ObjectivePolicy(include_latency=args.pareto_use_latency,
+                                 include_isolated_peak=args.pareto_use_isolated_peak,
                                  max_latency_seconds=args.max_prediction_batch_seconds,
                                  max_estimated_bytes=args.max_estimated_training_bytes,
                                  max_raw_invalid_fraction=args.max_raw_invalid_fraction)

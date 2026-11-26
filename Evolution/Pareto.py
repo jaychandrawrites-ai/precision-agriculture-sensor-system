@@ -11,6 +11,7 @@ class ObjectivePolicy:
     """Minimize each objective and optionally constrain latency or raw invalid output."""
 
     include_latency: bool = False
+    include_isolated_peak: bool = False
     max_latency_seconds: float | None = None
     max_estimated_bytes: int | None = None
     max_raw_invalid_fraction: float | None = None
@@ -31,7 +32,11 @@ class ObjectivePolicy:
     def names(self):
         names = ("validation_loss", "parameters", "parameter_sample_steps",
                  "estimated_training_bytes", "raw_invalid_fraction")
-        return (*names, "prediction_batch_seconds") if self.include_latency else names
+        if self.include_latency:
+            names += ("prediction_batch_seconds",)
+        if self.include_isolated_peak:
+            names += ("observed_process_peak_bytes",)
+        return names
 
     def values(self, candidate):
         values = (candidate.validation_loss, candidate.parameters,
@@ -39,6 +44,8 @@ class ObjectivePolicy:
                   candidate.estimated_training_bytes, candidate.raw_invalid_fraction)
         if self.include_latency:
             values = (*values, candidate.prediction_batch_seconds)
+        if self.include_isolated_peak:
+            values = (*values, candidate.observed_process_peak_bytes)
         if any(value is None or not math.isfinite(value) for value in values):
             raise ValueError("Candidate has missing or nonfinite Pareto objectives")
         return values

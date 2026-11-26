@@ -48,6 +48,11 @@ def compare_sequences(values, timestamps, settings, budget, options, *, search_d
         raise ValueError("Pareto index must be a nonnegative integer")
     if settings.device != "cpu" and options.workers > 1 and not candidate_devices:
         raise ValueError("Parallel sequence candidates require CPU workers")
+    if policy.include_isolated_peak:
+        from Framework.Memory import observed_process_peak
+
+        if not candidate_devices or observed_process_peak() is None:
+            raise ValueError("Measured peak ranking requires isolated workers and OS peak RSS support")
     options = replace(options, sequence=True)
     if search_directory is not None:
         search_directory = Path(search_directory)
