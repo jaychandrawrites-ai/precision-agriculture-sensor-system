@@ -2,16 +2,16 @@
 
 Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERIFIED entries count. The [original master requirements](MASTER_REQUIREMENTS.md) remain authoritative.
 
-**37/96 verified (38.5%).**
+**42/96 verified (43.8%).**
 
 | Classification | Count |
 | --- | ---: |
 | BLOCKED — EXTERNAL HARDWARE | 7 |
-| PARTIALLY IMPLEMENTED | 42 |
+| PARTIALLY IMPLEMENTED | 37 |
 | BLOCKED — COMPUTATIONAL RESOURCE | 2 |
 | NOT STARTED | 1 |
 | BLOCKED — EXTERNAL DATA | 6 |
-| COMPLETE — VERIFIED | 37 |
+| COMPLETE — VERIFIED | 42 |
 | BLOCKED — USER APPROVAL | 1 |
 
 ## 1. AI Trace and hardware integration
@@ -34,8 +34,8 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | --- | --- | --- | --- |
 | R010 | Integrate LSTM into architecture search. | COMPLETE — VERIFIED | LSTM candidates train, compete and export in `Evolution/SequenceSearch.py` and `Evolution/Fitness.py`. `Tests/test_phase7_sequence_evolution.py`, cac9c0e. |
 | R011 | Integrate GRU and recurrent-attention candidates. | COMPLETE — VERIFIED | GRU and LSTM-attention candidates share the search and checkpoint workflow. `Tests/test_phase7_sequence_evolution.py`, cac9c0e. |
-| R012 | Complete causal temporal convolution architectures. | PARTIALLY IMPLEMENTED | Verify configurable causal convolution depth and dilation across training and inference. |
-| R013 | Complete configurable multi-head attention. | PARTIALLY IMPLEMENTED | Expose head count end to end and verify multi-head shapes and gradients. |
+| R012 | Complete causal temporal convolution architectures. | COMPLETE — VERIFIED | Configurable convolution depth, kernel, dilation and residuals exercised with full-stack gradients and portable inference. Tests/test_phase7_sequence_evolution.py and Tests/test_phase5_sequence_layers.py. 0fff76e. |
+| R013 | Complete configurable multi-head attention. | COMPLETE — VERIFIED | Four-head, two-layer attention exercised with full-stack gradients, masking tests and saved inference. Tests/test_phase7_sequence_evolution.py and Tests/test_phase5_sequence_layers.py. 0fff76e. |
 | R014 | Complete remaining optimizer and scheduler capabilities. | PARTIALLY IMPLEMENTED | Audit scheduler/optimizer coverage and verify resume for additional options. |
 | R015 | Verify mixed-precision numerical stability. | BLOCKED — COMPUTATIONAL RESOURCE | Requires suitable CUDA hardware and a matched precision/equivalence matrix. |
 | R016 | Complete memory-aware training. | PARTIALLY IMPLEMENTED | Measure peak memory and verify batch or accumulation behavior under an enforced budget. |
@@ -88,10 +88,10 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R043 | Integrate adaptive grids into the main spatial pipeline. | COMPLETE — VERIFIED | `Pipeline.py` integrates adaptive kriging with fit-site isolation. `Tests/test_adaptive_grid.py`, 8e14557. |
 | R044 | Complete adaptive variational reconstruction. | COMPLETE — VERIFIED | `Spatial/AdaptiveVariational.py` solves and refines a finite-volume mesh with hard seeds. `Tests/test_phase7_variational_fields.py`, fe27472. |
 | R045 | Complete irregular field boundary handling. | COMPLETE — VERIFIED | `Spatial/FieldDomain.py` supports polygons and holes. Adaptive and regular solver/sampler tests verify excluded areas. fe27472. |
-| R046 | Complete remaining geostatistical covariance options. | PARTIALLY IMPLEMENTED | Verify additional covariance families and numerical conditioning. |
+| R046 | Complete remaining geostatistical covariance options. | COMPLETE — VERIFIED | Five spherical, exponential, Gaussian and Matérn kernels verified with anisotropy, duplicates and observation variances. Tests/test_covariance_families.py. 63fa1dd. |
 | R047 | Propagate variogram and covariance parameter uncertainty. | COMPLETE — VERIFIED | Weighted range, sill, nugget, family and directional scenarios produce coherent survey fields, tested in Tests/test_survey_uncertainty.py. 1ee1eeb, 5eae3a6. |
 | R048 | Complete physical and measurement uncertainty propagation. | PARTIALLY IMPLEMENTED | Joint mapping consumes physical scenarios and residuals. Broaden separately identified measurement scenarios and validate their dependence. |
-| R049 | Complete posterior predictive checks. | PARTIALLY IMPLEMENTED | `Spatial/CovarianceStudy.py` checks posterior predictions and observation noise. Real-field verification awaits paired observations. |
+| R049 | Complete posterior predictive checks. | COMPLETE — VERIFIED | validate_spatial.py reports held-out residuals, coverage, widths, and conditioning. Synthetic tests verify holdout values cannot alter predictions and observation noise is counted once. 52c1d7b. |
 | R050 | Verify sampler convergence against known distributions. | COMPLETE — VERIFIED | Analytical conditional Gaussian moments compared against exact and Metropolis sampling in `Tests/test_phase5_spatial.py`. Diagnostic limits are recorded in the Phase 5 build log. a8736a7. |
 | R051 | Perform real-field spatial cross-validation. | BLOCKED — EXTERNAL DATA | Requires real multi-site observations with independently measured targets and adequate paired coverage. |
 
@@ -132,7 +132,7 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | ID | Requirement | Status | Evidence or remaining work |
 | --- | --- | --- | --- |
 | R074 | Complete independent temporal forecasting comparisons. | PARTIALLY IMPLEMENTED | Broaden predeclared station/year and regime coverage beyond the existing studies. |
-| R075 | Compare against daily persistence and harmonic baselines. | PARTIALLY IMPLEMENTED | Record a complete matched comparison including the standalone harmonic baseline. |
+| R075 | Compare against daily persistence and harmonic baselines. | COMPLETE — VERIFIED | Matched Maricopa 2019 comparison of persistence, daily, weekly, climatology and harmonic at six and 72 hours. rolling_station_study.py, Tests/test_phase5_rolling.py and BUILD_LOG.md. 852cced. |
 | R076 | Complete matched-budget evolutionary experiments. | PARTIALLY IMPLEMENTED | Repeat matched-budget comparisons with expanded architecture candidates. |
 | R077 | Compare spatial reconstruction against kriging and IDW. | COMPLETE — VERIFIED | `spatial_benchmark.py` and `Tests/test_phase5_spatial.py`, a8736a7. Phase 5 build log reports held-out synthetic RMSE for IDW, ordinary kriging and other methods. |
 | R078 | Complete dependence-sensitive statistical analysis. | PARTIALLY IMPLEMENTED | Broaden block-based uncertainty analysis across independent periods and spatial holdouts. |

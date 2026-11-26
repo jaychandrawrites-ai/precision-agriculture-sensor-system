@@ -65,3 +65,6 @@ The Phase 9 continuation adds disk-backed CLI staging for survey draws and
 browser-verified Pareto viewing and reuse of sequence search winners.
 R042 and R067 are verified. R056 remains partial because covariance
 factorization is dense and the export cannot resume after interruption.
+
+Verified R012, R013, R046, R049 and R075. The checklist now records 42
+verified, 37 partial, one unstarted and 16 externally blocked.

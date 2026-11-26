@@ -930,3 +930,33 @@ The complete local suite at `fd6c85b` ran 168 tests with Chromium enabled.
 166 passed and two CUDA tests skipped. The expanded Chromium search test
 passed separately at `020f81e`. The checklist now records 37 verified,
 42 partial, one unstarted and 16 externally blocked requirements.
+
+### Phase 9 covariance, sequence architecture and statistical baselines
+
+- `63fa1dd` adds Matérn 5/2 and verifies five covariance families with
+  anisotropy, nugget, heterogeneous measurement uncertainty and duplicates.
+- `0fff76e` verifies configured convolution and attention stacks using
+  finite differences, training and saved inference. The test initially
+  supplied a rank-three tensor to the flattened network entry point and
+  was corrected to exercise the supported input contract.
+- `852cced` clarifies the rolling baseline CLI. An initial trial passed
+  forecast spacing as the fold stride and the validator refused it.
+  Reproduce the corrected Maricopa 2019 study with
+  `python rolling_station_study.py report.json hourly.csv --initial-hours 2160 --test-hours 720 --horizon 6`.
+  Repeat with horizon 72. Each horizon used shared evaluation windows.
+
+| Temperature RMSE (°C) | 6 h, 6,435 origins | 72 h, 5,841 origins |
+| --- | ---: | ---: |
+| Persistence | 7.700 | 3.883 |
+| Daily persistence | 2.973 | 3.883 |
+| Weekly persistence | 4.265 | 4.223 |
+| Daily climatology | 10.975 | 11.037 |
+| Harmonic regression | 5.228 | 5.317 |
+
+These overlapping windows support descriptive comparisons. This is a
+reanalysis of a previously used station-year.
+
+- `52c1d7b` adds `validate_spatial.py` for out-of-sample posterior checks.
+  The synthetic test changes holdout values and verifies identical
+  posterior means and changed residual scores. R051 remains externally
+  blocked pending actual paired field observations.
