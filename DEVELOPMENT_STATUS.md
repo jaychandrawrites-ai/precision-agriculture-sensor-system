@@ -76,3 +76,8 @@ Phase 9 Part 2 started C01. Isolated CPU fits, timeout cleanup and direct
 training allocation controls are verified. R017 moved from unstarted to
 partial. The checklist remains at 43 verified, with 37 partial and 16
 externally blocked. The consolidated C01–C06 queue is in the runbook.
+
+The sustained-run checkpoint adds geographic circle domains and measured
+candidate worker peak RSS as a selection objective. R038 is implemented
+with final verification pending. The checklist retains 43 verified
+requirements, 36 partial, one awaiting verification and 16 external blockers.

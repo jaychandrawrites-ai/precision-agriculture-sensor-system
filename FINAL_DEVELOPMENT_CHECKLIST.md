@@ -7,7 +7,8 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | Classification | Count |
 | --- | ---: |
 | BLOCKED — EXTERNAL HARDWARE | 7 |
-| PARTIALLY IMPLEMENTED | 37 |
+| PARTIALLY IMPLEMENTED | 36 |
+| IMPLEMENTED — VERIFICATION PENDING | 1 |
 | BLOCKED — COMPUTATIONAL RESOURCE | 2 |
 | BLOCKED — EXTERNAL DATA | 6 |
 | COMPLETE — VERIFIED | 43 |
@@ -74,7 +75,7 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R035 | Expand genome representation to sequence architectures. | COMPLETE — VERIFIED | `Evolution/Genome.py` encodes family, context, convolution and attention parameters. `Tests/test_phase7_sequence_evolution.py`, cac9c0e. |
 | R036 | Complete recurrent and attention candidate search. | COMPLETE — VERIFIED | Five-method search shares chronological windows, with recurrent and attention families. `Tests/test_phase7_sequence_evolution.py`, cac9c0e. |
 | R037 | Complete multi-objective Pareto optimization. | COMPLETE — VERIFIED | Constrained nondomination and crowding integrated with the sequence search. Tests/test_phase8_search_objectives.py. 3f59750. |
-| R038 | Include memory and inference costs in fitness objectives. | PARTIALLY IMPLEMENTED | Search measures inference latency and training time, estimates candidate memory, and reports process peak RSS. Fresh worker RSS is measured on supported CPU platforms. Integrate this observation into a selectable objective and verify device metrics. 5c1c40d, 6a5580d. |
+| R038 | Include memory and inference costs in fitness objectives. | IMPLEMENTED — VERIFICATION PENDING | Optional isolated peak RSS joins latency and estimated training memory in sequence Pareto selection. Focused CPU smoke passed. Cross-platform and device checks remain. f6778f8. |
 | R039 | Complete adaptive exploration and diversity diagnostics. | PARTIALLY IMPLEMENTED | Verify exploration and diversity diagnostics across the expanded candidate space. |
 | R040 | Verify expanded architecture checkpoint recovery. | COMPLETE — VERIFIED | Generation recovery verifies candidate manifests and recurrent/convolution/attention artifacts. Tests/test_phase8_search_objectives.py. 3f59750, ec12d9d. |
 | R041 | Run matched-budget fixed/random/classical/amplitude/hybrid comparisons. | PARTIALLY IMPLEMENTED | Run all named methods on matched independent sequence-search experiments. |
@@ -120,7 +121,7 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R066 | Display quantum-inspired probability diagnostics. | PARTIALLY IMPLEMENTED | Expose and verify searchable amplitude diagnostics in the UI. |
 | R067 | Display Pareto fronts. | COMPLETE — VERIFIED | The search results view displays the Pareto front and individual validation, parameter, work, latency and estimated memory objectives. Chromium test in Tests/test_research_browser.py. 020f81e. |
 | R068 | Display all six forecast features and uncertainty intervals. | PARTIALLY IMPLEMENTED | Display joint survey ensemble maps alongside local forecast intervals. |
-| R069 | Display interactive spatial and uncertainty maps. | PARTIALLY IMPLEMENTED | Expose time-indexed uncertainty grids in interactive map controls. |
+| R069 | Display interactive spatial and uncertainty maps. | PARTIALLY IMPLEMENTED | Expose time-indexed uncertainty grids in interactive map controls.  Circle map controls and masks wired through AI Trace and CLI in a723ce1. |
 | R070 | Complete integrated research experiment controls. | PARTIALLY IMPLEMENTED | Expose remaining matched-run and spatial experiment controls. |
 | R071 | Complete downloadable reports and figures. | PARTIALLY IMPLEMENTED | Add and verify publication figure exports alongside existing reports. |
 | R072 | Verify actual browser interactions. | PARTIALLY IMPLEMENTED | Chromium verified AI Trace, quantile training and calibration, and sequence search through saved-model forecasting. Publication-export browser coverage remains. 020f81e. |

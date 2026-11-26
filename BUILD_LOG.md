@@ -994,3 +994,20 @@ Reproduce with `python experiments.py hourly.csv --sequence-space --epochs 1
 The direct and search budgets model training allocations. Candidate-isolated
 CPU RSS is a separate diagnostic. Actual multi-GPU behavior and direct
 optimizer/scheduler recovery remain unverified.
+
+### Sustained implementation checkpoint
+
+- a723ce1 adds geographic center, radius and grid resolution to AI Trace
+  and survey CLI. Regular grids use an exact center-point radius mask.
+  Adaptive variational reconstruction uses a conservative inscribed
+  96-sided boundary when no irregular polygon is supplied. The selected
+  radius masks predictive cells even when an irregular polygon is supplied.
+  Eleven focused survey tests passed, including an antimeridian fixture.
+- f6778f8 adds optional Pareto ranking by measured isolated process peak
+  RSS. Two focused objective tests and a two-worker synthetic sequence
+  CLI search passed. RSS includes the worker runtime. It is not GPU VRAM.
+
+Final verification should extend Chromium coverage to circle controls,
+test circle-plus-irregular meshes and verify device execution when available.
+The full regression and cross-platform acceptance runs are deferred for
+the final restore as requested.

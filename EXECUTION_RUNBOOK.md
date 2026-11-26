@@ -35,3 +35,13 @@ hardware, data and CUDA blockers and continue independent software work.
 | C06 Final integration | R085, R086, R092, R093, R095 | Master requirement crosswalk and reproducibility audit |
 
 The final development checklist controls verification of individual IDs.
+
+For circle domains pass `--domain circle.json --resolution 25` to a
+survey map command. The JSON keys are `center_lat_lon` (latitude first)
+and `radius_m`. AI Trace exposes the same inputs.
+
+```sh
+python -m unittest Tests.test_survey_uncertainty Tests.test_trace_analysis Tests.test_phase8_search_objectives -q
+JUPITER_TRACE_BROWSER=1 OPENBLAS_NUM_THREADS=1 python -W error::DeprecationWarning -m unittest discover -s Tests -q
+python experiments.py hourly.csv --sequence-space --epochs 1 --population 2 --generations 1 --candidate-epochs 1 --candidate-device cpu --workers 2 --pareto-use-isolated-peak
+```
