@@ -68,3 +68,6 @@ factorization is dense and the export cannot resume after interruption.
 
 Verified R012, R013, R046, R049 and R075. The checklist now records 42
 verified, 37 partial, one unstarted and 16 externally blocked.
+
+R082 is verified through synthetic predictive mean and interval-width
+figure exports. The current checklist has 43 verified requirements.

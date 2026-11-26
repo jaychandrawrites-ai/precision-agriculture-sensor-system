@@ -960,3 +960,12 @@ reanalysis of a previously used station-year.
   The synthetic test changes holdout values and verifies identical
   posterior means and changed residual scores. R051 remains externally
   blocked pending actual paired field observations.
+
+ (8a5ffae) renders local-metric predictive mean and
+interval-width maps with masks, site overlays, lead times and units.
+The synthetic export produced a 1980 × 990 PNG and an SVG. Run
+ with Matplotlib
+installed. R082 is verified.
+
+The full suite after the covariance and holdout changes ran 173 tests,
+with 171 passes and two optional CUDA skips, including Chromium.

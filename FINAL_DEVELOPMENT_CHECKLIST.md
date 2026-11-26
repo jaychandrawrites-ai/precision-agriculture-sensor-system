@@ -2,16 +2,16 @@
 
 Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERIFIED entries count. The [original master requirements](MASTER_REQUIREMENTS.md) remain authoritative.
 
-**42/96 verified (43.8%).**
+**43/96 verified (44.8%).**
 
 | Classification | Count |
 | --- | ---: |
 | BLOCKED — EXTERNAL HARDWARE | 7 |
-| PARTIALLY IMPLEMENTED | 37 |
+| PARTIALLY IMPLEMENTED | 36 |
 | BLOCKED — COMPUTATIONAL RESOURCE | 2 |
 | NOT STARTED | 1 |
 | BLOCKED — EXTERNAL DATA | 6 |
-| COMPLETE — VERIFIED | 42 |
+| COMPLETE — VERIFIED | 43 |
 | BLOCKED — USER APPROVAL | 1 |
 
 ## 1. AI Trace and hardware integration
@@ -139,7 +139,7 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R079 | Evaluate uncertainty coverage and interval widths. | PARTIALLY IMPLEMENTED | Measure interval coverage and width across all features, leads and independent regimes. |
 | R080 | Generate publication-quality training and forecast figures. | PARTIALLY IMPLEMENTED | Produce reproducible publication-ready training and forecast exports. |
 | R081 | Generate evolutionary and Pareto figures. | PARTIALLY IMPLEMENTED | Produce publication-ready evolution and Pareto exports. |
-| R082 | Generate spatial and uncertainty figures. | PARTIALLY IMPLEMENTED | Produce publication-ready forecast map and uncertainty exports. |
+| R082 | Generate spatial and uncertainty figures. | COMPLETE — VERIFIED | spatial_figures.py renders predictive mean and interval width with physical units, masks and site overlays. Synthetic PNG and SVG smoke test. 8a5ffae. |
 | R083 | Generate physical sensitivity figures. | PARTIALLY IMPLEMENTED | Produce publication-ready sensitivity figures with units and scenario provenance. |
 | R084 | Document negative and inconclusive results. | COMPLETE — VERIFIED | Phase 5 `BUILD_LOG.md` records unfavorable and inconclusive results from `rolling_station_study.py` and `spatial_benchmark.py`. `Tests/test_phase5_rolling.py` and `Tests/test_phase5_spatial.py`, 2dd3bcb and a8736a7. |
 
