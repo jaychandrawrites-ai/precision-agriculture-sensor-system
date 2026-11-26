@@ -387,3 +387,258 @@ the lowest RMSE at all three reported horizons.
 - Dashboard verification used loopback HTTP integration and JavaScript syntax
   checking. Browser rendering and physical serial streaming remain to be
   verified.
+
+## 2026-11-25 — Phase 5 integrated research
+
+### Branch and scope
+
+The previous development head was `38190fd65bf8e1f637bf2b5ad5daa23ab83cdf2e`.
+Created `jupiter-clean-development` from `main` at `cbd2992`, squashed the
+41 original foundation commits into `9c80c96`, and replayed the later
+development commits through `758372355bb67e3d3258b2e34636da6ebb627179`.
+The clean starting tree had zero differences from `38190fd`. Historical
+`jupiter-foundation` at `4f468ee`, historical `jupiter-development` at
+`38190fd`, and `main` were preserved. The final functional commit is
+`6cff9f0b0777cced5c843ccac677bba61ceed029`. The firmware tree has zero
+differences. Independent workers contributed data, spatial, framework,
+evolution, acquisition and dashboard subsystems.
+
+Tracked Python grew from 9,365 lines in 141 files to 14,906 lines in 188
+files. Git recorded 5,753 Python insertions and 212 deletions, a net gain
+of 5,541 lines. The all-file change counts for the current range are
+7006 insertions and 346 deletions. Counts exclude external archives,
+prepared datasets and machine-generated experiment artifacts.
+
+### Implemented workflows and verification
+
+- Data registry pins five annual releases. Yuma Valley 2016 yielded
+  8,761 complete feature rows from 8,784 archive hours. Yuma 2018, Yuma 2019
+  and Maricopa 2019 each yielded 8,737 from 8,760. The missing first 23
+  feature rows reflect the causal ET warmup. The Tucson mapping remains in
+  the catalog. The registry verifies source and prepared artifacts and
+  reports seasonal drift and rolling-origin scores without pooling stations.
+- The hourly FAO-56 implementation reproduces the published night and day
+  example to 0.01 mm/hour. An optional Yuma 2019 comparison on 8,737 matched
+  hours gave 0.09593 mm hourly RMS difference and +0.03049 mm FAO-minus-
+  Hargreaves mean difference. The 2 m input wind height and 0.8 dark
+  cloud ratio were explicitly declared comparison assumptions. This
+  compares two estimates. The default six-feature pipeline was preserved.
+- Eight stratified scenarios on the first 168 Yuma 2019 hours propagated
+  declared crop-coefficient and rain-interception ranges. Spearman
+  correlations between mean estimated ETa and crop coefficient, and
+  between mean simulated LWI and rain interception, were both +1.0
+  in this small modeled example. The other rank correlations reflect the
+  finite stratified design. This does not establish field uncertainty.
+- The experimental direct model shares the loss and checkpoint workflow
+  across gated, GRU, causal convolution and attention variants. The existing
+  derivative-based default remains available. Numerical additions include
+  tensor adjoints, sparse operators and PCG, Dormand–Prince RK45,
+  directional Hessian products, Adagrad and weighted gradient accumulation.
+- Structured search compares fixed, random, genetic, adapted amplitude
+  and hybrid candidates with checkpoint compatibility. The synthetic
+  three-seed study used 24 candidates per searched method, at most 6,000
+  parameters and a shared 16-million parameter-sample-step cap per candidate.
+  Actual costs varied. At six hours, temperature RMSE for seeds 42/43/44
+  was 6.717/9.524/10.535 °C for random, 15.466/10.317/7.939 °C for the
+  GA, 5.479/6.535/7.171 °C for amplitude, and 5.479/10.559/11.072 °C
+  for hybrid. The short fixed reference ran at 27.955/24.115/21.997 °C.
+  This synthetic ranking is not evidence of general advantage.
+- On the explicitly synthetic spatial experiment, 24 sites supplied fit data
+  and 48 independently generated sites were held out. RMSE was 0.4483 for
+  affine-drift kriging, 0.4934 for variational reconstruction, 0.5067 for
+  the block posterior mean, 0.5211 for ordinary kriging, 0.6161 for nearest
+  neighbor, 0.6449 for IDW and 0.8282 for RBF. Nominal 90% interval
+  coverage was 47/48 with mean width 2.003. The short chains flagged
+  19 and 24 of 72 tested cells under two settings. This is diagnostic.
+- Acquisition now preserves verifiable raw archives and offers recovery into
+  a new destination, with coverage and calibrated reading diagnostics.
+  Multi-site forecasts can propagate aligned ensemble draws through IDW.
+  Forecast maps stay labeled as model outputs. No paired field observations
+  were available to validate joint inference.
+- The loopback dashboard supports persistent jobs, moving from prepared
+  datasets to model selection, session health, benchmark and search jobs,
+  bounded previews and CSV exports. Actual loopback subprocess tests and
+  JavaScript syntax checks passed. The managed browser relay timed out.
+- The local full suite ran **116 tests**, with **114 passes and two CUDA
+  skips**. Bytecode compilation, JavaScript syntax validation and the
+  Phase 3 synthetic end-to-end demo passed. Cross-platform CI evidence is
+  recorded below.
+- All four GitHub Actions jobs passed at the final functional commit on
+  Linux and Windows with Python 3.11 and 3.12.
+  [Verification matrix](https://github.com/jaychandrawrites-ai/precision-agriculture-sensor-system/actions/runs/45757254102)
+
+### Independent forecasting results
+
+Yuma 2018 was split into fitting, selection and calibration before Yuma
+2019 testing. The fixed-year Yuma and frozen Maricopa comparisons each
+used 8,663 complete shared origins. There were 36 non-overlapping
+calibration origins and 121 spaced Yuma verification origins.
+
+| Archive and model | 1 h | 12 h | 24 h | 48 h | 72 h |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Yuma daily persistence | 2.802 | 2.812 | 2.800 | 3.470 | 3.821 |
+| Yuma direct | 4.552 | 6.821 | 4.615 | 3.986 | 4.878 |
+| Yuma validation blend | 2.842 | 2.812 | 2.800 | 3.428 | 3.831 |
+| Maricopa daily persistence | 3.032 | 3.044 | 3.038 | 3.800 | 4.086 |
+| Maricopa frozen Yuma blend | 3.132 | 3.038 | 3.038 | 3.779 | 4.081 |
+
+Table entries are temperature RMSE in °C. Ordinary persistence gave
+1.728 °C at one hour in Yuma and 1.691 °C in Maricopa. The unblended
+daily-residual network also trailed daily persistence at the reported
+leads. The Yuma blend's approximate adjusted 48-hour paired interval
+was [−0.057, −0.028] °C for blend minus daily RMSE. The corresponding
+Maricopa interval [−0.042, +0.002] °C included zero. The 72-hour intervals
+included zero at both stations. This indicates limited, horizon-dependent
+benefit and no clear long-range advantage. For Yuma, the blend's nominal
+90% empirical interval covered 87.6% for 24-hour temperature and 91.7%
+for all temperature leads together on the spaced sample. The reported
+coverage does not imply guarantees across features, stations or weather
+regimes.
+
+The separate expanding-window Yuma study used 8,330 shared origins in
+four test blocks. At 48 and 72 hours, harmonic regression scored
+3.370 and 3.365 °C. Daily persistence scored 3.469 and 3.811 °C.
+This study had a longer training span and a different rolling protocol.
+
+### Reproduction
+
+From the repository root on Linux, with outputs outside the checkout:
+
+```sh
+mkdir -p /tmp/jupiter5
+curl -fL https://azmet.arizona.edu/azmet/data/0218rh.txt -o /tmp/jupiter5/yuma18.txt
+curl -fL https://azmet.arizona.edu/azmet/data/0219rh.txt -o /tmp/jupiter5/yuma19.txt
+curl -fL https://azmet.arizona.edu/azmet/data/0619rh.txt -o /tmp/jupiter5/maricopa19.txt
+python station_study.py /tmp/jupiter5/y18 --station /tmp/jupiter5/yuma18.txt Examples/azmet/yuma-valley-2018.json
+python station_study.py /tmp/jupiter5/y19 --station /tmp/jupiter5/yuma19.txt Examples/azmet/yuma-valley-2019.json
+python station_study.py /tmp/jupiter5/m19 --station /tmp/jupiter5/maricopa19.txt Examples/azmet/maricopa-2019.json
+OPENBLAS_NUM_THREADS=1 python seasonal_study.py /tmp/jupiter5/yuma-study.json /tmp/jupiter5/y18/az02/hourly.csv /tmp/jupiter5/y19/az02/hourly.csv --station az02 --selection-from 2018-07-01T07:00Z --calibration-from 2018-09-15T07:00Z --final-from 2019-01-01T07:00Z --horizon 72 --epochs 12 --seeds 42 43 44 --model-output /tmp/jupiter5/model
+OPENBLAS_NUM_THREADS=1 python seasonal_transfer.py /tmp/jupiter5/m19/az06/hourly.csv /tmp/jupiter5/model/seasonal-ensemble.json /tmp/jupiter5/transfer.json --station az06
+OPENBLAS_NUM_THREADS=1 python rolling_station_study.py /tmp/jupiter5/rolling.json /tmp/jupiter5/y18/az02/hourly.csv /tmp/jupiter5/y19/az02/hourly.csv --initial-hours 8760 --test-hours 2160 --horizon 72
+python et_comparison.py /tmp/jupiter5/yuma19.txt Examples/azmet/yuma-valley-2019.json /tmp/jupiter5/et.json --wind-height 2 --dark-cloud-ratio .8
+head -n 168 /tmp/jupiter5/yuma19.txt >/tmp/jupiter5/yuma-week.txt
+printf '%s\n' '[{"path":"soil.crop_coefficient","lower":0.6,"upper":1.1},{"path":"scenario.rain_interception_fraction","lower":0.01,"upper":0.1}]' >/tmp/jupiter5/ranges.json
+python physical_ensemble.py /tmp/jupiter5/yuma-week.txt Examples/azmet/yuma-valley-2019.json /tmp/jupiter5/ranges.json /tmp/jupiter5/physical.json --draws 8
+OPENBLAS_NUM_THREADS=1 python spatial_benchmark.py --synthetic --output /tmp/jupiter5/spatial.json
+python -c "from main import synthetic_history; synthetic_history(360).to_csv('/tmp/jupiter5/search-source.csv', index=False)"
+for seed in 42 43 44; do
+  OPENBLAS_NUM_THREADS=1 python experiments.py /tmp/jupiter5/search-source.csv --epochs 8 --population 6 --generations 4 --candidate-epochs 4 --candidate-parameter-step-limit 16000000 --max-parameters 6000 --extended-space --adaptive-amplitude --random-baseline --hybrid-baseline --synthetic --seed "$seed" >"/tmp/jupiter5/search-$seed.json"
+done
+OPENBLAS_NUM_THREADS=1 python -W error::DeprecationWarning -m unittest discover -s Tests -q
+python -m compileall -q .
+node --check Dashboard/static/app.js
+OPENBLAS_NUM_THREADS=1 python -m Examples.SyntheticPhase3 /tmp/jupiter5/offline-demo
+```
+
+### Remaining priorities
+
+Predeclare new independent stations and years. Compare further temporal
+models against daily persistence and expanding harmonic fits with matched
+compute. Verify the native AquaMap protocol and calibration with hardware.
+Use genuine paired field measurements to validate spatial and joint
+predictive intervals. Browser rendering, GPU consistency, and adaptive
+grids remain open. See [PLANS.md](PLANS.md) for the next-run checklist.
+
+### File inventory
+
+Status relative to the verified clean starting tree:
+
+```text
+M .github/workflows/jupiter-tests.yml
+A ARCHITECTURE.md
+M Acquisition/AcquisitionController.py
+A Acquisition/Archives.py
+A Acquisition/CalibrationReport.py
+A Acquisition/Coverage.py
+M Acquisition/DataLogger.py
+M Acquisition/MappedPackets.py
+A Acquisition/Recovery.py
+M Acquisition/SessionManager.py
+A DATA_FORMAT.md
+M Dashboard/Jobs.py
+A Dashboard/Reports.py
+M Dashboard/Server.py
+M Dashboard/static/app.js
+M Dashboard/static/index.html
+M Dashboard/static/style.css
+A Data/Registry.py
+A Data/RollingOrigin.py
+M Data/RolloutWindows.py
+A Data/StationCatalog.py
+A Data/Studies.py
+A EXPERIMENT_PROTOCOL.md
+M Evolution/Fitness.py
+M Evolution/Genome.py
+M Evolution/Resumable.py
+A Examples/azmet/catalog.json
+A Examples/azmet/maricopa-2019.json
+M Examples/azmet/tucson-2019.json
+A Examples/azmet/yuma-valley-2016.json
+A Examples/azmet/yuma-valley-2018.json
+A Examples/azmet/yuma-valley-2019.json
+M Framework/Math_Utilities.py
+M Framework/Optimizer.py
+A Framework/SequenceLayers.py
+A HARDWARE.md
+A LIMITATIONS.md
+A MATHEMATICS.md
+M Numerical/Differentiation.py
+A Numerical/LinearAlgebra.py
+M Numerical/ODESolver.py
+A PHYSICS.md
+M PLANS.md
+A Physics/Evapotranspiration/ETComparison.py
+M Physics/Evapotranspiration/FAO56.py
+A QuantumInspired/Adaptive.py
+M QuantumInspired/QuantumGenome.py
+M README.md
+A Spatial/BlockSampler.py
+A Spatial/GaussianField.py
+M Spatial/Interpolation.py
+A Spatial/Kriging.py
+A Spatial/PosteriorStudy.py
+M Spatial/SeedManager.py
+M Spatial/SpatialModel.py
+M Spatial/VariationalSolver.py
+A Spatial/VariogramFit.py
+A Temporal/BlockIntervals.py
+M Temporal/Direct.py
+M Temporal/DirectCheckpoint.py
+M Temporal/Model.py
+A Temporal/SeasonalCheckpoint.py
+A Temporal/Seasonality.py
+A Temporal/SequenceForecast.py
+M Temporal/TrainingRecovery.py
+A Tests/test_phase5_acquisition.py
+A Tests/test_phase5_backend_equivalence.py
+A Tests/test_phase5_dashboard.py
+A Tests/test_phase5_evolution.py
+A Tests/test_phase5_integrators.py
+A Tests/test_phase5_linear_algebra.py
+A Tests/test_phase5_optimizers.py
+A Tests/test_phase5_physics.py
+A Tests/test_phase5_registry.py
+A Tests/test_phase5_rolling.py
+A Tests/test_phase5_seasonal.py
+A Tests/test_phase5_sequence_forecast.py
+A Tests/test_phase5_sequence_layers.py
+A Tests/test_phase5_spatial.py
+A Tests/test_phase5_spatial_forecast.py
+M Utils/Bootstrap.py
+M Utils/Checkpoints.py
+A VALIDATION.md
+M acquire.py
+A acquisition_archive.py
+A dataset_registry.py
+M direct_forecast.py
+A et_comparison.py
+M experiments.py
+A physical_ensemble.py
+A rolling_station_study.py
+A seasonal_forecast.py
+A seasonal_study.py
+A seasonal_transfer.py
+A spatial_benchmark.py
+A spatial_forecast.py
+M BUILD_LOG.md
+```

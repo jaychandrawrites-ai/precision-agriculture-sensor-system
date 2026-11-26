@@ -43,3 +43,28 @@ the AquaMap protocol with hardware, and optional joint fitting with genuine
 paired field labels. GPU consistency and real serial tests require the target
 devices. Track these outcomes and maintain checked-in fixtures as explicitly
 synthetic data.
+
+## Phase 5 completion checklist
+
+Implemented the verified multi-station archive catalog, versioned registry and
+rolling-origin reports. The default derivative model remains unchanged.
+Experimental sequence models, a saved seasonal residual ensemble and a frozen
+Maricopa transfer study are available. Spatial tooling includes robust and
+heteroscedastic reconstruction, anisotropic geostatistics, block posterior
+sampling and coherent forecast-draw propagation. Acquisition archives can be
+verified and recovered. The local dashboard can persist and resume results.
+
+Priorities for the next run:
+
+1. Predeclare new independent station-years and benchmark short-horizon
+   persistence, daily persistence and expanding harmonic fits before investing
+   in further neural refinements. Report dependence-sensitive effect bounds.
+2. Verify AquaMap receiver payloads and calibration with real instruments, then
+   independently measure temporal and spatial field outcomes. Preserve original
+   Arduino firmware and differentiate observed, estimated and simulated inputs.
+3. Validate full spatial predictive uncertainty with paired field labels.
+   Further spatial work includes adaptive grid refinement and coherent
+   parameter scenarios with independently supported prior weights.
+4. Verify browser rendering, actual live serial workflows and CUDA parity
+   on appropriate hardware. Extend comparisons under equal measured training
+   work and add publication figure outputs where results justify them.
