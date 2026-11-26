@@ -80,7 +80,7 @@ def _reading(parsed, timestamp):
             or not all(isinstance(key, str) and type(value) in (int, float) and math.isfinite(value)
                        for key, value in parsed["measurements"].items())):
         raise ValueError("Measurements must be finite numbers and quality flags must be strings")
-    output = {**parsed, "received_at": _time(parsed.get("received_at", timestamp))}
+    output = {**parsed, "received_at": _time(parsed.get("received_at", timestamp)), "flags": flags}
     if output.get("observed_at") is not None:
         output["observed_at"] = _time(output["observed_at"])
     return _json(output)
@@ -88,16 +88,17 @@ def _reading(parsed, timestamp):
 
 class TraceStore:
     """One application owns a workspace. SQLite commits each transition and packet."""
-    def __init__(self, root):
+    def __init__(self, root, *, recover=True):
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
         self.path = root / "trace.sqlite3"
         with self._database() as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript(SCHEMA)
-            db.execute("""UPDATE segment SET status='interrupted', ended_at=COALESCE(
-                          (SELECT MAX(received_at) FROM packet WHERE segment_id=segment.id), started_at)
-                          WHERE status='recording'""")
+            if recover:
+                db.execute("""UPDATE segment SET status='interrupted', ended_at=MAX(started_at, COALESCE(
+                              (SELECT MAX(received_at) FROM packet WHERE segment_id=segment.id), started_at))
+                              WHERE status='recording'""")
 
     @contextmanager
     def _database(self, write=False):
@@ -261,6 +262,13 @@ class TraceStore:
         return self._csv(identifier, locations)
 
     @staticmethod
+    def _csv_cell(value):
+        if isinstance(value, str) and (value.lstrip().startswith(("=", "+", "-", "@"))
+                                       or value.startswith(("\t", "\r", "\n"))):
+            return "'" + value
+        return value
+
+    @staticmethod
     def _csv(identifier, locations):
         rows = []
         fields = ["survey_id", "location_id", "location_label", "segment_id", "received_at",
@@ -275,13 +283,11 @@ class TraceStore:
                         continue
                     values = reading["measurements"]
                     measures.update(f"measurement_{key}" for key in values)
-                    label = location["label"]
-                    if label.lstrip().startswith(("=", "+", "-", "@")):
-                        label = "'" + label
+                    label = TraceStore._csv_cell(location["label"])
                     rows.append({
                         "survey_id": identifier, "location_id": location["id"], "location_label": label,
                         "segment_id": segment["id"], "received_at": reading["received_at"],
-                        **{key: reading.get(key) for key in ("observed_at", "device_id", "packet_id")},
+                        **{key: TraceStore._csv_cell(reading.get(key)) for key in ("observed_at", "device_id", "packet_id")},
                         "flags": _json(reading["flags"]), "coordinate_source": location["coordinate_source"],
                         "manual_latitude_deg": location["latitude_deg"], "manual_longitude_deg": location["longitude_deg"],
                         **{f"measurement_{key}": value for key, value in values.items()},

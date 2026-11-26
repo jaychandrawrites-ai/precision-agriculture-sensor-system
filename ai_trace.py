@@ -36,7 +36,7 @@ def main():
             sub.add_argument("mapping", type=Path)
             sub.add_argument("--label", required=True)
     args = parser.parse_args()
-    store = TraceStore(args.workspace)
+    store = TraceStore(args.workspace, recover=args.action not in {"list", "status", "export"})
     if args.action == "create":
         result = store.create(args.label)
     elif args.action == "list":
