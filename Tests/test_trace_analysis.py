@@ -2,9 +2,11 @@
 from copy import deepcopy
 import json
 from pathlib import Path
+from unittest.mock import patch
 from tempfile import TemporaryDirectory
 import unittest
 
+from Acquisition.AITrace import TraceStore, _time
 from Acquisition.TraceAnalysis import observational_map, survey_forecasts
 from Examples.SyntheticPhase3 import historical_fixture, session_fixture
 from Pipeline import train_historical
@@ -67,6 +69,33 @@ class TraceAnalysisTests(unittest.TestCase):
         self.assertIn("separate device histories", mixed["segments"][0]["reason"])
         self.assertIn("restart or receiver boundary", restart["segments"][0]["reason"])
         self.assertIn("restart or receiver boundary", reconnect["segments"][0]["reason"])
+
+    def test_real_store_readiness_does_not_join_a_revisit(self):
+        with TemporaryDirectory() as root:
+            directory = Path(root)
+            session, _, config = session_fixture(directory, hours=32)
+            readings = [json.loads(line) for line in (session / "readings.jsonl").read_text().splitlines()]
+            store = TraceStore(directory / "trace")
+            clock = [readings[0]["received_at"]]
+            with patch("Acquisition.AITrace._time", side_effect=lambda value=None: _time(value or clock[0])):
+                survey = store.create("synthetic trace")["id"]
+                original = store.start(survey, "synthetic location")["active_location_id"]
+                for record in readings[:16]:
+                    store.ingest(survey, None, record["received_at"], record)
+                clock[0] = readings[15]["received_at"]
+                store.stop(survey)
+                clock[0] = readings[16]["received_at"]
+                store.start(survey, location_id=original)
+                for record in readings[16:]:
+                    store.ingest(survey, None, record["received_at"], record)
+                clock[0] = readings[-1]["received_at"]
+                store.stop(survey)
+                store.finish(survey)
+            result = survey_forecasts(store, survey, config)
+            self.assertEqual(result["ready_locations"], 0)
+            self.assertEqual(len(result["locations"][0]["segments"]), 2)
+            self.assertTrue(all(not item["ready"] and item["reference_et_unavailable_hours"] > 0
+                                for item in result["locations"][0]["segments"]))
 
     def test_map_preserves_times_and_omits_missing_coordinates(self):
         def row(minute, temp, values, receipt_minute=None):

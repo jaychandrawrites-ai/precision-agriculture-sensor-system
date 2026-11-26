@@ -59,7 +59,12 @@ def forecast_session(readings, configuration, checkpoint, steps, *, device="cpu"
 
 
 def forecast_prepared_session(readings, configuration, forecaster, steps):
-    features, flags, provenance, gps, coverage = prepare_session(readings, configuration)
+    return forecast_field(prepare_session(readings, configuration), forecaster, steps)
+
+
+def forecast_field(prepared, forecaster, steps):
+    """Forecast from one prepared field history without reopening its readings."""
+    features, flags, provenance, gps, coverage = prepared
     if not provenance["complete_hour_bins_only"]:
         raise ValueError("Forecasting requires closed hourly bins")
     verified = forecaster.require_compatible_field(provenance)
@@ -79,7 +84,14 @@ def forecast_prepared_session(readings, configuration, forecaster, steps):
 
 def check_session(readings, configuration, checkpoint=None):
     """Check a recorded session without training or emitting forecasts or GPS."""
-    features, flags, provenance, _, _ = prepare_session(readings, configuration)
+    prepared = prepare_session(readings, configuration)
+    forecaster = None if checkpoint is None else load_forecaster(checkpoint)
+    return check_prepared_session(prepared, forecaster)
+
+
+def check_prepared_session(prepared, forecaster=None):
+    """Check an already prepared field history against an optional loaded model."""
+    features, flags, provenance, _, _ = prepared
     result = inspect_history(features.to_numpy(), features.index.to_numpy(dtype="datetime64[ns]"))
     history_hours = provenance["reference_et"]["history_hours"]
     result.update({
@@ -89,11 +101,10 @@ def check_session(readings, configuration, checkpoint=None):
         "latest_hour_utc": features.index[-1].isoformat() if len(features) else None,
         "reference_et_unavailable_hours": int(flags["reference_et_unavailable"].sum()),
     })
-    if checkpoint is not None:
-        model = load_forecaster(checkpoint)
-        result["checkpoint_sha256"] = model.checkpoint_sha256
+    if forecaster is not None:
+        result["checkpoint_sha256"] = forecaster.checkpoint_sha256
         try:
-            verified = model.require_compatible_field(provenance)
+            verified = forecaster.require_compatible_field(provenance)
         except ValueError as error:
             result.update(ready=False, checkpoint_physics="incompatible", checkpoint_reason=str(error))
         else:

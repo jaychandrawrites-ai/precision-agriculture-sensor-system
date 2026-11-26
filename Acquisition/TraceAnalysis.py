@@ -11,7 +11,7 @@ import numpy as np
 from Acquisition.Hourly import _aware
 from Acquisition.MappedPackets import FIELDS
 from config import FEATURES
-from Pipeline import check_session, forecast_prepared_session
+from Pipeline import check_prepared_session, forecast_field, prepare_session
 from Spatial.Interpolation import idw
 from Spatial.SpatialGrid import SpatialGrid, local_coordinates
 from Utils.ModelLoader import load_forecaster
@@ -74,7 +74,7 @@ def survey_forecasts(store, survey_id, configuration, checkpoint=None, steps=Non
         raise ValueError("A field configuration object is required")
     if steps is not None and (checkpoint is None or type(steps) is not int or not 1 <= steps <= 168):
         raise ValueError("Forecasting requires a saved checkpoint and 1–168 hourly steps")
-    forecaster = load_forecaster(checkpoint) if steps is not None else None
+    forecaster = load_forecaster(checkpoint) if checkpoint is not None else None
     survey = store.status(survey_id)
     report = {"survey_id": survey_id, "scope": "independent closed segments",
               "locations": [], "forecast_steps": steps}
@@ -97,9 +97,10 @@ def survey_forecasts(store, survey_id, configuration, checkpoint=None, steps=Non
                     if not records:
                         raise ValueError("No usable readings in the closed segment")
                     _write_readings(path, records)
-                    detail.update(check_session(path, config, checkpoint))
-                    if forecaster is not None and detail["ready"]:
-                        forecast, diagnostics, _, _ = forecast_prepared_session(path, config, forecaster, steps)
+                    prepared = prepare_session(path, config)
+                    detail.update(check_prepared_session(prepared, forecaster))
+                    if steps is not None and detail["ready"]:
+                        forecast, diagnostics, _, _ = forecast_field(prepared, forecaster, steps)
                         detail["forecast"] = [
                             {"timestamp": timestamp.isoformat(), **dict(zip(FEATURES, map(float, values)))}
                             for timestamp, values in forecast.iterrows()
