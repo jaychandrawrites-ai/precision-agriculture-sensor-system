@@ -212,6 +212,7 @@ function showResult(job, mode, data, live = false) {
   $("details").hidden = false;
   $("detail-title").textContent = labels[job.kind];
   if (["forecast", "sensor"].includes(mode)) select("feature", featureOptions(Object.keys(data.series)));
+  else if (mode === "map") select("feature", featureOptions(data.metadata?.features || []));
   else if (mode === "dataset") select("feature", featureOptions(Object.keys(data.distributions)));
   else if (mode === "research") select("feature", featureOptions([...new Set(data.metrics.map((row) => row.feature))]));
   else select("feature", {});
@@ -237,7 +238,12 @@ function renderResult() {
   if (mode === "map") {
     const layers = data.layers || data;
     const grid = layers[view];
-    if (grid) heatmap(grid, mapLabels[view] || view);
+    if (grid) {
+      const index = data.metadata?.features?.indexOf(feature) ?? -1;
+      const layer = index >= 0 && Array.isArray(grid[0]?.[0])
+        ? grid.map((row) => row.map((cell) => cell[index])) : grid;
+      heatmap(layer, mapLabels[view] || view);
+    }
   } else if (mode === "forecast" || mode === "sensor") {
     const values = data.series[feature] || [];
     chart({[features[feature]]: values}, features[feature], mode === "forecast" ? "Forecast hour" : "Recent records");
@@ -331,11 +337,11 @@ function availableSelections(jobs) {
   const sets = {
     dataset: ["Upload prepared CSV", "prepare", "prepared/hourly.csv"],
     session: ["Choose a session", ["replay", "live"], "session/readings.jsonl"],
-    model: ["Choose a model", "train", "model.json"]
+    model: ["Choose a model", ["train", "direct_train"], ["model.json", "direct-model.json"]]
   };
   for (const [id, [placeholder, kinds, artifact]] of Object.entries(sets)) {
     const item = $(id), current = item.value;
-    const entries = jobs.filter((job) => [kinds].flat().includes(job.kind) && job.artifacts.includes(artifact));
+    const entries = jobs.filter((job) => [kinds].flat().includes(job.kind) && [artifact].flat().some((name) => job.artifacts.includes(name)));
     item.replaceChildren(new Option(placeholder, ""), ...entries.map((job) =>
       new Option(labels[job.kind] + " · " + new Date(job.created_at).toLocaleString(), job.id)));
     if (entries.some((job) => job.id === current)) item.value = current;

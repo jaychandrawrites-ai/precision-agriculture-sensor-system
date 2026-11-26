@@ -200,8 +200,10 @@ class Jobs:
         if kind in {"forecast", "field"}:
             identifier = raw.get("model")
             candidate = self.store.get(identifier) if isinstance(identifier, str) else None
-            if kind == "forecast" and candidate is not None and candidate.kind == "direct_train":
+            if candidate is not None and candidate.kind == "direct_train":
                 self._linked(identifier, {"direct_train"}, "direct-model.json")
+                if kind == "field":
+                    settings["steps"] = self._number(raw, "steps", 6, (1, 72))
             else:
                 self._linked(identifier, {"train"}, "model.json")
                 settings["steps"] = self._number(raw, "steps", 6, (1, 168))
@@ -303,7 +305,9 @@ class Jobs:
         source = self._linked(opts["session"], {"live", "replay"}, "session/readings.jsonl")
         if kind == "health":
             return ["Pipeline.py", "session-health", source, folder / "report.json"]
-        model = self._linked(opts["model"], {"train"}, "model.json")
+        candidate = self.store[opts["model"]]
+        artifact = "direct-model.json" if candidate.kind == "direct_train" else "model.json"
+        model = self._linked(opts["model"], {candidate.kind}, artifact)
         return ["Pipeline.py", "forecast-session", source, config, folder / "inference",
                 "--checkpoint", model, "--steps", opts["steps"]]
 

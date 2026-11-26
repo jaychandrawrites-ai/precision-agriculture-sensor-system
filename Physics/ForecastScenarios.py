@@ -48,7 +48,7 @@ def _recent_fix(gps, issue_at, freshness_hours):
         return None
     eligible = gps[(gps["timestamp"] <= issue_at)
                    & (gps["received_at"] <= issue_at)
-                   & (gps["timestamp"] >= issue_at - pd.Timedelta(hours=float(freshness_hours)))]
+                   & (gps["timestamp"] >= issue_at - pd.to_timedelta(float(freshness_hours), unit="h"))]
     if eligible.empty:
         return None
     point = eligible.sort_values(["timestamp", "received_at"], kind="stable").iloc[-1]

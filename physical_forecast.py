@@ -23,7 +23,7 @@ def _rows(predictions, sites, report, steps):
     for draw, identifier in enumerate(report["draw_ids"]):
         for site_index, (name, site) in enumerate(sites.items()):
             for lead in range(steps):
-                valid_at = issue_at + pd.Timedelta(hours=lead+1)
+                valid_at = issue_at + pd.to_timedelta(lead + 1, unit="h")
                 yield {"draw_id": identifier, "site_id": name, "lead_hours": lead+1,
                        "forecast_origin": issue_at.isoformat(), "valid_at": valid_at.isoformat(),
                        "value_origin": "model_forecast", **(site.position or {}),
