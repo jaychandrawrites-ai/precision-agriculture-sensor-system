@@ -72,3 +72,19 @@ class QuantileDashboardTests(unittest.TestCase):
             metadata = json.loads(body)["quantiles"]
             self.assertEqual(metadata["axes"], ["lead_hour", "feature", "quantile"])
             self.assertEqual(len(metadata["values"]), 2)
+
+    def test_sequence_search_exports_selectable_models_and_forecasts(self):
+        source = encoded(synthetic_history(300).to_csv(index=False).encode())
+        with TemporaryDirectory() as directory, dashboard(Path(directory) / "dashboard") as request:
+            model = self._submit(request, "search", {"data": source},
+                                 {"sequence_search": True, "epochs": 1, "candidate_epochs": 1,
+                                  "generations": 1, "population": 2})
+            job = self._wait(request, model)
+            self.assertIn("models/classical_ga.json", job["artifacts"])
+            self.assertIn("models/random.json", job["artifacts"])
+            forecast = self._submit(request, "forecast", {"data": source},
+                                    {"model": model, "search_model": "random", "steps": 2})
+            self._wait(request, forecast)
+            status, body = request(f"/api/forecast/{forecast}")
+            self.assertEqual(status, 200, body)
+            self.assertEqual(len(json.loads(body)["timestamps"]), 2)

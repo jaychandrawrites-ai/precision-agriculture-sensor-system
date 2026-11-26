@@ -54,6 +54,8 @@ function controls() {
     optimizer: kind === "train", loss: kind === "train", horizon: ["benchmark", "direct_train", "quantile_train"].includes(kind),
     "quantile-levels": kind === "quantile_train", architecture: kind === "direct_train", width: kind === "direct_train", "joint-seed": kind === "joint",
     seeds: kind === "benchmark", synthetic: kind === "benchmark", population: kind === "search",
+    "sequence-search": kind === "search",
+    "search-model": ["forecast", "field"].includes(kind) && $("model").selectedOptions[0]?.dataset.search === "true",
     generations: kind === "search", "candidate-epochs": kind === "search"
   };
   for (const [field, show] of Object.entries(visibility)) $(field + "-label").hidden = !show;
@@ -350,13 +352,17 @@ function availableSelections(jobs) {
   const sets = {
     dataset: ["Upload prepared CSV", "prepare", "prepared/hourly.csv"],
     session: ["Choose a session", ["replay", "live"], "session/readings.jsonl"],
-    model: ["Choose a model", ["train", "direct_train", "quantile_train"], ["model.json", "direct-model.json", "quantile-model.json"]]
+    model: ["Choose a model", ["train", "direct_train", "quantile_train", "search"], ["model.json", "direct-model.json", "quantile-model.json", "models/classical_ga.json"]]
   };
   for (const [id, [placeholder, kinds, artifact]] of Object.entries(sets)) {
     const item = $(id), current = item.value;
     const entries = jobs.filter((job) => [kinds].flat().includes(job.kind) && [artifact].flat().some((name) => job.artifacts.includes(name)));
     item.replaceChildren(new Option(placeholder, ""), ...entries.map((job) => {
       const option = new Option(labels[job.kind] + " · " + new Date(job.created_at).toLocaleString(), job.id);
+      if (job.kind === "search") {
+        option.dataset.search = "true";
+        option.dataset.horizon = 6;
+      }
       if (job.forecast_horizon) option.dataset.horizon = job.forecast_horizon;
       return option;
     }));
@@ -423,6 +429,7 @@ async function refresh() {
 
 function options() {
   return {
+    sequence_search: $("sequence-search").checked, search_model: $("search-model").value,
     model: $("model").value, dataset: $("dataset").value, session: $("session").value,
     architecture: $("architecture").value, width: Number($("width").value),
     seed: Number($("joint-seed").value), epochs: Number($("epochs").value), steps: Number($("steps").value),

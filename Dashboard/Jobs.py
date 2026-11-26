@@ -57,6 +57,9 @@ RESEARCH_ARTIFACTS = {
     "search": {"report.json"},
     "quantile_train": {"report.json"},
 }
+SEARCH_MODELS = ("fixed", "random", "classical_ga", "quantum_inspired", "hybrid_amplitude")
+ARTIFACTS["search"].update(f"models/{method}.json" for method in SEARCH_MODELS)
+
 DATASET_INPUTS = {"train", "direct_train", "quantile_train", "benchmark", "search"}
 IN_PROGRESS = {"queued", "running"}
 FINAL = {"complete", "failed", "cancelled", "interrupted"}
@@ -203,7 +206,12 @@ class Jobs:
         if kind in {"forecast", "field"}:
             identifier = raw.get("model")
             candidate = self.store.get(identifier) if isinstance(identifier, str) else None
-            if candidate is not None and candidate.kind == "quantile_train":
+            if candidate is not None and candidate.kind == "search":
+                method = self._choice(raw, "search_model", "classical_ga", SEARCH_MODELS)
+                settings["model_artifact"] = f"models/{method}.json"
+                self._linked(identifier, {"search"}, settings["model_artifact"])
+                settings["steps"] = self._number(raw, "steps", 6, (1, 6))
+            elif candidate is not None and candidate.kind == "quantile_train":
                 self._linked(identifier, {"quantile_train"}, "quantile-model.json")
                 limit = candidate.options["horizon"]
                 settings["steps"] = self._number(raw, "steps", limit, (1, limit))
@@ -254,6 +262,10 @@ class Jobs:
                 raise ValueError("Mark the dataset as synthetic or observational")
             settings["synthetic"] = synthetic
         if kind == "search":
+            sequence = raw.get("sequence_search", False)
+            if type(sequence) is not bool:
+                raise ValueError("Sequence search must be a boolean")
+            settings["sequence_search"] = sequence
             settings["population"] = self._number(raw, "population", 4, (2, 8))
             settings["generations"] = self._number(raw, "generations", 3, (1, 10))
             settings["candidate_epochs"] = self._number(raw, "candidate_epochs", 6, (1, 20))
@@ -291,10 +303,13 @@ class Jobs:
                     "--horizon", opts["horizon"], "--seeds", *opts["seeds"]]
             return args + (["--synthetic"] if opts["synthetic"] else [])
         if kind == "search":
-            return ["experiments.py", data, "--epochs", opts["epochs"], "--random-baseline",
+            args = ["experiments.py", data, "--epochs", opts["epochs"], "--random-baseline",
                     "--population", opts["population"], "--generations", opts["generations"],
                     "--candidate-epochs", opts["candidate_epochs"], "--seed", opts["seed"],
                     "--search-directory", folder / "search"]
+            if opts.get("sequence_search"):
+                args += ["--sequence-space", "--export-selected", folder / "models"]
+            return args
         if kind == "direct_train":
             return ["direct_forecast.py", "train", data, folder / "direct-model.json", "--epochs", opts["epochs"],
                     "--horizon", opts["horizon"], "--width", opts["width"], "--architecture", opts["architecture"]]
@@ -325,7 +340,7 @@ class Jobs:
             if "steps" not in opts:
                 model = self._linked(opts["model"], {"direct_train"}, "direct-model.json")
                 return ["direct_forecast.py", "predict", data, model, folder / "forecast.csv"]
-            model = self._linked(opts["model"], {"train"}, "model.json")
+            model = self._linked(opts["model"], {candidate.kind}, opts.get("model_artifact", "model.json"))
             return ["forecast.py", data, model, "--steps", opts["steps"]]
         source = self._linked(opts["session"], {"live", "replay"}, "session/readings.jsonl")
         if kind == "health":
@@ -333,7 +348,7 @@ class Jobs:
         candidate = self.store[opts["model"]]
         artifact = {"direct_train": "direct-model.json", "quantile_train": "quantile-model.json"}.get(
             candidate.kind, "model.json")
-        model = self._linked(opts["model"], {candidate.kind}, artifact)
+        model = self._linked(opts["model"], {candidate.kind}, opts.get("model_artifact", artifact))
         return ["Pipeline.py", "forecast-session", source, config, folder / "inference",
                 "--checkpoint", model, "--steps", opts["steps"]]
 

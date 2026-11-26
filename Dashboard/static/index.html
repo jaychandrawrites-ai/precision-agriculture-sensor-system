@@ -78,6 +78,12 @@
       <label id="horizon-label" hidden>Output horizon in hours<input id="horizon" type="number" min="1" max="72" value="12"></label>
       <label id="seeds-label" hidden>Seeds separated by commas<input id="seeds" type="text" value="42,43,44"></label>
       <label id="synthetic-label" class="check" hidden><input id="synthetic" type="checkbox"> Synthetic benchmark data</label>
+      <label id="sequence-search-label" class="check" hidden><input id="sequence-search" type="checkbox"> Train and save sequence search models</label>
+      <label id="search-model-label" hidden>Search model<select id="search-model">
+        <option value="classical_ga">Classical genetic algorithm</option><option value="random">Random search</option>
+        <option value="fixed">Fixed baseline</option><option value="quantum_inspired">Amplitude search</option>
+        <option value="hybrid_amplitude">Hybrid amplitude search</option>
+      </select></label>
       <label id="population-label" hidden>Candidate population<input id="population" type="number" min="2" max="8" value="4"></label>
       <label id="generations-label" hidden>Generations<input id="generations" type="number" min="1" max="10" value="3"></label>
       <label id="candidate-epochs-label" hidden>Epochs per candidate<input id="candidate-epochs" type="number" min="1" max="20" value="6"></label>
