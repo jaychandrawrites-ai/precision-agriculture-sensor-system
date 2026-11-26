@@ -47,6 +47,7 @@ class CalendarColumns:
     day_of_year: str
     hour: str
     hour_encoding: str = "0-23"
+    hhmm: bool = False
 
     def __post_init__(self):
         if self.hour_encoding not in ("0-23", "1-24"):
@@ -174,6 +175,10 @@ def _calendar_timestamps(frame, calendar):
     if not all(column.str.fullmatch(r"[0-9]+").all() for column in columns):
         raise ValueError("Calendar timestamp components must be integers")
     year, day, hour = [column.astype(int).to_numpy() for column in columns]
+    if calendar.hhmm:
+        if (hour % 100 != 0).any():
+            raise ValueError("Expected whole-hour HHMM records")
+        hour = hour // 100
     midnight = pd.DatetimeIndex(pd.to_datetime(year.astype(str), format="%Y"))
     maximum_day = np.where(midnight.is_leap_year, 366, 365)
     minimum_hour = 0 if calendar.hour_encoding == "0-23" else 1

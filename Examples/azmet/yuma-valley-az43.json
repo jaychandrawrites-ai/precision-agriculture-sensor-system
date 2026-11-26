@@ -1,0 +1,19 @@
+{
+  "station_id": "az43",
+  "source_label": "Supplied AZMET Yuma Valley ETo hourly export",
+  "schema": {
+    "calendar": {"year": "date_year", "day_of_year": "date_doy", "hour": "date_hour", "hour_encoding": "1-24", "hhmm": true},
+    "timezone": "America/Phoenix",
+    "missing": ["", "NA"],
+    "convention": "end",
+    "columns": {
+      "air_temperature_c": {"source": "temp_airC", "unit": "C"},
+      "relative_humidity_pct": {"source": "relative_humidity", "unit": "%"},
+      "shortwave_w_m2": {"source": "sol_rad_total", "unit": "MJ/m2/hour"},
+      "wind_m_s": {"source": "wind_spd_mps", "unit": "m/s"},
+      "precipitation_mm": {"source": "precip_total", "unit": "mm/hour"}
+    }
+  },
+  "reference_et": {"solar_offset_minutes": -420},
+  "scenario": {"rain_interception_fraction": 0.05, "scenario_irrigation_mm": 0, "missing_precipitation_scenario_mm": 0}
+}

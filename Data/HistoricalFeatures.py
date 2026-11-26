@@ -15,7 +15,8 @@ from Physics.Soil.WaterStress import stress_coefficient
 
 
 def historical_features(weather, assumptions, reference_et, *, rain_interception_fraction,
-                        scenario_irrigation_mm=None, initial_leaf_wetness=0.0):
+                        scenario_irrigation_mm=None, initial_leaf_wetness=0.0,
+                        missing_precipitation_scenario_mm=None):
     check_hourly_configuration(reference_et, assumptions)
     if not 0 <= rain_interception_fraction <= 1 or not 0 <= initial_leaf_wetness <= 1:
         raise ValueError("Leaf interception and initial wetness must be fractions")
@@ -34,12 +35,20 @@ def historical_features(weather, assumptions, reference_et, *, rain_interception
     flags["soil_restart"] = False
     flags["reference_et_unavailable"] = False
 
+    if missing_precipitation_scenario_mm is not None and (
+            not np.isfinite(missing_precipitation_scenario_mm) or missing_precipitation_scenario_mm < 0):
+        raise ValueError("Invalid explicit precipitation scenario")
+    flags["scenario_precipitation"] = False
     for timestamp, row in weather.values.iterrows():
         air, rh = row["air_temperature_c"], row["relative_humidity_pct"]
         eto = reference.advance(timestamp, air)
         if not np.isfinite(eto):
             flags.loc[timestamp, "reference_et_unavailable"] = True
         wind, solar, rain = row["wind_m_s"], row["shortwave_w_m2"], row["precipitation_mm"]
+        if (missing_precipitation_scenario_mm is not None
+                and flags.at[timestamp, "missing:precipitation_mm"] and not flags.at[timestamp, "missing_hour"]):
+            rain = missing_precipitation_scenario_mm
+            flags.at[timestamp, "scenario_precipitation"] = True
         irrigation = row["irrigation_mm"] if mapped_irrigation else scenario_irrigation_mm
         lwi = eta = stress = np.nan
         if np.isfinite([air, rh, wind, solar, rain]).all():
@@ -72,7 +81,8 @@ def historical_features(weather, assumptions, reference_et, *, rain_interception
                   "reference_et": asdict(reference_et),
                   "scenario": {"rain_interception_fraction": rain_interception_fraction,
                                "initial_leaf_wetness": initial_leaf_wetness,
-                               "constant_irrigation_mm_per_hour": scenario_irrigation_mm},
+                               "constant_irrigation_mm_per_hour": scenario_irrigation_mm,
+                               "missing_precipitation_scenario_mm": missing_precipitation_scenario_mm},
                   "feature_origin": dict(zip(FEATURES, (
                       "source_or_flagged_causal_fill", "source_or_flagged_causal_fill",
                       "simulated_leaf_ode", "estimated_hargreaves",
