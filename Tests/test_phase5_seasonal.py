@@ -71,3 +71,14 @@ class SeasonalTests(unittest.TestCase):
         self.assertEqual(final["point"].shape, (12, 6))
         self.assertTrue(final["used_current_state"].all())
         self.assertTrue((final["lower"] <= final["point"]).all())
+
+    def test_paired_blocks_preserve_known_effect_across_leads(self):
+        from Utils.Bootstrap import paired_calendar_blocks
+
+        targets = np.zeros((960, 3, 1))
+        result = paired_calendar_blocks(targets + 1, targets + 2, targets,
+                                        self.times, block_hours=24, draws=1200)
+        self.assertEqual(result["blocks"], 40)
+        self.assertEqual(result["family_size"], 3)
+        np.testing.assert_array_equal(result["family_lower"], -1)
+        np.testing.assert_array_equal(result["family_upper"], -1)

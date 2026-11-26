@@ -17,6 +17,7 @@ from Temporal.BlockIntervals import BlockIntervals, separated_indices
 from Temporal.Direct import fit_direct
 from Temporal.SeasonalCheckpoint import save_ensemble, save_member
 from Temporal.Seasonality import ConvexCorrection, DailyClimatology, HarmonicRegression, SeasonalLookup
+from Utils.Bootstrap import seasonal_temperature_comparison
 from Utils.Metrics import horizon_metrics
 from Utils.Serialization import atomic_output, write_json
 
@@ -151,6 +152,9 @@ def compare(values, times, cutoffs, settings, seeds, *, horizon=72, width=32, no
             "seeds": seeds, "harmonic_design_condition": condition, "validation_blend_weights": blend.weight,
             "fit_seconds": runtimes, "fit_diagnostics": diagnostics, "scores": scores,
             "uncertainty": uncertainty,
+            "paired_calendar_comparison": seasonal_temperature_comparison(
+                base[3]["validation_blend"], base[3]["daily"], test.targets, origin_test
+            ),
             "inference_history": {"direct_hours": 3, "daily_lookup_hours": 24, "weekly_lookup_hours": 168,
                                   "missing_seasonal_slot": "fallback_to_current_state"}}
 

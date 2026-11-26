@@ -8,6 +8,7 @@ import numpy as np
 from Data.Preprocessing import read_hourly
 from Data.RolloutWindows import evaluation_windows
 from Temporal.SeasonalCheckpoint import load_seasonal
+from Utils.Bootstrap import seasonal_temperature_comparison
 from Utils.Metrics import horizon_metrics
 from Utils.Serialization import write_json
 
@@ -27,6 +28,7 @@ def evaluate_transfer(ensemble, values, times):
                        for key, value in predictions.items()},
             "transferred_interval_diagnostics": ensemble.intervals.score(estimate, windows.targets, origins),
             "adapted_on_target_station": False,
+            "paired_calendar_comparison": seasonal_temperature_comparison(estimate, daily, windows.targets, origins),
             "interval_calibration": "inherited from source station, without a transfer coverage guarantee"}
 
 
