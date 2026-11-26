@@ -1,5 +1,6 @@
 """Check AI Trace segments, forecast from saved models, or map survey observations."""
 import argparse
+from hashlib import sha256
 from pathlib import Path
 
 from Acquisition.AITrace import TraceStore
@@ -23,6 +24,8 @@ def main():
         elif name == "ensemble-map":
             command.add_argument("--forecast-report", type=Path, required=True)
             command.add_argument("--adaptive", type=Path)
+            command.add_argument("--predictive", type=Path)
+            command.add_argument("--physical-artifacts", type=Path)
             command.add_argument("--origin", required=True)
             command.add_argument("--steps", type=int, default=6)
         elif name == "forecast-map":
@@ -39,9 +42,27 @@ def main():
     args = parser.parse_args()
     store = TraceStore(args.root, recover=False)
     if args.command == "ensemble-map":
+        predictive = read_json(args.predictive) if args.predictive else None
+        if args.physical_artifacts:
+            if predictive is None:
+                parser.error("--physical-artifacts requires --predictive")
+            import numpy as np
+            report = read_json(args.physical_artifacts / "report.json")
+            with np.load(args.physical_artifacts / "trajectories.npz", allow_pickle=False) as payload:
+                predictive["physical"] = {
+                    **{key: report[key] for key in ("issue_at", "features", "checkpoint_sha256", "draw_ids")},
+                    "sites": report["site_axis"], "forecasts": payload["forecasts"][:, :, :args.steps],
+                    "provenance": {
+                        "report_sha256": sha256((args.physical_artifacts / "report.json").read_bytes()).hexdigest(),
+                        "parameter_scenarios": report["parameter_scenarios"],
+                        "parameter_draws": report["parameter_draws"],
+                        "latent_correlation_assumption": report["latent_correlation_assumption"],
+                    },
+                }
         arrays, result = ensemble_forecast_maps(store, args.survey_id, read_json(args.forecast_report),
                                                 args.origin, steps=args.steps,
-                                                adaptive=read_json(args.adaptive) if args.adaptive else None)
+                                                adaptive=read_json(args.adaptive) if args.adaptive else None,
+                                                predictive=predictive)
         write_arrays(args.output.with_suffix(".npz"), **arrays)
     elif args.command == "map":
         result = observational_map(store, args.survey_id, args.feature, args.timestamp,

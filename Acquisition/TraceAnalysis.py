@@ -280,7 +280,7 @@ def _forecast_sites(store, survey_id, report, feature, valid_at, origin, gps_min
     return points, samples, issued, valid, lead, len(locations) - len(samples)
 
 
-def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probability=.9, grid_size=25, adaptive=None):
+def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probability=.9, grid_size=25, adaptive=None, predictive=None):
     """Propagate shared model draws, keeping site, lead and feature dependencies."""
     from spatial_forecast import ensemble_maps, interpolation_weights
 
@@ -324,10 +324,53 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
         "weight_axes": ["north", "east", "site"],
         "interpretation": "propagated empirical model disagreement; field coverage is unverified",
     }
+    default_bounds = [grid.east[0], grid.north[0], grid.east[-1], grid.north[-1]]
     if adaptive is not None:
         from Spatial.EnsembleRefinement import adaptive_ensemble
-        default_bounds = [grid.east[0], grid.north[0], grid.east[-1], grid.north[-1]]
         arrays, metadata["adaptive"] = adaptive_ensemble(
             xy, members, adaptive.get("bounds_m", default_bounds), adaptive, probability)
         result.update(arrays)
+    if adaptive is not None and "variational" in adaptive:
+        from Spatial.SurveyUncertainty import variational_trajectories
+
+        options = {**adaptive, **adaptive["variational"]}
+        options["refinement"] = adaptive["variational"].get("refinement", {})
+        arrays, metadata["variational"] = variational_trajectories(
+            xy, members, options.get("bounds_m", default_bounds), options, probability)
+        result.update(arrays)
+    if predictive is not None:
+        from Spatial.SurveyUncertainty import predictive_fields
+
+        settings = dict(predictive)
+        provenance = [{"checkpoint_sha256": sha, "physical_scenario_id": None} for sha in hashes]
+        physical = settings.pop("physical", None)
+        if physical is not None:
+            if (_aware(physical["issue_at"]) != issued or physical["sites"] != ids
+                    or list(physical["features"]) != list(FEATURES)
+                    or physical["checkpoint_sha256"] not in hashes):
+                raise ValueError("Physical forecasts must match the survey site order, issue, features and checkpoint")
+            forecasts = np.asarray(physical["forecasts"], dtype=float)
+            draw_ids = physical["draw_ids"]
+            if (forecasts.ndim != 4 or forecasts.shape[1:] != members.shape[1:]
+                    or not len(forecasts) or len(draw_ids) != len(forecasts) or len(set(draw_ids)) != len(draw_ids)):
+                raise ValueError("Invalid aligned physical forecast scenarios")
+            settings["member_probabilities"] = [1 / len(hashes)] * len(hashes)
+            settings["member_probabilities"][hashes.index(physical["checkpoint_sha256"])] = 0.
+            settings["member_probabilities"].extend([1 / (len(hashes) * len(forecasts))] * len(forecasts))
+            members = np.concatenate((members, forecasts))
+            provenance.extend({"checkpoint_sha256": physical["checkpoint_sha256"],
+                               "physical_scenario_id": key} for key in draw_ids)
+        if "residuals" in settings:
+            origins = [_aware(value) for value in settings["residual_origins"]]
+            if (settings.get("residual_sites") != ids or len(origins) < 2
+                    or any(b - a < timedelta(hours=steps) for a, b in zip(origins, origins[1:]))
+                    or origins[-1] + timedelta(hours=steps) > issued):
+                raise ValueError("Residual calibration must match sites and use nonoverlapping pre-issue trajectories")
+        geometry = result.get("adaptive_centers_m", grid.points())
+        arrays, manifest = predictive_fields(xy, members, geometry, settings, probability)
+        result.update(arrays)
+        result["predictive_source_trajectories"] = members
+        result["predictive_site_xy_m"] = xy
+        metadata["predictive"] = {**manifest, "members": provenance,
+                                  "physical_provenance": physical.get("provenance") if physical else None}
     return result, metadata

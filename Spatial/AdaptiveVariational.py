@@ -177,7 +177,7 @@ def _prolong(previous, cells, fallback):
 
 
 def adaptive_variational(bounds, points, values, settings=VariationalRefinement(), *,
-                         measurement_variance=None, hard=False, polygon=None, holes=(), uncertainty=None):
+                         measurement_variance=None, hard=False, polygon=None, holes=(), uncertainty=None, _frozen_cells=None):
     """Coarse-to-fine reconstruction with budgeted, selective reoptimization.
 
     Mesh leaves are cell-average unknowns. Point observations constrain the
@@ -211,6 +211,8 @@ def adaptive_variational(bounds, points, values, settings=VariationalRefinement(
     mesh = _Mesh(bounds, settings.max_depth)
     depth = settings.initial_depth
     leaves = [(depth, east, north) for north in range(1 << depth) for east in range(1 << depth)]
+    if _frozen_cells is not None:
+        leaves = list(_frozen_cells)
     backend = create_backend(dtype="float64")
     previous = {}
     history = []
@@ -317,7 +319,7 @@ def adaptive_variational(bounds, points, values, settings=VariationalRefinement(
         eligible = sorted((index for index in reasons if leaves[index][0] < settings.max_depth),
                           key=lambda index: (-max(reasons[index].values()), leaves[index]))
         capacity = (settings.max_cells - len(leaves)) // 3
-        selected = set(eligible[:capacity])
+        selected = set(eligible[:capacity]) if _frozen_cells is None else set()
         record["eligible_refinements"] = len(eligible)
         record["refinements"] = len(selected) if cycle + 1 < settings.max_cycles else 0
         record["budget_limited"] = len(eligible) - len(selected)
@@ -334,7 +336,7 @@ def adaptive_variational(bounds, points, values, settings=VariationalRefinement(
     output = []
     for index, (cell, box, kind) in enumerate(zip(leaves, boxes, kinds)):
         solution = solved.get(cell)
-        output.append({"bounds_m": box.tolist(), "depth": cell[0], "inside": solution is not None,
+        output.append({"bounds_m": box.tolist(), "mesh_index": list(cell), "depth": cell[0], "inside": solution is not None,
                        "geometry": kind, "center_mean": None if solution is None else solution["value"],
                        "gradient": None if solution is None else solution["slope"],
                        "predictive_std": None if solution is None else solution["uncertainty"],
