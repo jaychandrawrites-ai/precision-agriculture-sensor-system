@@ -138,3 +138,29 @@ class SurveyUncertaintyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "require kriging"):
             predictive_fields(*args, {**settings, "covariance_scenarios": [{}]}, .9,
                               operator=mesh["variational_weights"])
+
+    def test_disk_backed_draws_fit_a_smaller_budget_and_export(self):
+        from Spatial.SurveyUncertainty import predictive_fields
+        from Utils.Serialization import write_arrays
+
+        points = np.array([[0., 0.], [1., 1.]])
+        members = np.arange(48., dtype=float).reshape(2, 2, 2, 6)
+        queries = np.column_stack((np.linspace(0, 1, 80), np.zeros(80)))
+        args = points, members, queries
+        settings = {"method": "idw", "draws": 100, "feature_scales": [1.] * 6}
+        reference, _ = predictive_fields(*args, settings, .9)
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            low_memory = {**settings, "memory_bytes": 200_000}
+            with self.assertRaisesRegex(ValueError, "working memory budget"):
+                predictive_fields(*args, low_memory, .9)
+            arrays, manifest = predictive_fields(*args, low_memory, .9, draw_path=root / "draws.npy")
+            self.assertEqual(manifest["draw_storage"], "disk_backed")
+            mapping = arrays["predictive_draws"]
+            try:
+                write_arrays(root / "export.npz", **arrays)
+                with np.load(root / "export.npz") as loaded:
+                    for key in reference:
+                        np.testing.assert_allclose(reference[key], loaded[key])
+            finally:
+                mapping._mmap.close()

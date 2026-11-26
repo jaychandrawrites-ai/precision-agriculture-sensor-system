@@ -2,10 +2,26 @@
 import argparse
 from hashlib import sha256
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from Acquisition.AITrace import TraceStore
 from Acquisition.TraceAnalysis import ensemble_forecast_maps, forecast_map, observational_map, survey_forecasts
 from Utils.Serialization import read_json, write_arrays, write_json
+
+
+
+def _export_maps(args, store, predictive, physical_sources, draw_path):
+    arrays, manifest = ensemble_forecast_maps(
+        store, args.survey_id, read_json(args.forecast_report), args.origin, steps=args.steps,
+        adaptive=read_json(args.adaptive) if args.adaptive else None, predictive=predictive,
+        physical_sources=physical_sources, draw_path=draw_path)
+    try:
+        write_arrays(args.output.with_suffix(".npz"), **arrays)
+    finally:
+        if draw_path is not None:
+            # Windows cannot remove the staging file while its mapping is open.
+            arrays.pop("predictive_draws")._mmap.close()
+    write_json(args.output, manifest)
 
 
 def main():
@@ -25,6 +41,7 @@ def main():
             command.add_argument("--forecast-report", type=Path, required=True)
             command.add_argument("--adaptive", type=Path)
             command.add_argument("--predictive", type=Path)
+            command.add_argument("--disk-backed", action="store_true", help="Stage predictive draws on disk")
             command.add_argument("--physical-artifacts", type=Path)
             command.add_argument("--physical-scenarios", type=Path)
             command.add_argument("--physical-checkpoint", type=Path)
@@ -71,11 +88,14 @@ def main():
             physical_sources = {"scenarios": read_json(args.physical_scenarios),
                                 "checkpoint": args.physical_checkpoint,
                                 "field_configuration": read_json(args.field_configuration)}
-        arrays, result = ensemble_forecast_maps(store, args.survey_id, read_json(args.forecast_report),
-                                                args.origin, steps=args.steps,
-                                                adaptive=read_json(args.adaptive) if args.adaptive else None,
-                                                predictive=predictive, physical_sources=physical_sources)
-        write_arrays(args.output.with_suffix(".npz"), **arrays)
+        if args.disk_backed and predictive is None:
+            parser.error("--disk-backed requires --predictive")
+        if args.disk_backed:
+            with TemporaryDirectory(prefix=".jupiter-draws-", dir=args.output.parent) as staging:
+                _export_maps(args, store, predictive, physical_sources, Path(staging) / "draws.npy")
+        else:
+            _export_maps(args, store, predictive, physical_sources, None)
+        return
     elif args.command == "map":
         result = observational_map(store, args.survey_id, args.feature, args.timestamp,
                                    args.window_minutes, args.clock)

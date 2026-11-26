@@ -282,7 +282,7 @@ def _forecast_sites(store, survey_id, report, feature, valid_at, origin, gps_min
     return points, samples, issued, valid, lead, len(locations) - len(samples)
 
 
-def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probability=.9, grid_size=25, adaptive=None, predictive=None, physical_sources=None):
+def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probability=.9, grid_size=25, adaptive=None, predictive=None, physical_sources=None, draw_path=None):
     """Propagate shared model draws, keeping site, lead and feature dependencies."""
     from spatial_forecast import ensemble_maps, interpolation_weights
 
@@ -386,7 +386,7 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
                     raise ValueError("Fixed variational prediction requires equal initial_depth and max_depth")
             geometry = result["variational_centers_m"]
             operator = result["variational_weights"]
-        arrays, manifest = predictive_fields(xy, members, geometry, settings, probability, operator=operator)
+        arrays, manifest = predictive_fields(xy, members, geometry, settings, probability, operator=operator, draw_path=draw_path)
         result.update(arrays)
         result["predictive_source_trajectories"] = members
         result["predictive_site_xy_m"] = xy

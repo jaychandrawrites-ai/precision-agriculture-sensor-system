@@ -8,7 +8,7 @@ from Spatial.FieldDomain import FieldDomain
 from Spatial.Kriging import CovarianceModel, KrigingModel
 
 
-def predictive_fields(points, members, geometry, settings, mass, *, operator=None):
+def predictive_fields(points, members, geometry, settings, mass, *, operator=None, draw_path=None):
     """Sample a scenario once per trajectory and export its full provenance.
 
     Member values are latent site forecasts. The nugget conditions the field
@@ -56,8 +56,19 @@ def predictive_fields(points, members, geometry, settings, mass, *, operator=Non
             or (weights <= 0).any()
             or type(draws) is not int or draws < 2 or not 1 <= n <= 1024
             or type(budget) is not int or budget <= 0
-            or 8 * (4 * draws * len(queries) * leads * features + 12 * n**2 + 4 * sites**2) > budget):
+):
         raise ValueError("Invalid covariance weights, field geometry or memory budget")
+    cells = len(queries)
+    chunk = settings.get("chunk_cells", 32)
+    if type(chunk) is not int or chunk < 1:
+        raise ValueError("chunk_cells must be a positive integer")
+    fixed_bytes = 8 * (2 * draws * sites * leads * features + 8 * leads * cells * features
+                       + (12 * n**2 + 4 * sites**2 + 4 * n * sites if scenarios else 0))
+    if draw_path is None:
+        fixed_bytes += 8 * draws * leads * cells * features
+    chunk = min(chunk, n, (budget - fixed_bytes) // (32 * draws * leads * features))
+    if chunk < 1:
+        raise ValueError("Predictive working memory budget cannot fit one cell chunk")
     active = queries[inside]
     scales = np.asarray(settings["feature_scales"], dtype=float)
     if scales.shape != (features,) or not np.isfinite(scales).all() or (scales <= 0).any():
@@ -76,11 +87,14 @@ def predictive_fields(points, members, geometry, settings, mass, *, operator=Non
     site_draws = members[member_ids].copy()
     if residuals.size:
         site_draws += residuals[residual_ids]
-    field = np.full((draws, leads, len(queries), features), np.nan)
+    shape = (draws, leads, cells, features)
+    if draw_path is None:
+        field = np.full(shape, np.nan)
+    else:
+        field = np.lib.format.open_memmap(draw_path, mode="w+", dtype=np.float64, shape=shape)
+        for index in range(draws):
+            field[index].fill(np.nan)
     report = []
-    chunk = settings.get("chunk_cells", 32)
-    if type(chunk) is not int or chunk < 1:
-        raise ValueError("chunk_cells must be a positive integer")
     indices = np.flatnonzero(inside)
     if method != "kriging":
         for start in range(0, len(indices), chunk):
@@ -128,7 +142,9 @@ def predictive_fields(points, members, geometry, settings, mass, *, operator=Non
     arrays.update(predictive_draws=field, predictive_inside=inside, predictive_centers_m=queries,
                   predictive_site_draws=site_draws, predictive_member_index=member_ids,
                   predictive_residual_index=residual_ids, predictive_covariance_index=chosen)
-    return arrays, {"method": method, "chunk_cells": chunk, "seed": seed, "draws": draws, "covariance_scenarios": report,
+    if draw_path is not None:
+        field.flush()
+    return arrays, {"draw_storage": "disk_backed" if draw_path is not None else "memory", "method": method, "chunk_cells": chunk, "seed": seed, "draws": draws, "covariance_scenarios": report,
                     "residual_origins": origins, "axes": ["draw", "lead", "cell", "feature"],
                     "draw_weight": 1 / draws, "member_probabilities": member_weights, "site_axis_count": sites,
                     "assumptions": (["independent scenario, member and residual selections",
