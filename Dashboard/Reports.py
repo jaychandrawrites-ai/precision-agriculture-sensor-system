@@ -118,7 +118,9 @@ def research_report(path, kind):
         result["search"] = {name: {key: details[key] for key in
                                   ("parameters", "candidate_count", "candidate_model_sample_steps",
                                    "candidate_parameter_sample_steps", "generations",
-                                   "validation_pareto_front", "winning_bits", "hidden", "skips")
+                                   "validation_pareto_front", "winning_bits", "hidden", "skips",
+                                   "candidate_parameter_count", "actual_sample_steps",
+                                   "actual_parameter_sample_steps", "architecture", "selected", "saved_model")
                                   if key in details}
                             for name, details in methods.items()}
         result["protocol"] = report.get("protocol", {})

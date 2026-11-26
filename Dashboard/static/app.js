@@ -284,9 +284,19 @@ function renderResult() {
       report(data.calibration);
     } else if (view === "search") {
       const rows = Object.entries(data.search);
-      table(["Method", "Parameters", "Candidates", "Sample steps", "Parameter sample steps", "Winning bits"],
-        rows.map(([name, item]) => [name, item.parameters, item.candidate_count, item.candidate_model_sample_steps,
-          item.candidate_parameter_sample_steps, item.winning_bits?.join("")]));
+      const fronts = rows.flatMap(([name, item]) => (item.validation_pareto_front || [])
+        .filter((candidate) => candidate.architecture)
+        .map((candidate) => [name, candidate.architecture.family, candidate.validation_loss,
+          candidate.parameter_count, candidate.parameter_sample_steps, candidate.prediction_batch_seconds,
+          candidate.estimated_training_bytes]));
+      if (fronts.length) {
+        table(["Method", "Architecture", "Validation loss", "Parameters", "Parameter sample steps",
+          "Prediction batch seconds", "Estimated training bytes"], fronts);
+      } else {
+        table(["Method", "Parameters", "Candidates", "Sample steps", "Parameter sample steps", "Winning bits"],
+          rows.map(([name, item]) => [name, item.parameters, item.candidate_count, item.candidate_model_sample_steps,
+            item.candidate_parameter_sample_steps, item.winning_bits?.join("")]));
+      }
       const traces = Object.fromEntries(rows.filter(([, item]) => item.generations?.length)
         .map(([name, item]) => [name, item.generations.map((record) => record.best_selection_score)]));
       chart(traces, "Best validation selection score", "Generation");
