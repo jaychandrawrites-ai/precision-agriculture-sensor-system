@@ -906,3 +906,7 @@ chunk-size equivalence checks. Dense draw storage remains budget-limited.
 variance decomposition within and between drawn covariance scenarios.
 Thirteen focused spatial tests passed, including reproducibility and the
 empirical total-variance identity. Measured field validation remains open.
+
+The Chromium-enabled full suite at `2be8e9e` ran 166 tests, with 164
+passes and two CUDA skips. The subsequent variance diagnostic passed
+all 13 focused spatial tests at `f986d24`.
