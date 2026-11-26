@@ -1,6 +1,6 @@
 """Optional direct forecast models using three observed states in time order."""
 from Framework.Layers import ActivationLayer, Dense, Layer, Residual, Sequential
-from Framework.SequenceLayers import Conv1D, GRU, LayerNorm, MultiHeadAttention, SinusoidalPosition
+from Framework.SequenceLayers import Conv1D, GRU, LSTM, LayerNorm, MultiHeadAttention, SinusoidalPosition
 
 
 class RestoreHistory(Layer):
@@ -38,6 +38,12 @@ class SequenceForecastModel(Sequential):
         layers = [RestoreHistory()]
         if architecture == "gru":
             layers.append(GRU(backend, 6, width))
+        elif architecture in ("lstm", "lstm_attention"):
+            layers.append(LSTM(backend, 6, width))
+            if architecture == "lstm_attention":
+                layers.extend((SinusoidalPosition(backend),
+                               Residual(MultiHeadAttention(backend, width, 2)),
+                               LayerNorm(backend, width)))
         elif architecture == "convolution":
             layers.extend((Conv1D(backend, 6, width, 2),
                            ActivationLayer(backend, "tanh"),

@@ -303,3 +303,83 @@ class GRU(Layer):
             self.input_weights.grad += x.reshape(-1, self.inputs).T @ flat
             self.bias.grad += flat.sum(axis=0)
             return terms @ self.input_weights.value.T, state_grad
+
+
+@dataclass(frozen=True)
+class LSTMStep:
+    hidden: object
+    cell: object
+    write: object
+    keep: object
+    show: object
+    candidate: object
+    cell_output: object
+
+
+class LSTM(Layer):
+    """Causal LSTM with explicit hidden and cell adjoints across time."""
+
+    def __init__(self, backend, inputs, hidden, initializer=None):
+        if min(inputs, hidden) < 1:
+            raise ValueError("LSTM input and hidden sizes must be positive")
+        self.backend, self.inputs, self.hidden = backend, inputs, hidden
+        init = initializer or Initialization("xavier_uniform")
+        self.input_weights = Parameter(initialize((inputs, 4 * hidden), backend, init),
+                                       backend.zeros((inputs, 4 * hidden)), "input_weights")
+        self.state_weights = Parameter(initialize((hidden, 4 * hidden), backend, init),
+                                       backend.zeros((hidden, 4 * hidden)), "state_weights")
+        self.bias = Parameter(backend.zeros((4 * hidden,)), backend.zeros((4 * hidden,)), "bias", False)
+        with backend.scope():
+            self.bias.value[hidden:2 * hidden] = 1
+        self.sigmoid = Sigmoid(backend)
+
+    def parameters(self):
+        return [self.input_weights, self.state_weights, self.bias]
+
+    def forward(self, x, training=True):
+        if x.ndim != 3 or x.shape[-1] != self.inputs or min(x.shape[:2]) < 1:
+            raise ValueError("LSTM input must be batch by time by features")
+        with self.backend.scope():
+            xp = self.backend.xp
+            self.backend.validate(x, "LSTM input")
+            hidden = xp.zeros((len(x), self.hidden), dtype=x.dtype)
+            memory = xp.zeros_like(hidden)
+            terms = x @ self.input_weights.value + self.bias.value
+            states, steps = [], []
+            for position in range(x.shape[1]):
+                i, f, o, g = xp.split(terms[:, position] + hidden @ self.state_weights.value, 4, axis=-1)
+                write, keep, show = (self.sigmoid.evaluate(gate) for gate in (i, f, o))
+                candidate = xp.tanh(g)
+                next_memory = keep * memory + write * candidate
+                displayed = xp.tanh(next_memory)
+                steps.append(LSTMStep(hidden, memory, write, keep, show, candidate, displayed))
+                hidden, memory = show * displayed, next_memory
+                states.append(hidden)
+            return self.backend.validate(xp.stack(states, axis=1)), (x, tuple(steps))
+
+    def backward(self, dy, cache):
+        x, steps = cache
+        if dy.shape != (*x.shape[:2], self.hidden):
+            raise ValueError("LSTM gradient shape mismatch")
+        with self.backend.scope():
+            xp = self.backend.xp
+            dh = xp.zeros_like(dy[:, 0])
+            dm = xp.zeros_like(dh)
+            terms = xp.empty((*dy.shape[:2], 4 * self.hidden), dtype=dy.dtype)
+            for position in reversed(range(dy.shape[1])):
+                step = steps[position]
+                h_grad = dy[:, position] + dh
+                m_grad = dm + h_grad * step.show * (1 - step.cell_output**2)
+                di = m_grad * step.candidate * step.write * (1 - step.write)
+                df = m_grad * step.cell * step.keep * (1 - step.keep)
+                do = h_grad * step.cell_output * step.show * (1 - step.show)
+                dg = m_grad * step.write * (1 - step.candidate**2)
+                local = xp.concatenate((di, df, do, dg), axis=-1)
+                terms[:, position] = local
+                self.state_weights.grad += step.hidden.T @ local
+                dh = local @ self.state_weights.value.T
+                dm = m_grad * step.keep
+            flat = terms.reshape(-1, terms.shape[-1])
+            self.input_weights.grad += x.reshape(-1, self.inputs).T @ flat
+            self.bias.grad += flat.sum(axis=0)
+            return terms @ self.input_weights.value.T

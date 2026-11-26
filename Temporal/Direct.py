@@ -13,7 +13,7 @@ from Temporal.Losses import regression_loss
 from Temporal.SequenceForecast import SequenceForecastModel
 
 
-DIRECT_ARCHITECTURES = ("gated", "gru", "convolution", "attention")
+DIRECT_ARCHITECTURES = ("gated", "gru", "convolution", "attention", "lstm", "lstm_attention")
 
 
 class DerivativeGain(Layer):
