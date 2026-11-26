@@ -125,8 +125,16 @@ class TraceBrowserTests(unittest.TestCase):
                             page.get_by_label("Ensemble field configuration").set_input_files(
                                 fixture / "field-settings.json")
                             page.get_by_label("Primary ensemble model").select_option("1" * 32)
-                            page.get_by_label("Additional models").select_option("2" * 32)
                             page.get_by_label("Forecast origin (local time)").fill("2020-07-02T07:00")
+                            page.get_by_label("Map center latitude").fill("0")
+                            page.get_by_label("Map center longitude").fill("0.0004")
+                            page.get_by_label("Map radius (m)").fill("80")
+                            page.get_by_role("button", name="Map Ensemble Forecast").click()
+                            expect(page.get_by_role("img", name="Diffusion forecast map")).to_be_visible()
+                            expect(page.locator("#trace-result")).to_contain_text("no flux")
+                            for label in ("Map center latitude", "Map center longitude", "Map radius (m)"):
+                                page.get_by_label(label).fill("")
+                            page.get_by_label("Additional models").select_option("2" * 32)
                             page.get_by_role("button", name="Map Ensemble Forecast").click()
                             expect(page.get_by_role("img", name="Ensemble forecast mean", exact=False)).to_be_visible()
                             expect(page.get_by_role("img", name="Ensemble model spread", exact=False)).to_be_visible()

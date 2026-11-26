@@ -1061,3 +1061,8 @@ full requirement crosswalk and real-world validation remain open.
 - Full local regression with Chromium passed 177 tests and skipped two CUDA
   tests. Separate software tests cover malformed and missing native fields,
   counter regression, original packet replay and circular mask behavior.
+
+Chromium exercised the new circular diffusion forecast at desktop and
+phone widths, including the no-flux diagnostic and switching back to
+ensemble uncertainty. The same forecast used the existing saved checkpoint
+loader. Main's CI trigger now includes direct pushes.
