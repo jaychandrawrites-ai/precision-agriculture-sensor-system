@@ -52,7 +52,7 @@ def _prepare_segment(records, configuration, started_at, ended_at):
             raise ValueError("Segment includes a restart or receiver boundary; record a new segment")
         if not row["measurements"] or "duplicate_packet" in row["flags"]:
             continue
-        if clock not in row or not start <= _aware(row[clock]) <= cutoff:
+        if row.get(clock) is None or not start <= _aware(row[clock]) <= cutoff:
             continue
         identities.add(row.get("device_id"))
         if row.get("boot_id") is not None:
@@ -125,7 +125,8 @@ def _measurement(value, field):
 def _coordinates(values, location, flags):
     invalid = any(flag.startswith(("invalid:gps", "incomplete:gps")) for flag in flags)
     if not invalid and all(_measurement(values.get(key), key) for key in ("latitude_deg", "longitude_deg")):
-        return values["latitude_deg"], values["longitude_deg"], "recorded_gps"
+        source = "manual_csv" if "manual_csv" in flags else "recorded_gps"
+        return values["latitude_deg"], values["longitude_deg"], source
     if location.get("coordinate_source") == "manual" and all(
         _measurement(location.get(key), key) for key in ("latitude_deg", "longitude_deg")
     ):
@@ -155,7 +156,7 @@ def observational_map(store, survey_id, feature, timestamp, window_minutes=60,
         for segment in location["segments"]:
             for record in store.segment_readings(survey_id, segment["id"]):
                 flags = record["flags"]
-                if clock not in record or "duplicate_packet" in flags or "previous_boot_packet" in flags:
+                if record.get(clock) is None or "duplicate_packet" in flags or "previous_boot_packet" in flags:
                     continue
                 observed, received = _aware(record[clock]), _aware(record["received_at"])
                 if not start < observed <= end or received > end:

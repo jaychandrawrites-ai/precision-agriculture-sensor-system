@@ -41,7 +41,9 @@ class TraceAnalysisTests(unittest.TestCase):
             session, _, config = session_fixture(directory, hours=32)
             readings = [json.loads(line) for line in (session / "readings.jsonl").read_text().splitlines()]
             store = MemoryStore()
-            store.add("synthetic complete", [readings])
+            incomplete = deepcopy(readings[12])
+            incomplete["observed_at"] = None
+            store.add("synthetic complete", [readings[:13] + [incomplete] + readings[13:]])
             store.add("synthetic revisit", [readings[:16], readings[16:]])
             adjacent_device = deepcopy(readings)
             adjacent_device[-1]["device_id"] = "other-synthetic-device"
@@ -111,7 +113,9 @@ class TraceAnalysisTests(unittest.TestCase):
                   latitude_deg=20.5, longitude_deg=19.0001, coordinate_source="manual")
         store.add("synthetic unavailable", [[row(46, 25, {})]])
         store.add("synthetic too old", [[row(7, 28, {"latitude_deg": 20.52, "longitude_deg": 19.0})]])
-        store.add("synthetic other reading", [[row(47, 29, {"latitude_deg": 20.501, "longitude_deg": 19.0})]])
+        imported = row(47, 29, {"latitude_deg": 20.501, "longitude_deg": 19.0})
+        imported["flags"].append("manual_csv")
+        store.add("synthetic other reading", [[imported]])
         result = observational_map(store, "synthetic", "air_temperature_c", "2020-07-01T02:50:00Z",
                                    15, clock="observed_at", grid_size=5)
         self.assertEqual(result["provenance"], "measured_window_composite")
@@ -120,6 +124,7 @@ class TraceAnalysisTests(unittest.TestCase):
         self.assertEqual(result["samples"][0]["sample_at"], "2020-07-01T02:40:00+00:00")
         self.assertEqual(result["samples"][1]["coordinate_source"], "manual_location")
         self.assertIn("segment_id", result["samples"][1])
+        self.assertEqual(result["samples"][2]["coordinate_source"], "manual_csv")
         self.assertNotIn("latitude_deg", str(result))
         self.assertEqual(len(result["estimate"]), 5)
         self.assertEqual(len(result["estimate"][0]), 5)
