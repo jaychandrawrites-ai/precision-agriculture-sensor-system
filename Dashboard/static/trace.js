@@ -1,0 +1,272 @@
+"use strict";
+
+const trace = {
+  token: document.querySelector('[name="jupiter-token"]').content,
+  id: "",
+  survey: null,
+  receiver: null,
+  busy: false,
+};
+const el = id => document.getElementById(id);
+const path = (id, action = "") => "/api/trace/" + encodeURIComponent(id) + (action ? "/" + action : "");
+const measurements = {
+  air_temperature_c: "Air temperature (°C)", relative_humidity_pct: "Relative humidity (%)",
+  soil_temperature_c: "Soil temperature (°C)", soil_moisture_pct: "Soil moisture (%)",
+  soil_ec_us_cm: "Soil conductivity (µS/cm)", soil_ph: "Soil pH", leaf_mv: "Leaf voltage (mV)",
+  gps_hdop: "GPS HDOP", gps_satellites: "GPS satellites",
+};
+
+async function request(url, payload) {
+  const headers = {"X-Jupiter-Token": trace.token};
+  const options = {headers};
+  if (payload !== undefined) {
+    options.method = "POST";
+    headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(payload);
+  }
+  const result = await fetch(url, options);
+  const content = await result.json();
+  if (!result.ok) throw new Error(content.error || "Trace request failed");
+  return content;
+}
+
+async function jsonFile(input, required = false) {
+  const file = input.files[0];
+  if (!file) {
+    if (required) throw new Error("Select a JSON file.");
+    return undefined;
+  }
+  if (file.size > 24 * 1024 * 1024) throw new Error("Selected file exceeds the 24 MB upload limit.");
+  return JSON.parse(await file.text());
+}
+
+async function base64File(file) {
+  if (!file || file.size > 24 * 1024 * 1024) throw new Error("Select a raw archive under 24 MB.");
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 16384) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 16384));
+  }
+  return btoa(binary);
+}
+
+function option(value, label) {
+  const item = document.createElement("option");
+  item.value = value;
+  item.textContent = label;
+  return item;
+}
+function text(tag, content) {
+  const node = document.createElement(tag);
+  node.textContent = content;
+  return node;
+}
+function setOptions(target, options, emptyLabel = "Select one") {
+  const selected = target.value;
+  target.replaceChildren(option("", emptyLabel), ...options.map(([value, label]) => option(value, label)));
+  if ([...target.options].some(item => item.value === selected)) target.value = selected;
+}
+function readout(target, entries) {
+  target.replaceChildren(...entries.flatMap(([label, value]) => [text("dt", label), text("dd", String(value))]));
+}
+function setDisabled(id, disabled) {
+  for (const control of el(id).querySelectorAll("input, select, button")) control.disabled = disabled;
+}
+function updateLink(id, query) {
+  if (trace.id) el(id).href = path(trace.id, "export") + "?" + query;
+  else el(id).removeAttribute("href");
+}
+function download(query, label) {
+  const link = text("a", label);
+  link.href = path(trace.id, "export") + "?" + query;
+  return link;
+}
+function shortTime(value) {
+  return value ? new Date(value).toLocaleString() : "in progress";
+}
+
+function render() {
+  const active = trace.survey?.active_segment_id;
+  const closed = Boolean(trace.survey?.finished_at);
+  const open = Boolean(trace.survey);
+  const receiver = trace.receiver || {state: "disconnected", bytes_received: 0, packets_received: 0};
+  const latest = receiver.latest;
+  const connected = ["connected", "connecting", "reconnecting"].includes(receiver.state);
+  const blockStart = ["connecting", "reconnecting", "failed"].includes(receiver.state);
+  const entries = [["Status", receiver.state], ["Received bytes", receiver.bytes_received],
+    ["Raw frames", receiver.packets_received], ["GPS", latest?.gps_available ? "Valid fix" : "Unavailable"],
+    ["Quality", latest ? latest.flags.join(", ") || "No parser flags" : "Awaiting parsed measurements"]];
+  if (receiver.error) entries.push(["Receiver message", receiver.error]);
+  readout(el("trace-diagnostics"), entries);
+  readout(el("trace-measurements"), Object.entries(latest?.measurements || {}).map(
+    ([name, value]) => [measurements[name] || name, value]));
+  const recording = (trace.survey?.locations || []).flatMap(location =>
+    location.segments.map(segment => ({label: location.label, ...segment}))).find(segment => segment.id === active);
+  const elapsed = recording ? Math.max(0, (Date.now() - Date.parse(recording.started_at)) / 1000) : 0;
+  el("trace-recording").textContent = recording
+    ? `${recording.label} · ${Math.floor(elapsed)} s · ${recording.sample_count} parsed samples · ${recording.raw_count} raw frames`
+    : closed ? "Survey finished." : "No active recording.";
+  setDisabled("trace-start", !open || closed || Boolean(active) || blockStart || trace.busy);
+  setDisabled("trace-revisit", !open || closed || Boolean(active) || blockStart || !trace.survey?.locations.length || trace.busy);
+  setDisabled("trace-replay", !open || closed || Boolean(active) || connected || trace.busy);
+  setDisabled("trace-forecast-form", !open || trace.busy);
+  setDisabled("trace-map-form", !open || trace.busy);
+  el("trace-connect").querySelector("button").disabled =
+    !open || closed || Boolean(active) || connected || el("trace-ports").options.length < 2 || trace.busy;
+  el("trace-disconnect").disabled = !open || (!connected && receiver.state !== "failed") || trace.busy;
+  el("trace-stop").disabled = !open || !active || trace.busy;
+  el("trace-finish").disabled = !open || closed || trace.busy;
+  el("trace-start-button").textContent = trace.survey?.locations.length ? "Record New Location" : "Start Recording";
+  updateLink("trace-export", "format=json");
+  updateLink("trace-export-csv", "format=csv");
+  updateLink("trace-export-raw", "format=raw");
+  const locations = trace.survey?.locations || [];
+  setOptions(el("trace-location"), locations.map(value => [value.id, value.label]), "Select a location");
+  setOptions(el("trace-replay-location"), locations.map(value => [value.id, value.label]), "Select a location");
+  const list = locations.map(location => {
+    const article = document.createElement("article");
+    article.append(text("h3", location.label),
+      text("p", location.manual_coordinates_available ? "Manual coordinates saved" : "GPS provenance is recorded per sample"));
+    const body = document.createElement("ul");
+    for (const segment of location.segments) {
+      const item = text("li", `${shortTime(segment.started_at)} – ${shortTime(segment.ended_at)} · ${segment.status} · ${segment.sample_count} samples `);
+      item.append(download("format=csv&segment=" + encodeURIComponent(segment.id), "Segment CSV"));
+      body.append(item);
+    }
+    article.append(download("format=csv&location=" + encodeURIComponent(location.id), "Location CSV"), body);
+    return article;
+  });
+  el("trace-history").replaceChildren(...(list.length ? list : [text("p", "No locations recorded.")]));
+}
+async function listSurveys() {
+  const surveys = await request("/api/trace");
+  setOptions(el("trace-surveys"), surveys.map(item => [item.id, item.label]), "Select a survey");
+  el("trace-surveys").value = trace.id;
+}
+async function refresh() {
+  if (!trace.id) { trace.survey = trace.receiver = null; render(); return; }
+  const id = trace.id;
+  const answer = await request(path(id));
+  if (id !== trace.id) return;
+  trace.survey = answer.survey;
+  trace.receiver = answer.receiver;
+  render();
+}
+async function perform(action, payload = {}) {
+  return request(path(trace.id, action), payload);
+}
+function operation(fn, success = "") {
+  return async event => {
+    event?.preventDefault();
+    if (trace.busy) return;
+    trace.busy = true; render();
+    el("trace-alert").textContent = "";
+    try {
+      await fn(event);
+      await refresh();
+      el("trace-alert").textContent = success;
+    } catch (error) {
+      el("trace-alert").textContent = error.message;
+    } finally {
+      trace.busy = false;
+      render();
+    }
+  };
+}
+function submit(id, fn, success) { el(id).addEventListener("submit", operation(fn, success)); }
+function press(id, fn, success) { el(id).addEventListener("click", operation(fn, success)); }
+function showResult(result) {
+  el("trace-result").hidden = false;
+  el("trace-result").textContent = JSON.stringify(result, null, 2);
+}
+function drawMap(values) {
+  const canvas = el("trace-map");
+  canvas.hidden = !Array.isArray(values) || !values.length;
+  if (canvas.hidden) return;
+  const ctx = canvas.getContext("2d");
+  const finite = values.flat().filter(Number.isFinite);
+  const min = Math.min(...finite), max = Math.max(...finite);
+  const rows = values.length, cols = values[0].length;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  values.forEach((row, y) => row.forEach((v, x) => {
+    const t = max > min ? (v - min) / (max - min) : .5;
+    ctx.fillStyle = Number.isFinite(v) ? `hsl(${215 - 175 * t}, 65%, 50%)` : "#b8c1c5";
+    const width = canvas.width / cols, height = canvas.height / rows;
+    ctx.fillRect(x * width, (rows - 1 - y) * height, width + .6, height + .6);
+  }));
+  canvas.setAttribute("aria-label", `Observational map, values from ${min.toFixed(2)} to ${max.toFixed(2)}`);
+}
+submit("trace-create", async event => {
+  const survey = await request("/api/trace", {label: event.target.elements.label.value});
+  trace.id = survey.id;
+  event.target.reset();
+  await listSurveys();
+}, "Survey created.");
+submit("trace-restore", async event => {
+  const archive = await jsonFile(event.target.elements.archive, true);
+  const survey = await request("/api/trace/restore", {archive});
+  trace.id = survey.id;
+  await listSurveys();
+}, "Survey imported.");
+submit("trace-import-csv", async event => {
+  const fields = event.target.elements;
+  const survey = await request("/api/trace/import-csv", {label: fields.label.value,
+    csv: await base64File(fields.csv.files[0]), mapping: await jsonFile(fields.mapping, true)});
+  trace.id = survey.id;
+  await listSurveys();
+}, "Measurements imported.");
+submit("trace-connect", async event => perform("connect", {port: event.target.elements.port.value,
+  baud: Number(event.target.elements.baud.value), mapping: await jsonFile(el("trace-mapping"))}),
+"Receiver connection requested.");
+press("trace-disconnect", () => perform("disconnect"), "Receiver disconnected.");
+submit("trace-start", async event => {
+  const fields = event.target.elements;
+  if (Boolean(fields.latitude.value) !== Boolean(fields.longitude.value)) throw new Error("Supply both coordinates or leave both blank.");
+  await perform("start", {label: fields.label.value,
+    coordinates: fields.latitude.value ? [Number(fields.latitude.value), Number(fields.longitude.value)] : undefined,
+    calibration: await jsonFile(fields.calibration)});
+  event.target.reset();
+}, "Location recording started.");
+submit("trace-revisit", event => perform("start", {location_id: event.target.elements.location.value}),
+"Revisit recording started.");
+press("trace-stop", () => perform("stop"), "Location saved. You can record another location.");
+press("trace-finish", () => perform("finish"), "Survey finalized.");
+submit("trace-replay", async event => {
+  const fields = event.target.elements;
+  if (Boolean(fields.location.value) === Boolean(fields.label.value.trim())) {
+    throw new Error("Enter a new location name or select one location to revisit.");
+  }
+  await perform("replay", {archive: await base64File(fields.archive.files[0]),
+    label: fields.label.value || undefined, location_id: fields.location.value || undefined,
+    mapping: await jsonFile(el("trace-mapping"))});
+}, "Replay saved as its own recording segment.");
+submit("trace-forecast-form", async event => {
+  const action = event.submitter.value;
+  const fields = event.target.elements;
+  if (action === "forecast" && !fields.model.value) throw new Error("Select a saved model.");
+  showResult(await perform(action, {configuration: await jsonFile(fields.configuration, true),
+    model: fields.model.value || undefined, steps: Number(fields.steps.value)}));
+}, "Forecast report available.");
+submit("trace-map-form", async event => {
+  const fields = event.target.elements;
+  const result = await perform("map", {feature: fields.feature.value,
+    timestamp: new Date(fields.timestamp.value).toISOString(), window_minutes: Number(fields.window_minutes.value)});
+  drawMap(result.estimate);
+  const summary = {...result};
+  delete summary.estimate;
+  showResult(summary);
+}, "Observational map available.");
+el("trace-surveys").addEventListener("change", operation(async event => {
+  trace.id = event.target.value;
+  trace.survey = trace.receiver = null;
+  el("trace-result").hidden = el("trace-map").hidden = true;
+}));
+async function setup() {
+  const [ports, jobs] = await Promise.all([request("/api/ports"), request("/api/jobs"), listSurveys()]);
+  setOptions(el("trace-ports"), ports.map(value => [value, value]), "Select an enabled port");
+  setOptions(el("trace-models"), jobs.filter(job => job.kind === "train" && job.status === "complete")
+    .map(job => [job.id, job.label || job.id]), "Check data without a model");
+  render();
+}
+setup().catch(error => { el("trace-alert").textContent = error.message; });
+setInterval(() => { if (!trace.busy && trace.id) refresh().catch(() => {}); }, 1200);

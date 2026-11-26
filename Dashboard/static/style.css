@@ -46,3 +46,15 @@ thead { position: sticky; top: 0; background: #e8f1f7; }
 .series-5 { background: #573ab2; }
 .series-6 { background: #374557; }
 progress { width: 7rem; }
+
+.trace header nav a { color: inherit; }
+.trace-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; align-items: start; }
+.trace-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; margin-top: .75rem; }
+.trace-reading { display: grid; grid-template-columns: minmax(7rem, 1fr) 2fr; gap: .4rem .8rem; margin: .5rem 0; overflow-wrap: anywhere; }
+.trace-reading dt { font-weight: 600; }
+.trace-reading dd { margin: 0; }
+.trace a:not([href]) { display: none; }
+.trace article { padding: 1rem 0; border-bottom: 1px solid #89949b; }
+.trace article h3 { margin: 0 0 .5rem; }
+.trace #trace-map { max-width: min(100%, 36rem); height: auto; margin: 1rem 0; }
+.trace #trace-alert { margin: .5rem 0; min-height: 1.5rem; overflow-wrap: anywhere; }

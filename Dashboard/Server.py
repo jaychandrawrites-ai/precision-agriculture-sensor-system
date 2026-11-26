@@ -11,20 +11,26 @@ from urllib.parse import urlsplit
 
 import numpy as np
 
+from Acquisition.AITrace import TraceStore
+from Acquisition.TraceReceiver import TraceReceiver
 from Dashboard.Jobs import Jobs
+from Dashboard.TraceAPI import trace_get, trace_post
 from Dashboard.Reports import dataset_report, forecast_series, metrics_csv, research_report, sensor_series
 
 
 STATIC = Path(__file__).with_name("static")
 MAX_REQUEST = 33 * 1024 * 1024
 ROUTES = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"),
-          "/style.css": ("style.css", "text/css")}
+          "/style.css": ("style.css", "text/css"),
+          "/trace": ("trace.html", "text/html"), "/trace.js": ("trace.js", "text/javascript")}
 
 
 class DashboardServer(ThreadingHTTPServer):
     def __init__(self, port, root, ports=()):
         super().__init__(("127.0.0.1", port), Handler)
         try:
+            self.trace = TraceStore(Path(root) / "surveys")
+            self.trace_receiver = TraceReceiver(self.trace, ports)
             self.jobs = Jobs(root, ports=ports)
         except BaseException:
             super().server_close()
@@ -34,6 +40,7 @@ class DashboardServer(ThreadingHTTPServer):
 
     def server_close(self):
         super().server_close()
+        self.trace_receiver.disconnect()
         self.jobs.close()
 
 
@@ -72,9 +79,11 @@ class Handler(BaseHTTPRequestHandler):
         if path in ROUTES:
             name, kind = ROUTES[path]
             payload = (STATIC / name).read_bytes()
-            if name == "index.html":
+            if name in ("index.html", "trace.html"):
                 payload = payload.replace(b"DASHBOARD_TOKEN", self.server.token.encode())
             return self._reply(200, payload, kind + "; charset=utf-8")
+        if path == "/api/trace" or path.startswith("/api/trace/"):
+            return trace_get(self)
         if path == "/api/ports":
             return self._json(200, self.server.jobs.ports)
         if path.startswith("/api/live/"):
@@ -145,6 +154,12 @@ class Handler(BaseHTTPRequestHandler):
                 or not hmac.compare_digest(token.encode(), self.server.token.encode())):
             return self._json(403, {"error": "Request is outside the dashboard session"})
         try:
+            path = urlsplit(self.path).path
+            if path == "/api/trace" or path.startswith("/api/trace/"):
+                size = int(self.headers.get("Content-Length", "0"))
+                if not 0 < size <= MAX_REQUEST:
+                    raise ValueError("Invalid survey request size")
+                return trace_post(self, json.loads(self.rfile.read(size)))
             if self.path == "/api/jobs":
                 size = int(self.headers.get("Content-Length", "0"))
                 if not 0 < size <= MAX_REQUEST:
@@ -163,7 +178,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(404, {"error": "Route not found"})
         except ValueError as error:
             return self._json(400, {"error": str(error)[:200]})
-        except (TypeError, KeyError, AttributeError):
+        except (TypeError, KeyError, AttributeError, OSError):
             return self._json(400, {"error": "Invalid job options, upload, or job identifier"})
 
 

@@ -404,3 +404,12 @@ inputs, and [PHYSICS.md](PHYSICS.md) and [MATHEMATICS.md](MATHEMATICS.md)
 to interpret the calculations. The [experiment protocol](EXPERIMENT_PROTOCOL.md),
 [validation guide](VALIDATION.md), [limitations](LIMITATIONS.md) and
 [build log](BUILD_LOG.md) describe reproducible comparisons and their scope.
+
+### AI Trace field surveys
+
+Start the local dashboard, open **AI Trace**, and record distinct location
+visits without disconnecting the receiver. See the
+[field survey instructions](HARDWARE.md#ai-trace-multi-location-field-survey).
+The [requirements inventory](MASTER_REQUIREMENTS.md) and
+[development status](DEVELOPMENT_STATUS.md) track completed work and remaining
+validation separately.

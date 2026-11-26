@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="jupiter-token" content="DASHBOARD_TOKEN">
+  <title>AI Trace field surveys</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/trace.js" defer></script>
+</head>
+<body>
+<main class="trace">
+  <header>
+    <nav aria-label="Application"><a href="/">Research console</a></nav>
+    <h1>AI Trace field surveys</h1>
+    <p>Record independent segments while keeping one receiver connected.</p>
+  </header>
+  <div id="trace-alert" role="status" aria-live="polite"></div>
+  <section class="panel" aria-labelledby="survey-heading">
+    <h2 id="survey-heading">Survey</h2>
+    <div class="trace-grid">
+      <form id="trace-create">
+        <label>New survey name<input name="label" required maxlength="120" autocomplete="off"></label>
+        <button>Create Survey</button>
+      </form>
+      <label>Open a saved survey<select id="trace-surveys"><option value="">Select a survey</option></select></label>
+      <form id="trace-restore">
+        <label>Survey archive<input name="archive" type="file" accept=".json,application/json" required></label>
+        <button>Import Survey</button>
+      </form>
+      <form id="trace-import-csv">
+        <label>Imported survey name<input name="label" required maxlength="120"></label>
+        <label>Measurements CSV<input name="csv" type="file" accept=".csv" required></label>
+        <label>Column and unit mapping JSON<input name="mapping" type="file" accept=".json" required></label>
+        <button>Import Measurements CSV</button>
+      </form>
+    </div>
+  </section>
+  <section class="panel" aria-labelledby="receiver-heading">
+    <h2 id="receiver-heading">Receiver and diagnostics</h2>
+    <div class="trace-grid">
+      <form id="trace-connect">
+        <label>Serial receiver<select name="port" id="trace-ports" required></select></label>
+        <label>Baud rate<input name="baud" type="number" min="300" max="2000000" value="9600" required></label>
+        <label>Verified packet mapping (optional)<input id="trace-mapping" type="file" accept=".json,application/json"></label>
+        <div class="trace-actions"><button>Connect Receiver</button><button type="button" id="trace-disconnect">Disconnect</button></div>
+      </form>
+      <div>
+        <dl id="trace-diagnostics" class="trace-reading"><dt>Status</dt><dd>Disconnected</dd></dl>
+        <dl id="trace-measurements" class="trace-reading"></dl>
+      </div>
+    </div>
+  </section>
+  <section class="panel" aria-labelledby="record-heading">
+    <h2 id="record-heading">Location recording</h2>
+    <p id="trace-recording" aria-live="polite">No active recording.</p>
+    <div class="trace-grid">
+      <form id="trace-start">
+        <label>Location name<input name="label" required maxlength="120" autocomplete="off"></label>
+        <div class="trace-grid">
+          <label>Manual latitude (optional)<input name="latitude" type="number" step="any" min="-90" max="90"></label>
+          <label>Manual longitude (optional)<input name="longitude" type="number" step="any" min="-180" max="180"></label>
+        </div>
+        <label>Calibration metadata (optional)<input name="calibration" type="file" accept=".json,application/json"></label>
+        <button id="trace-start-button">Start Recording</button>
+      </form>
+      <form id="trace-revisit">
+        <label>Earlier location<select name="location" id="trace-location" required></select></label>
+        <button>Revisit Location</button>
+      </form>
+      <form id="trace-replay">
+        <label>Raw packet archive<input name="archive" type="file" accept=".jsonl,.ndjson" required></label>
+        <label>Replay location name<input name="label" maxlength="120"></label>
+        <label>Or replay as a revisit<select name="location" id="trace-replay-location"></select></label>
+        <button>Replay and Save Segment</button>
+      </form>
+    </div>
+    <div class="trace-actions">
+      <button id="trace-stop">Stop Location</button>
+      <button id="trace-finish">Finish Survey</button>
+      <a id="trace-export">Export Survey</a>
+      <a id="trace-export-csv">Export Survey CSV</a>
+      <a id="trace-export-raw">Export Raw Packets</a>
+    </div>
+  </section>
+  <section class="panel" aria-labelledby="history-heading">
+    <h2 id="history-heading">Location history</h2>
+    <div id="trace-history"><p>Open a survey to view recording segments.</p></div>
+  </section>
+  <section class="panel" aria-labelledby="analysis-heading">
+    <h2 id="analysis-heading">Forecasts and observational maps</h2>
+    <div class="trace-grid">
+      <form id="trace-forecast-form">
+        <label>Field configuration<input name="configuration" type="file" accept=".json,application/json" required></label>
+        <label>Saved dashboard model<select name="model" id="trace-models"><option value="">Check data without a model</option></select></label>
+        <label>Forecast steps<input name="steps" type="number" min="1" max="72" value="6" required></label>
+        <div class="trace-actions">
+          <button value="readiness">Check Forecast Readiness</button>
+          <button value="forecast">Forecast Eligible Locations</button>
+        </div>
+      </form>
+      <form id="trace-map-form">
+        <label>Measurement<select name="feature">
+          <option value="air_temperature_c">Air temperature</option>
+          <option value="relative_humidity_pct">Relative humidity</option>
+          <option value="soil_moisture_pct">Soil moisture</option>
+          <option value="soil_temperature_c">Soil temperature</option>
+          <option value="soil_ec_us_cm">Soil electrical conductivity</option>
+          <option value="soil_ph">Soil pH</option>
+          <option value="leaf_mv">Leaf wetness voltage</option>
+        </select></label>
+        <label>Window end (local time)<input name="timestamp" type="datetime-local" required></label>
+        <label>Window length in minutes<input name="window_minutes" type="number" min="1" max="1440" value="60" required></label>
+        <button>Generate Spatial Map</button>
+      </form>
+    </div>
+    <canvas id="trace-map" width="500" height="500" role="img" aria-label="Observational map in local meter coordinates" hidden></canvas>
+    <pre id="trace-result" hidden></pre>
+  </section>
+</main>
+</body>
+</html>
