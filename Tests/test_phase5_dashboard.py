@@ -16,6 +16,7 @@ from Dashboard.Reports import sensor_series
 from Dashboard.Server import DashboardServer
 from Examples.SyntheticPhase3 import historical_fixture
 from config import FEATURES
+from main import synthetic_history
 
 
 def encoded(payload):
@@ -99,6 +100,27 @@ class DashboardResearchTests(unittest.TestCase):
                 records = list(csv.DictReader(io.StringIO(data.decode())))
                 self.assertEqual(len(records), len(rows))
                 self.assertEqual(float(records[0]["rmse"]), rows[0]["rmse"])
+
+    def test_benchmark_and_search_use_existing_cli_and_export_method_metrics(self):
+        source = encoded(synthetic_history(480).to_csv(index=False).encode())
+        with TemporaryDirectory() as directory, dashboard(Path(directory)) as request:
+            benchmark = self._submit(request, "benchmark", {"data": source},
+                                     {"horizon": 6, "epochs": 1, "seeds": [42], "synthetic": True})
+            search = self._submit(request, "search", {"data": source},
+                                  {"epochs": 1, "population": 2, "generations": 1,
+                                   "candidate_epochs": 1, "seed": 42})
+            self._wait(request, benchmark)
+            self._wait(request, search)
+            status, body = request(f"/api/research/{benchmark}")
+            self.assertEqual(status, 200, body)
+            result = json.loads(body)
+            self.assertTrue(result["manifest"]["synthetic"])
+            self.assertIn("direct", {row["method"] for row in result["metrics"]})
+            status, body = request(f"/api/research/{search}")
+            self.assertEqual(status, 200, body)
+            result = json.loads(body)
+            self.assertEqual(set(result["search"]), {"fixed", "classical_ga", "quantum_inspired", "random"})
+            self.assertEqual(result["search"]["classical_ga"]["candidate_count"], 2)
 
     def test_recovery_locks_workspace_and_marks_jobs_interrupted(self):
         with TemporaryDirectory() as directory:
