@@ -380,3 +380,27 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s Tests -q
 .\.venv\Scripts\python.exe -m Dashboard.Server --workspace "$env:TEMP\jupiter-dashboard"
 ```
+
+## Phase 5 research platform
+
+Development continues on `jupiter-clean-development`. The historical
+`jupiter-development` branch and the 41-commit `jupiter-foundation` remain
+available.
+
+```sh
+python dataset_registry.py --root registry catalog
+python rolling_station_study.py --help
+python seasonal_study.py --help
+python seasonal_transfer.py --help
+python et_comparison.py --help
+python acquisition_archive.py --help
+python spatial_benchmark.py --synthetic --output field-benchmark.json
+python -m Dashboard.Server --workspace local-dashboard
+```
+
+Use [ARCHITECTURE.md](ARCHITECTURE.md) to choose an entry point,
+[DATA_FORMAT.md](DATA_FORMAT.md) and [HARDWARE.md](HARDWARE.md) to prepare
+inputs, and [PHYSICS.md](PHYSICS.md) and [MATHEMATICS.md](MATHEMATICS.md)
+to interpret the calculations. The [experiment protocol](EXPERIMENT_PROTOCOL.md),
+[validation guide](VALIDATION.md), [limitations](LIMITATIONS.md) and
+[build log](BUILD_LOG.md) describe reproducible comparisons and their scope.
