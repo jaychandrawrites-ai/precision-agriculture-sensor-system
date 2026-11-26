@@ -152,3 +152,70 @@ class RMSProp(Optimizer):
         square *= self.alpha
         square += (1-self.alpha)*gradient**2
         return gradient/(xp.sqrt(square)+self.epsilon)
+
+
+class Adagrad(Optimizer):
+    """Adaptive per-parameter step sizes from a running sum of squared gradients."""
+    def __init__(self, parameters, backend, learning_rate=0.01, epsilon=1e-8,
+                 initial_accumulator=0.0, **kwargs):
+        super().__init__(parameters, backend, learning_rate, **kwargs)
+        if (not math.isfinite(epsilon) or epsilon <= 0
+                or not math.isfinite(initial_accumulator) or initial_accumulator < 0):
+            raise ValueError("Invalid Adagrad coefficients")
+        self.epsilon = epsilon
+        self.initial_accumulator = initial_accumulator
+
+    def hyperparameters(self):
+        return {"epsilon": self.epsilon, "initial_accumulator": self.initial_accumulator}
+
+    def direction(self, gradient, state):
+        xp = self.backend.xp
+        if "sum_squares" not in state:
+            state["sum_squares"] = xp.full_like(gradient, self.initial_accumulator)
+        accumulated = state["sum_squares"]
+        accumulated += gradient * gradient
+        return gradient / (xp.sqrt(accumulated) + self.epsilon)
+
+
+class GradientAccumulator:
+    """Combine mean microbatch gradients with their actual loss denominators.
+
+    Zero parameter gradients before each microbatch backward call. Call
+    add(weight) after backward, then flush to populate the mean gradients
+    before the optimizer clips or applies an update.
+    """
+    def __init__(self, optimizer):
+        self.optimizer = optimizer
+        self.backend = optimizer.backend
+        self.total_weight = 0.0
+        self.sums = [
+            self.backend.zeros(
+                parameter.value.shape,
+                dtype="float64" if parameter.value.dtype.itemsize == 8 else "float32",
+            )
+            for parameter in optimizer.parameters
+        ]
+
+    def add(self, weight):
+        if not math.isfinite(weight) or weight <= 0 or not math.isfinite(self.total_weight + weight):
+            raise ValueError("Gradient accumulation weight must be finite and positive")
+        with self.backend.scope():
+            values = []
+            for parameter, previous in zip(self.optimizer.parameters, self.sums):
+                total = previous + weight * parameter.grad.astype(previous.dtype)
+                values.append(self.backend.require_finite(total, "accumulated gradient"))
+            self.sums = values
+        self.total_weight += weight
+
+    def flush(self):
+        if self.total_weight == 0:
+            raise ValueError("Cannot flush an empty gradient accumulator")
+        with self.backend.scope():
+            values = []
+            for parameter, total in zip(self.optimizer.parameters, self.sums):
+                mean = (total / self.total_weight).astype(parameter.grad.dtype)
+                values.append(self.backend.require_finite(mean, "mean gradient"))
+            for parameter, mean, total in zip(self.optimizer.parameters, values, self.sums):
+                parameter.grad[...] = mean
+                total.fill(0)
+        self.total_weight = 0.0
