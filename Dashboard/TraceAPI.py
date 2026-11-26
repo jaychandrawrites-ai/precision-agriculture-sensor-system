@@ -110,8 +110,11 @@ def trace_post(handler, body):
         adaptive = body.get("adaptive")
         if adaptive is not None and not isinstance(adaptive, dict):
             raise ValueError("Adaptive map configuration must be an object")
+        predictive = body.get("predictive")
+        if predictive is not None and not isinstance(predictive, dict):
+            raise ValueError("Predictive map configuration must be an object")
         arrays, report = ensemble_forecast_maps(store, identifier, forecast, body["origin"],
-                                                steps=steps, adaptive=adaptive)
+                                                steps=steps, adaptive=adaptive, predictive=predictive)
         feature = body["feature"]
         if feature not in report["features"]:
             raise ValueError("Choose a supported forecast feature")
@@ -126,6 +129,14 @@ def trace_post(handler, body):
                 **{key: arrays["adaptive_" + key][lead - 1, :, index].tolist()
                    for key in ("mean", "spread", "lower", "upper")},
             }
+        if predictive is not None:
+            import numpy as np
+            fields = {}
+            for key in ("mean", "median", "std", "lower", "upper", "width"):
+                layer = arrays["predictive_" + key][lead - 1, :, index]
+                values = np.where(np.isfinite(layer), layer, None)
+                fields[key] = values.tolist() if adaptive is not None else values.reshape(25, 25).tolist()
+            result["predictive"] = fields
         return handler._json(200, result)
     elif action == "map":
         return handler._json(200, observational_map(store, identifier, body["feature"], body["timestamp"],

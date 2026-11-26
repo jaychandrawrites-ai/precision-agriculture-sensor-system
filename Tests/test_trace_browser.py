@@ -130,6 +130,17 @@ class TraceBrowserTests(unittest.TestCase):
                             page.get_by_role("button", name="Map Ensemble Forecast").click()
                             expect(page.get_by_role("img", name="Ensemble forecast mean", exact=False)).to_be_visible()
                             expect(page.get_by_role("img", name="Ensemble model spread", exact=False)).to_be_visible()
+                            predictive = root / "predictive.json"
+                            predictive.write_text(json.dumps({
+                                "draws": 8, "feature_scales": [1.] * 6,
+                                "covariance_scenarios": [
+                                    {"id": "fixture", "weight": 1., "covariance": {"range_m": 50.}}
+                                ],
+                            }))
+                            page.get_by_label("Predictive uncertainty configuration").set_input_files(predictive)
+                            page.get_by_role("button", name="Map Ensemble Forecast").click()
+                            expect(page.get_by_role("img", name="Predictive scenario mean")).to_be_visible()
+                            expect(page.get_by_role("img", name="Predictive scenario interval width")).to_be_visible()
                             self.assertTrue(page.evaluate(
                                 "document.documentElement.scrollWidth <= window.innerWidth"))
                             page.close()

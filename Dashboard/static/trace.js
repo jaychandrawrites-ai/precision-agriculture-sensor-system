@@ -321,8 +321,18 @@ submit("trace-ensemble-form", async event => {
   if (members.includes(fields.model.value)) throw new Error("Choose distinct ensemble models.");
   const result = await perform("ensemble-map", {configuration: await jsonFile(fields.configuration, true),
     model: fields.model.value, members, origin: new Date(fields.origin.value).toISOString(),
-    steps: lead, lead, feature: fields.feature.value, adaptive: await jsonFile(fields.adaptive)});
-  if (result.adaptive) {
+    steps: lead, lead, feature: fields.feature.value, adaptive: await jsonFile(fields.adaptive),
+    predictive: await jsonFile(fields.predictive)});
+  if (result.predictive) {
+    if (result.adaptive) {
+      const cells = {...result.adaptive, ...result.predictive};
+      drawAdaptive(cells, "mean", "trace-map", "Adaptive predictive scenario mean");
+      drawAdaptive(cells, "width", "trace-spread", "Adaptive predictive scenario interval width");
+    } else {
+      drawMap(result.predictive.mean, "trace-map", "Predictive scenario mean");
+      drawMap(result.predictive.width, "trace-spread", "Predictive scenario interval width");
+    }
+  } else if (result.adaptive) {
     drawAdaptive(result.adaptive, "mean", "trace-map", "Adaptive ensemble forecast mean");
     drawAdaptive(result.adaptive, "spread", "trace-spread", "Adaptive ensemble model spread");
   } else {
