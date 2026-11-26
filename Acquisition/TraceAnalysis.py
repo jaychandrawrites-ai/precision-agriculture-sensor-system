@@ -376,7 +376,17 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
                     or origins[-1] + timedelta(hours=steps) > issued):
                 raise ValueError("Residual calibration must match sites and use nonoverlapping pre-issue trajectories")
         geometry = result.get("adaptive_centers_m", grid.points())
-        arrays, manifest = predictive_fields(xy, members, geometry, settings, probability)
+        operator = None
+        if settings.get("method") in {"variational", "adaptive_variational"}:
+            if "variational_weights" not in result:
+                raise ValueError("Configure adaptive.variational to select a variational prediction")
+            if settings["method"] == "variational":
+                mesh = metadata["variational"]
+                if mesh["adaptive"]:
+                    raise ValueError("Fixed variational prediction requires equal initial_depth and max_depth")
+            geometry = result["variational_centers_m"]
+            operator = result["variational_weights"]
+        arrays, manifest = predictive_fields(xy, members, geometry, settings, probability, operator=operator)
         result.update(arrays)
         result["predictive_source_trajectories"] = members
         result["predictive_site_xy_m"] = xy

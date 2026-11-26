@@ -133,6 +133,10 @@ def trace_post(handler, body):
             import numpy as np
             fields = {}
             mask = arrays["predictive_inside"]
+            variational = report["predictive"]["method"] in {"variational", "adaptive_variational"}
+            if variational:
+                result["adaptive"] = {"bounds_m": arrays["variational_bounds_m"].tolist(),
+                                      "inside": mask.tolist()}
             for key in ("mean", "median", "std", "lower", "upper", "width"):
                 layer = arrays["predictive_" + key][lead - 1, :, index]
                 values = np.where(np.isfinite(layer), layer, None)

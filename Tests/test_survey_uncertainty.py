@@ -109,3 +109,28 @@ class SurveyUncertaintyTests(unittest.TestCase):
         np.testing.assert_array_equal(arrays["predictive_inside"], [True, False, False, True])
         self.assertTrue(np.isnan(arrays["predictive_mean"][:, 1:3]).all())
         np.testing.assert_allclose(arrays["predictive_mean"], arrays["predictive_draws"].mean(axis=0))
+
+    def test_combined_variational_draws_are_independent_of_cell_chunk_size(self):
+        from Spatial.SurveyUncertainty import predictive_fields, variational_trajectories
+
+        points = np.array([[1., 1.], [7., 1.], [1., 7.]])
+        members = np.arange(72, dtype=float).reshape(2, 3, 2, 6)
+        mesh, _ = variational_trajectories(
+            points, members, (0, 0, 8, 8),
+            {"feature_scales": [1.] * 6, "hard": True,
+             "refinement": {"max_depth": 2, "observation_radius_m": .2}}, .9)
+        settings = {"method": "adaptive_variational", "feature_scales": [1.] * 6,
+                    "draws": 12, "residuals": np.full((2, 3, 2, 6), .25),
+                    "residual_origins": ["a", "b"]}
+        args = points, members, mesh["variational_centers_m"]
+        outputs = [predictive_fields(*args, {**settings, "chunk_cells": chunk}, .9,
+                                     operator=mesh["variational_weights"])[0]
+                   for chunk in (1, 5, 32)]
+        for other in outputs[1:]:
+            np.testing.assert_allclose(outputs[0]["predictive_draws"], other["predictive_draws"])
+            np.testing.assert_allclose(outputs[0]["predictive_upper"], other["predictive_upper"])
+        np.testing.assert_allclose(outputs[0]["predictive_draws"], np.einsum(
+            "qs,mslf->mlqf", mesh["variational_weights"], outputs[0]["predictive_site_draws"]))
+        with self.assertRaisesRegex(ValueError, "require kriging"):
+            predictive_fields(*args, {**settings, "covariance_scenarios": [{}]}, .9,
+                              operator=mesh["variational_weights"])

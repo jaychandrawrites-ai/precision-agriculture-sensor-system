@@ -8,7 +8,7 @@ from Spatial.FieldDomain import FieldDomain
 from Spatial.Kriging import CovarianceModel, KrigingModel
 
 
-def predictive_fields(points, members, geometry, settings, mass):
+def predictive_fields(points, members, geometry, settings, mass, *, operator=None):
     """Sample a scenario once per trajectory and export its full provenance.
 
     Member values are latent site forecasts. The nugget conditions the field
@@ -28,15 +28,32 @@ def predictive_fields(points, members, geometry, settings, mass):
     inside = (np.ones(len(queries), dtype=bool) if boundary is None
               else FieldDomain(boundary, tuple(holes)).contains(queries))
     sites, leads, features = members.shape[1:]
-    scenarios = settings["covariance_scenarios"]
+    method = settings.get("method", "kriging")
+    if method not in {"kriging", "idw", "variational", "adaptive_variational"}:
+        raise ValueError("Unknown predictive reconstruction method")
+    scenarios = settings.get("covariance_scenarios", [])
+    if method != "kriging" and scenarios:
+        raise ValueError("Covariance scenarios require kriging. Fixed operators propagate site uncertainty only")
+    if method == "idw":
+        from spatial_forecast import interpolation_weights
+        operator = interpolation_weights(points, queries, 2.)
+    if method in {"variational", "adaptive_variational"} and operator is None:
+        raise ValueError("Variational prediction requires a configured frozen mesh")
+    if method != "kriging":
+        operator = np.asarray(operator, dtype=float)
+        if operator.shape != (len(queries), len(points)):
+            raise ValueError("Reconstruction weights must align with cells and sites")
+        inside &= np.isfinite(operator).all(axis=1)
+
     names = [item["id"] for item in scenarios]
     weights = np.array([item["weight"] for item in scenarios], dtype=float)
     draws = settings.get("draws", 100)
     seed = settings.get("seed", 42)
     budget = settings.get("memory_bytes", 128 * 1024**2)
     n = int(inside.sum())
-    if (not len(scenarios) or len(names) != len(set(names)) or not np.isfinite(weights).all()
-            or (weights <= 0).any() or not np.isclose(weights.sum(), 1.)
+    if ((method == "kriging" and (not len(scenarios) or not np.isclose(weights.sum(), 1.)))
+            or len(names) != len(set(names)) or not np.isfinite(weights).all()
+            or (weights <= 0).any()
             or type(draws) is not int or draws < 2 or not 1 <= n <= 1024
             or type(budget) is not int or budget <= 0
             or 8 * (4 * draws * len(queries) * leads * features + 12 * n**2 + 4 * sites**2) > budget):
@@ -51,7 +68,8 @@ def predictive_fields(points, members, geometry, settings, mass):
                            or len(residuals) != len(origins) or not np.isfinite(residuals).all()):
         raise ValueError("Calibration residuals must align with all sites, leads and features")
     rng = np.random.default_rng(seed)
-    chosen = rng.choice(len(scenarios), size=draws, p=weights / weights.sum())
+    chosen = (rng.choice(len(scenarios), size=draws, p=weights / weights.sum())
+              if scenarios else np.full(draws, -1))
     member_weights = settings.get("member_probabilities")
     member_ids = rng.choice(len(members), size=draws, p=member_weights)
     residual_ids = rng.integers(len(residuals), size=draws) if residuals.size else np.full(draws, -1)
@@ -60,6 +78,15 @@ def predictive_fields(points, members, geometry, settings, mass):
         site_draws += residuals[residual_ids]
     field = np.full((draws, leads, len(queries), features), np.nan)
     report = []
+    chunk = settings.get("chunk_cells", 32)
+    if type(chunk) is not int or chunk < 1:
+        raise ValueError("chunk_cells must be a positive integer")
+    indices = np.flatnonzero(inside)
+    if method != "kriging":
+        for start in range(0, len(indices), chunk):
+            cells = indices[start:start + chunk]
+            field[:, :, cells, :] = np.einsum("qs,mslf->mlqf", operator[cells], site_draws)
+
     for i, item in enumerate(scenarios):
         covariance = CovarianceModel(**item["covariance"])
         model = KrigingModel(points, np.zeros(sites), covariance, trend=item.get("trend", "constant"))
@@ -78,23 +105,28 @@ def predictive_fields(points, members, geometry, settings, mass):
         report.append({"id": item["id"], "weight": float(weights[i]), "covariance": asdict(covariance),
                        "trend": model.trend, "realized_draws": int((chosen == i).sum())})
     summary = np.full((6, leads, len(queries), features), np.nan)
-    values = field[:, :, inside, :]
-    low, median, high = np.quantile(values, [(1 - mass) / 2, .5, (1 + mass) / 2], axis=0)
-    summary[:, :, inside, :] = [values.mean(axis=0), median, values.std(axis=0), low, high, high - low]
+    for start in range(0, len(indices), chunk):
+        cells = indices[start:start + chunk]
+        values = field[:, :, cells, :]
+        low, median, high = np.quantile(values, [(1 - mass) / 2, .5, (1 + mass) / 2], axis=0)
+        summary[:, :, cells, :] = [values.mean(axis=0), median, values.std(axis=0), low, high, high - low]
     arrays = dict(zip(("predictive_mean", "predictive_median", "predictive_std",
                        "predictive_lower", "predictive_upper", "predictive_width"), summary))
     arrays.update(predictive_draws=field, predictive_inside=inside, predictive_centers_m=queries,
                   predictive_site_draws=site_draws, predictive_member_index=member_ids,
                   predictive_residual_index=residual_ids, predictive_covariance_index=chosen)
-    return arrays, {"seed": seed, "draws": draws, "covariance_scenarios": report,
+    return arrays, {"method": method, "chunk_cells": chunk, "seed": seed, "draws": draws, "covariance_scenarios": report,
                     "residual_origins": origins, "axes": ["draw", "lead", "cell", "feature"],
                     "draw_weight": 1 / draws, "member_probabilities": member_weights, "site_axis_count": sites,
-                    "assumptions": ["independent scenario, member and residual selections",
+                    "assumptions": (["independent scenario, member and residual selections",
                                     "one spatial innovation per feature shared across all leads",
                                     "kriging covariance in standardized feature units",
                                     "latent draws; nugget enters conditioning once",
                                     "boundary masks describe cell centers",
-                                    "field predictive coverage unverified"]}
+                                    "field predictive coverage unverified"] if method == "kriging" else
+                                    ["independent member and residual selections",
+                                     "fixed spatial operator with no conditional field innovation",
+                                     "field predictive coverage unverified"])}
 
 
 def variational_trajectories(points, members, bounds, settings, mass):
@@ -145,5 +177,6 @@ def variational_trajectories(points, members, bounds, settings, mass):
             "variational_width": high - low}, {"method": "adaptive_variational",
                                               "draw_axes": ["member", "lead", "cell", "feature"],
                                               "refinement_channel": int(channel),
+                                              "adaptive": refinement.initial_depth < refinement.max_depth,
                                               "boundary_policy": fitted["boundary_policy"],
                                               "hard": options["hard"]}
