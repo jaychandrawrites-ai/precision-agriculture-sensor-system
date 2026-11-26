@@ -765,3 +765,61 @@ There were no failures in the final CPU suite or the clean-install smoke test.
 Open work and external dependencies are indexed by ID in the final checklist.
 Browser interactions and physical receiver evaluation remain unverified.
 The original firmware and historical branches were preserved.
+
+## 2026-11-25 — Phase 7 software checkpoint
+
+Work continued from `ec21e8e` on `jupiter-clean-development`.
+The functional commits changed 63 files, with 3,598 Python lines added
+and 174 deleted (3,424 net). Python totals reached 20,483 lines in 230 files.
+
+- `e31c48e` integrated survey adaptive kriging, keeping shared geometry,
+  exported trajectories, boundary flags and the IDW baseline.
+- `16920c2` added the paired joint optimizer, a synthetic study, an exact
+  CPU recovery test and finite differences for the combined gradient.
+- `b14fdad` added trained ordered quantiles, validation-only convex weights
+  and non-overlapping whole-trajectory residual draws.
+- `d2b3d77` added receiver diagnostics, browser tests and research jobs.
+  Chromium uncovered a checksum mismatch when the client reserialized
+  archive numbers. Upload now preserves original bytes. The regression
+  also verifies that a duplicate archive is refused and a fresh one restores.
+- `07f2500` added saved-model physical scenarios, sensitivity reports,
+  balance audits and independently paired observation tooling.
+- `fe27472` added finite-volume adaptive variational reconstruction, field
+  holes, covariance ensembles and held-out predictive checks.
+- `cac9c0e` added portable sequence search candidates, matched-window
+  evaluation, memory controls and checkpoint tests.
+- `9422265` corrected deprecated pandas time conversions found by the
+  warnings-as-errors suite and wired saved direct models into dashboard
+  forecasts.
+
+Reproduction from the repository root:
+
+```sh
+OPENBLAS_NUM_THREADS=1 python -W error::DeprecationWarning -m unittest discover -s Tests -q
+JUPITER_TRACE_BROWSER=1 python -m unittest Tests.test_trace_browser -q
+python -m Examples.SyntheticJoint /tmp/jupiter-joint.json --epochs 160 --seed 82
+python quantile_forecast.py hourly.csv quantile.json quantile-report.json --epochs 3
+```
+
+The browser test uses Playwright with Chromium and an isolated synthetic
+receiver. It covers desktop and narrow layouts, survey recording and revisit,
+archive export and restore, readiness and ensemble maps.
+
+The seed 82 joint study used 160 updates per model. Held-out site temperature
+RMSE fell from 1.789 to 1.173 °C and relative-humidity RMSE fell from 10.033
+to 7.053 percentage points. Leaf wetness RMSE rose from 0.0244 to 0.0299
+and reference ET RMSE rose from 0.00769 to 0.02620 mm per interval.
+This one synthetic fixture cannot establish field performance.
+
+The three-epoch Yuma Valley 2019 quantile smoke study used 6,101 fitting
+origins and 1,309 each for validation and testing. Nominal 90% temperature
+coverage ranged from 95.8% at one hour to 84.2% at six hours. Simultaneous
+coverage over all six leads and six features was 26.4%. Marginal quantile
+training alone gave limited simultaneous coverage.
+
+The final development checklist records unresolved software, external
+validation inputs and merge approval. CUDA equivalence remains unverified.
+
+The local full suite on `9422265` ran 153 tests with Chromium enabled.
+151 passed and two optional CUDA tests skipped. Both dashboard scripts
+also passed JavaScript syntax checks. [Cross-platform CI run](https://github.com/jaychandrawrites-ai/precision-agriculture-sensor-system/actions/runs/45770802014)

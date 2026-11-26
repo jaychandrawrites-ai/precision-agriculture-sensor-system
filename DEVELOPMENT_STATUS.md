@@ -37,3 +37,11 @@ AI Trace now exports shared ensemble trajectories across sites and forecast
 leads. The field loader serves portable direct and sequence checkpoints.
 Adaptive kriging is integrated into measured-site mapping. The five-site
 offline demonstration verified software behavior using synthetic inputs.
+
+## Phase 7 checkpoint
+
+The final checklist records the latest evidence for saved physical scenarios,
+sequence architecture search, adaptive variational reconstruction, paired
+joint training and the browser-tested AI Trace workflow. Trained quantile
+inference and survey adaptive kriging are available from the CLI. Remaining
+application integration and field validation are indexed by requirement.
