@@ -823,3 +823,68 @@ validation inputs and merge approval. CUDA equivalence remains unverified.
 The local full suite on `9422265` ran 153 tests with Chromium enabled.
 151 passed and two optional CUDA tests skipped. Both dashboard scripts
 also passed JavaScript syntax checks. [Cross-platform CI run](https://github.com/jaychandrawrites-ai/precision-agriculture-sensor-system/actions/runs/45770802014)
+
+## 2026-11-26 — Phase 8 integration checkpoint
+
+Started from `eefbb97` on `jupiter-clean-development`. Functional changes
+through `0f11a03` added 1,914 lines and deleted 100 across 37 files. Python
+accounted for 1,851 additions and 80 deletions, yielding 22,254 Python lines
+in 243 files.
+
+| Commit | Change |
+| --- | --- |
+| 1ee1eeb | Coherent covariance draws, aligned trajectory residuals and frozen variational meshes |
+| bebd0c0 | AI Trace predictive map display |
+| 3f59750 | Pareto ranking, crowding, compute objectives and recovered candidate artifacts |
+| 5eae3a6 | Physical scenarios from closed visits and end-to-end synthetic survey example |
+| c72ec1a | Quantile checkpoint inference and dashboard reports |
+| ec12d9d | Reliability profiles and checkpoint horizon verification |
+| 4ab2456 | Masked field exports, reliability checks and research console browser regression |
+| b9dbf7f | Fix horizontal overflow observed at 390 px |
+| 0f11a03 | Joint and marginal quantile calibration on separated blocks |
+
+The full CPU suite ran 165 tests, including actual Chromium for AI Trace
+and the research console. 163 passed and two CUDA tests skipped.
+A fresh checkout installed requirements and generated the offline survey
+exports. [Phase 8 CI matrix](https://github.com/jaychandrawrites-ai/precision-agriculture-sensor-system/actions/runs/45772897549)
+
+The five-site synthetic survey exported 32 predictive draws across six
+leads, 16 cells and six features. Shared calibration and spatial
+dependence are modeled assumptions. Actual field coverage is unknown.
+
+The Yuma Valley 2019 quantile reanalysis split the previously inspected
+test period into 90 spaced calibration and 97 evaluation origins.
+Simultaneous coverage was 24.7% raw, 32.0% with marginal expansion and
+84.5% with simultaneous expansion at nominal 90%. The mean one-hour
+temperature interval widened from 7.88 to 21.72 °C. Its interval score
+increased from 8.88 to 21.72 °C. Independent station-year replication
+is still needed.
+
+A 72-hour reliability profile calibrated on 36 spaced Yuma 2018 origins
+accepted 71 of 119 Maricopa 2019 origins. Accepted-origin temperature
+RMSE was 3.64 °C at 72 hours versus 3.81 °C across all complete origins.
+Accepted-origin error was higher at 1, 24 and 48 hours. This compares
+different subsets of weather and gives no general reliability claim.
+
+The three-seed synthetic architecture experiment used shared splits and
+12 candidate evaluations per search method. Aggregate work varied from
+44.8 to 60.9 million parameter-sample steps under equal per-candidate caps.
+Six-hour RMSE was 6.15–8.19 °C for amplitude and 6.15–8.07 °C for hybrid
+search. Daily persistence was exact on the deliberately periodic fixture.
+Amplitude search is classical computation.
+
+Reproduction:
+
+```sh
+python -m Dashboard.Server --workspace ./jupiter-dashboard
+python -m Examples.SyntheticUncertainty /tmp/jupiter-uncertainty
+python -m Examples.SyntheticJoint /tmp/jupiter-joint.json --epochs 160 --seed 82
+JUPITER_TRACE_BROWSER=1 OPENBLAS_NUM_THREADS=1 python -W error::DeprecationWarning -m unittest discover -s Tests -q
+python calibrate_quantiles.py hourly.csv quantile.json calibration.json --calibration-start 2019-11-07T14:00 --test-start 2019-12-04T00:00 --stride 7
+```
+
+External hardware, modern Yuma export, paired field observations, CUDA and
+release approval remain outstanding. For independent experiments, freeze
+the checkpoint and thresholds before acquiring a new station-year.
+Predeclare a six-hour study with seven-hour spacing and a 72-hour transfer
+study with 73-hour spacing. Compare coverage and width on the same origins.

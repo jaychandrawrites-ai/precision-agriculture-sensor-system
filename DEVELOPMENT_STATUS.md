@@ -45,3 +45,12 @@ sequence architecture search, adaptive variational reconstruction, paired
 joint training and the browser-tested AI Trace workflow. Trained quantile
 inference and survey adaptive kriging are available from the CLI. Remaining
 application integration and field validation are indexed by requirement.
+
+## Phase 8 checkpoint
+
+The final checklist records 35 verified requirements, 44 partial, one
+unstarted and 16 externally blocked. The combined survey export, quantile
+console, constrained sequence search and calibration experiments are
+documented in BUILD_LOG.md. Remaining work includes joint inference model
+selection, candidate-isolated memory measurements, optional multi-device
+execution, publication exports and independent field verification.

@@ -2,16 +2,16 @@
 
 Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERIFIED entries count. The [original master requirements](MASTER_REQUIREMENTS.md) remain authoritative.
 
-**30/96 verified (31.2%).**
+**35/96 verified (36.5%).**
 
 | Classification | Count |
 | --- | ---: |
 | BLOCKED — EXTERNAL HARDWARE | 7 |
-| PARTIALLY IMPLEMENTED | 49 |
+| PARTIALLY IMPLEMENTED | 44 |
 | BLOCKED — COMPUTATIONAL RESOURCE | 2 |
 | NOT STARTED | 1 |
 | BLOCKED — EXTERNAL DATA | 6 |
-| COMPLETE — VERIFIED | 30 |
+| COMPLETE — VERIFIED | 35 |
 | BLOCKED — USER APPROVAL | 1 |
 
 ## 1. AI Trace and hardware integration
@@ -63,10 +63,10 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R028 | Complete seasonal and harmonic neural hybrids. | PARTIALLY IMPLEMENTED | Benchmark additional causal neural/harmonic combinations on predeclared independent periods. |
 | R029 | Complete horizon-specific ensemble selection. | PARTIALLY IMPLEMENTED | `ValidationBlend` fits convex lead/feature-specific weights with causal fallback. Integrate with named checkpoint members and independent calibration in the application. b14fdad. |
 | R030 | Integrate sequence architectures into saved-model inference. | COMPLETE — VERIFIED | `Utils/ModelLoader.py` serves saved direct and sequence forecasts. `Tests/test_phase5_sequence_forecast.py`, 04e7332. |
-| R031 | Complete quantile forecasting. | PARTIALLY IMPLEMENTED | `quantile_forecast.py` trains ordered quantiles via pinball loss, saves portable checkpoints and reports coverage. Dashboard visualization remains. b14fdad. |
-| R032 | Complete joint and marginal uncertainty reporting. | PARTIALLY IMPLEMENTED | `TrajectoryResiduals` keeps joint draws across sites, leads and features. Verify interval calibration on independent paired field trajectories. b14fdad. |
-| R033 | Improve distribution-shift diagnostics and abstention. | PARTIALLY IMPLEMENTED | Validate abstention thresholds under independent station and regime shifts. |
-| R034 | Verify all supported forecast horizons from 1 to 72 hours. | PARTIALLY IMPLEMENTED | Exercise every lead with each supported checkpoint family in end-to-end inference. |
+| R031 | Complete quantile forecasting. | COMPLETE — VERIFIED | Ordered quantile checkpoints serve CLI, field and survey workflows. Dashboard charts and exports verified by Tests/test_phase8_quantile_dashboard.py and Tests/test_research_browser.py. c72ec1a, 5eae3a6, b9dbf7f. |
+| R032 | Complete joint and marginal uncertainty reporting. | PARTIALLY IMPLEMENTED | Joint block calibration and survey residual draws implemented. Independent station-year joint coverage and cross-location calibration remain. 0f11a03, 1ee1eeb. |
+| R033 | Improve distribution-shift diagnostics and abstention. | PARTIALLY IMPLEMENTED | Calibration-only abstention evaluated on Yuma-to-Maricopa transfer. Validate with measured calibration changes and additional regimes. ec12d9d, 4ab2456. |
+| R034 | Verify all supported forecast horizons from 1 to 72 hours. | COMPLETE — VERIFIED | Temporal/HorizonVerification.py and Tests/test_phase8_reliability.py exercise all 72 requested leads across six modes and reject leads beyond a saved horizon. ec12d9d, 4ab2456. |
 
 ## 5. Classical and quantum-inspired evolution
 
@@ -74,10 +74,10 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | --- | --- | --- | --- |
 | R035 | Expand genome representation to sequence architectures. | COMPLETE — VERIFIED | `Evolution/Genome.py` encodes family, context, convolution and attention parameters. `Tests/test_phase7_sequence_evolution.py`, cac9c0e. |
 | R036 | Complete recurrent and attention candidate search. | COMPLETE — VERIFIED | Five-method search shares chronological windows, with recurrent and attention families. `Tests/test_phase7_sequence_evolution.py`, cac9c0e. |
-| R037 | Complete multi-objective Pareto optimization. | PARTIALLY IMPLEMENTED | Extend and verify Pareto selection with the additional objectives. |
-| R038 | Include memory and inference costs in fitness objectives. | PARTIALLY IMPLEMENTED | Measure inference time and memory and include both in selection. |
+| R037 | Complete multi-objective Pareto optimization. | COMPLETE — VERIFIED | Constrained nondomination and crowding integrated with the sequence search. Tests/test_phase8_search_objectives.py. 3f59750. |
+| R038 | Include memory and inference costs in fitness objectives. | PARTIALLY IMPLEMENTED | Search measures inference latency and training time, estimates candidate memory, and reports process peak RSS. Candidate-isolated peak memory remains. 3f59750. |
 | R039 | Complete adaptive exploration and diversity diagnostics. | PARTIALLY IMPLEMENTED | Verify exploration and diversity diagnostics across the expanded candidate space. |
-| R040 | Verify expanded architecture checkpoint recovery. | PARTIALLY IMPLEMENTED | Test exact interrupted/restarted search with sequence candidates. |
+| R040 | Verify expanded architecture checkpoint recovery. | COMPLETE — VERIFIED | Generation recovery verifies candidate manifests and recurrent/convolution/attention artifacts. Tests/test_phase8_search_objectives.py. 3f59750, ec12d9d. |
 | R041 | Run matched-budget fixed/random/classical/amplitude/hybrid comparisons. | PARTIALLY IMPLEMENTED | Run all named methods on matched independent sequence-search experiments. |
 | R042 | Integrate selected architectures into application workflows. | PARTIALLY IMPLEMENTED | Selected portable sequence checkpoints work in the CLI and field loader. Dashboard still needs direct selection/export of search winners. |
 
@@ -89,8 +89,8 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R044 | Complete adaptive variational reconstruction. | COMPLETE — VERIFIED | `Spatial/AdaptiveVariational.py` solves and refines a finite-volume mesh with hard seeds. `Tests/test_phase7_variational_fields.py`, fe27472. |
 | R045 | Complete irregular field boundary handling. | COMPLETE — VERIFIED | `Spatial/FieldDomain.py` supports polygons and holes. Adaptive and regular solver/sampler tests verify excluded areas. fe27472. |
 | R046 | Complete remaining geostatistical covariance options. | PARTIALLY IMPLEMENTED | Verify additional covariance families and numerical conditioning. |
-| R047 | Propagate variogram and covariance parameter uncertainty. | PARTIALLY IMPLEMENTED | `Spatial/CovarianceStudy.py` combines coherent draws across declared covariance scenarios. Integrate with survey forecasts and field-derived variograms. |
-| R048 | Complete physical and measurement uncertainty propagation. | PARTIALLY IMPLEMENTED | Combine physical, measurement and interpolation uncertainties with explicit dependence. |
+| R047 | Propagate variogram and covariance parameter uncertainty. | COMPLETE — VERIFIED | Weighted range, sill, nugget, family and directional scenarios produce coherent survey fields, tested in Tests/test_survey_uncertainty.py. 1ee1eeb, 5eae3a6. |
+| R048 | Complete physical and measurement uncertainty propagation. | PARTIALLY IMPLEMENTED | Joint mapping consumes physical scenarios and residuals. Broaden separately identified measurement scenarios and validate their dependence. |
 | R049 | Complete posterior predictive checks. | PARTIALLY IMPLEMENTED | `Spatial/CovarianceStudy.py` checks posterior predictions and observation noise. Real-field verification awaits paired observations. |
 | R050 | Verify sampler convergence against known distributions. | COMPLETE — VERIFIED | Analytical conditional Gaussian moments compared against exact and Metropolis sampling in `Tests/test_phase5_spatial.py`. Diagnostic limits are recorded in the Phase 5 build log. a8736a7. |
 | R051 | Perform real-field spatial cross-validation. | BLOCKED — EXTERNAL DATA | Requires real multi-site observations with independently measured targets and adequate paired coverage. |
@@ -103,7 +103,7 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R053 | Preserve spatial and temporal dependence in uncertainty draws. | COMPLETE — VERIFIED | One member index and IDW transform across the trajectory. `Tests/test_trace_ensemble.py` reproduces the exported trajectory statistics. df5915b. |
 | R054 | Generate spatial predictive uncertainty maps. | COMPLETE — VERIFIED | `trace_analysis.py` exports empirical ensemble mean, spread and quantile maps. `Tests/test_trace_ensemble.py`, b203519 and df5915b. |
 | R055 | Generate time-indexed forecast maps for all six features. | COMPLETE — VERIFIED | Time and feature axes verified on six leads and six features in `Tests/test_trace_ensemble.py`. `Acquisition/TraceAnalysis.py`, b203519. |
-| R056 | Integrate adaptive spatial reconstruction with survey forecasts. | PARTIALLY IMPLEMENTED | Shared quadtree kriging and IDW propagate survey members over six leads and six features. Variational reconstruction and covariance/physics scenario combinations remain to be wired into the same export. e31c48e. |
+| R056 | Integrate adaptive spatial reconstruction with survey forecasts. | PARTIALLY IMPLEMENTED | Survey export includes adaptive kriging, frozen variational reconstruction, physical and covariance draws. Propagate these combined draws through the variational operator and support chunked export. 1ee1eeb, 5eae3a6. |
 | R057 | Complete optional joint temporal-spatial objective. | COMPLETE — VERIFIED | `Temporal/JointTraining.py` jointly updates the temporal model from paired held-out-aware workflows with spatial, physical and regularization terms. Finite differences and recovery in `Tests/test_joint_training.py`, 16920c2. |
 | R058 | Test joint optimization using explicitly synthetic fixtures. | COMPLETE — VERIFIED | `Examples/SyntheticJoint.py` compares joint and independent training on separate survey targets at a held-out site and period. `Tests/test_joint_training.py`, 16920c2. |
 | R059 | Validate joint learning when genuine paired field labels are available. | BLOCKED — EXTERNAL DATA | Requires real multi-site observations with independently measured targets and adequate paired coverage. |
@@ -124,7 +124,7 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R069 | Display interactive spatial and uncertainty maps. | PARTIALLY IMPLEMENTED | Expose time-indexed uncertainty grids in interactive map controls. |
 | R070 | Complete integrated research experiment controls. | PARTIALLY IMPLEMENTED | Expose remaining matched-run and spatial experiment controls. |
 | R071 | Complete downloadable reports and figures. | PARTIALLY IMPLEMENTED | Add and verify publication figure exports alongside existing reports. |
-| R072 | Verify actual browser interactions. | PARTIALLY IMPLEMENTED | Chromium verified the AI Trace flow at two widths. Complete equivalent real-browser checks of the research console. |
+| R072 | Verify actual browser interactions. | PARTIALLY IMPLEMENTED | Actual Chromium verified AI Trace at 1365 and 390 px, plus quantile training, calibration view and forecasting in the console. Add browser checks of evolutionary search and publication exports. |
 | R073 | Complete responsive layout and interface polish. | PARTIALLY IMPLEMENTED | Verify and refine layout across actual viewport sizes. |
 
 ## 9. Scientific experiments and reporting
@@ -151,9 +151,9 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R086 | Resolve remaining incomplete implementations. | PARTIALLY IMPLEMENTED | Close the individual software requirements tracked above. |
 | R087 | Verify checkpoint backward compatibility. | COMPLETE — VERIFIED | `Temporal/DirectCheckpoint.py` and `Utils/ModelLoader.py`. Legacy checkpoint coverage in the suite and direct v1/v2 checks in `Tests/test_phase5_sequence_forecast.py`, 04e7332. |
 | R088 | Run complete offline end-to-end demonstrations. | COMPLETE — VERIFIED | Offline ensemble replay and export in `Examples/SyntheticTrace.py`, tested by `Tests/test_trace_ensemble.py`. b203519 and df5915b. |
-| R089 | Run complete automated test suite. | COMPLETE — VERIFIED | Full local suite on 9422265 with Chromium enabled. 151 passes and two CUDA skips. |
+| R089 | Run complete automated test suite. | COMPLETE — VERIFIED | Full suite with Chromium on 0f11a03. 163 passes, two CUDA skips. |
 | R090 | Verify all four Linux and Windows CI jobs. | COMPLETE — VERIFIED | All four Linux/Windows jobs in `.github/workflows/jupiter-tests.yml` passed on df5915b. [Run 45767131538](https://github.com/jaychandrawrites-ai/precision-agriculture-sensor-system/actions/runs/45767131538). |
-| R091 | Verify clean installation from a fresh checkout. | COMPLETE — VERIFIED | Fresh single-branch clone at df5915b, fresh virtual environment, `requirements.txt` install and offline `Examples.SyntheticTrace --ensemble` smoke test. |
+| R091 | Verify clean installation from a fresh checkout. | COMPLETE — VERIFIED | Fresh clone and isolated requirements install ran Examples.SyntheticUncertainty at 0f11a03. |
 | R092 | Complete mathematical and architectural documentation. | PARTIALLY IMPLEMENTED | Document coherence, calibration limits and residual scientific assumptions across workflows. |
 | R093 | Complete reproducible experiment instructions. | PARTIALLY IMPLEMENTED | Add commands for each remaining benchmark and figure build. |
 | R094 | Document external validation blockers. | COMPLETE — VERIFIED | `LIMITATIONS.md`, `HARDWARE.md`, `VALIDATION.md` and `BUILD_LOG.md` document the data and hardware needed for field verification. `Tests/test_trace_ensemble.py` exercises the synthetic path, df5915b. Documentation foundation at 414ec3d. |
