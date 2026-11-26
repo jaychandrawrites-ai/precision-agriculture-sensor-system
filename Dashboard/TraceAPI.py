@@ -132,11 +132,12 @@ def trace_post(handler, body):
         if predictive is not None:
             import numpy as np
             fields = {}
+            mask = arrays["predictive_inside"]
             for key in ("mean", "median", "std", "lower", "upper", "width"):
                 layer = arrays["predictive_" + key][lead - 1, :, index]
                 values = np.where(np.isfinite(layer), layer, None)
-                fields[key] = values.tolist() if adaptive is not None else values.reshape(25, 25).tolist()
-            result["predictive"] = fields
+                fields[key] = values.tolist() if adaptive is not None else values.reshape(len(arrays["north_m"]), len(arrays["east_m"])).tolist()
+            result["predictive"] = {**fields, **({"inside": mask.tolist()} if adaptive is not None else {})}
         return handler._json(200, result)
     elif action == "map":
         return handler._json(200, observational_map(store, identifier, body["feature"], body["timestamp"],

@@ -93,3 +93,19 @@ class SurveyUncertaintyTests(unittest.TestCase):
                 physical_sources=physical)
             self.assertEqual(arrays["predictive_source_trajectories"].shape, (6, 5, 6, 6))
             self.assertEqual(len(report["predictive"]["physical_provenance"]["parameter_draws"]), 4)
+
+    def test_irregular_mask_excludes_hole_and_preserves_statistics(self):
+        from Spatial.SurveyUncertainty import predictive_fields
+
+        settings = {
+            "feature_scales": [1.], "draws": 8,
+            "field_polygon_m": [[0, 0], [8, 0], [8, 3], [5, 3], [5, 8], [0, 8]],
+            "field_holes_m": [[[1, 1], [3, 1], [3, 3], [1, 3]]],
+            "covariance_scenarios": [{"id": "shape", "weight": 1., "covariance": {"range_m": 10.}}],
+        }
+        arrays, _ = predictive_fields(
+            [[.5, .5], [4., 4.]], np.ones((2, 2, 3, 1)),
+            [[.5, .5], [2., 2.], [7., 6.], [4., 6.]], settings, .9)
+        np.testing.assert_array_equal(arrays["predictive_inside"], [True, False, False, True])
+        self.assertTrue(np.isnan(arrays["predictive_mean"][:, 1:3]).all())
+        np.testing.assert_allclose(arrays["predictive_mean"], arrays["predictive_draws"].mean(axis=0))

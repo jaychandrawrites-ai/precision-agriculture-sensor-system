@@ -344,7 +344,9 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
     if predictive is not None:
         from Spatial.SurveyUncertainty import predictive_fields
 
-        settings = dict(predictive)
+        settings = {key: adaptive[key] for key in ("field_polygon_m", "field_holes_m")
+                    if adaptive is not None and key in adaptive}
+        settings.update(predictive)
         provenance = [{"checkpoint_sha256": sha, "physical_scenario_id": None} for sha in hashes]
         physical = settings.pop("physical", None)
         if physical_sources is not None:

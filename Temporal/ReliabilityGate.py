@@ -42,9 +42,10 @@ class ReliabilityProfile:
     origins: int
     tail: float
     history_hours: int
+    clock_hours: tuple = ()
 
     @classmethod
-    def fit(cls, values, timestamps, *, history_hours=3, stride=24, tail=.05,
+    def fit(cls, values, timestamps, *, history_hours=3, stride=25, tail=.05,
             station_ids=(), source_kind="historical", calibration_id=None,
             disagreements=None, supported_steps=None):
         times, values = _hours(timestamps), np.asarray(values, dtype=float)
@@ -78,7 +79,8 @@ class ReliabilityProfile:
         last = pd.Timestamp(times[-1], tz="UTC").isoformat()
         return cls(center, scale, lower, upper, float(np.quantile(scores, 1 - tail, method="higher")),
                    maximum_disagreement, supported_steps, tuple(station_ids), source_kind, calibration_id,
-                   tuple(sorted({_season(times[i]) for i in origins})), last, len(origins), tail, history_hours)
+                   tuple(sorted({_season(times[i]) for i in origins})), last, len(origins), tail, history_hours,
+                   tuple(sorted({int(value) % 24 for value in times[origins].astype("datetime64[h]").astype(int)})))
 
     def to_record(self):
         return {"format": "jupiter-reliability-v1", **asdict(self)}
@@ -129,6 +131,10 @@ class ReliabilityProfile:
             times = _hours(timestamps)
             season = _season(times[-1])
             diagnostics["season"] = season
+            hour = int(times[-1].astype("datetime64[h]").astype(int)) % 24
+            diagnostics["hour_utc"] = hour
+            if self.clock_hours and hour not in self.clock_hours:
+                report("diurnal_transfer", "This UTC hour was absent from reliability calibration.", False)
             if season not in self.seasons:
                 report("seasonal_transfer", f"{season.capitalize()} was absent from reliability calibration.", False)
             history = values[-self.history_hours:]

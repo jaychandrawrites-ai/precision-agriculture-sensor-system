@@ -21,7 +21,7 @@ def artifacts(checkpoints, device):
     return results
 
 
-def fit_profile(source, models, *, steps, stride=24, tail=.05, station=(), kind="historical",
+def fit_profile(source, models, *, steps, stride=25, tail=.05, station=(), kind="historical",
                 calibration_id=None):
     values, times = read_hourly(source)
     maximum = min(model.limit for model in models)
@@ -135,7 +135,7 @@ def main():
             parser.add_argument("--source-kind", default="historical")
             parser.add_argument("--calibration-id")
     subcommands.choices["fit"].add_argument("--station", action="append", default=[])
-    subcommands.choices["fit"].add_argument("--stride", type=int, default=24)
+    subcommands.choices["fit"].add_argument("--stride", type=int, default=25)
     subcommands.choices["fit"].add_argument("--tail", type=float, default=.05)
     for mode in ("assess", "evaluate"):
         subcommands.choices[mode].add_argument("--station")
