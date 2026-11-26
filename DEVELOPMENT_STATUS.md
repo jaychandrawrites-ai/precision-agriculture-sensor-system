@@ -54,3 +54,9 @@ console, constrained sequence search and calibration experiments are
 documented in BUILD_LOG.md. Remaining work includes joint inference model
 selection, candidate-isolated memory measurements, optional multi-device
 execution, publication exports and independent field verification.
+
+## Phase 9 survey milestone
+
+Joint site draws now propagate through selectable reconstruction operators.
+The checklist retains R056 as partial pending a disk-backed export path.
+See EXECUTION_RUNBOOK.md for checkpoint and verification procedure.

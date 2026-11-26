@@ -888,3 +888,21 @@ release approval remain outstanding. For independent experiments, freeze
 the checkpoint and thresholds before acquiring a new station-year.
 Predeclare a six-hour study with seven-hour spacing and a 72-hour transfer
 study with 73-hour spacing. Compare coverage and width on the same origins.
+
+## 2026-11-26 — Phase 9 survey milestone
+
+Started at `86eed5b`. The requested runbook was absent in both the checkout
+and remote branch history, so `EXECUTION_RUNBOOK.md` now records the resume
+and verification procedure.
+
+`2be8e9e` adds selectable IDW, fixed variational and adaptive variational
+propagation of shared checkpoint, physical and residual trajectories.
+The solver keeps one mesh and applies its weights to every draw. Covariance
+scenarios remain available through kriging. Other operators explicitly
+reject that combination. Cell-wise batched evaluation and summaries passed
+chunk-size equivalence checks. Dense draw storage remains budget-limited.
+
+`f986d24` exports observational conditioning diagnostics and the sample
+variance decomposition within and between drawn covariance scenarios.
+Thirteen focused spatial tests passed, including reproducibility and the
+empirical total-variance identity. Measured field validation remains open.
