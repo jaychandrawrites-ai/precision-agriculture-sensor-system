@@ -28,8 +28,9 @@ class ParameterRange:
 
     def __post_init__(self):
         parts = self.path.split(".")
-        if (len(parts) != 2 or parts[0] not in PHYSICAL_SECTIONS | {"scenario"}
-                or not np.isfinite([self.lower, self.upper]).all() or self.lower >= self.upper):
+        if (len(parts) != 2 or parts[0] not in PHYSICAL_SECTIONS | {"scenario", "measurement"}
+                or not np.isfinite([self.lower, self.upper]).all() or self.lower >= self.upper
+                or parts[0] == "measurement" and self.path != "measurement.soil_vwc_bias"):
             raise ValueError("Expected a varied soil, leaf, crop or scenario parameter range")
 
 
@@ -63,6 +64,8 @@ def _configured(base, scenario, parameters, draw):
     scenario = dict(scenario)
     for spec, value in zip(parameters, draw):
         section, name = spec.path.split(".")
+        if section == "measurement":
+            raise ValueError("Measurement uncertainty requires a field scenario configuration")
         if section == "scenario":
             if name not in SCENARIO_PARAMETERS:
                 raise ValueError(f"Unknown scenario parameter {name}")
