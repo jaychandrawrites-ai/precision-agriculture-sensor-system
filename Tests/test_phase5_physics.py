@@ -42,3 +42,24 @@ class HourlyETTests(unittest.TestCase):
         self.assertTrue(np.isnan(output.iloc[-1, 1]))
         self.assertEqual(report["matched_hours"], 26)
         self.assertEqual(report["missing_hours"], 24)
+
+    def test_stratified_physical_uncertainty_keeps_exogenous_observations(self):
+        from assumptions import Assumptions
+        from physical_ensemble import ParameterRange, physical_ensemble, stratified_sample
+
+        ref = ReferenceET(32.7, 0)
+        timestamps = pd.date_range("2020-06-01T00:00Z", periods=36, freq="h")
+        weather = pd.DataFrame({"air_temperature_c": 25. + 10*np.sin(np.arange(36) * np.pi / 12),
+                                "relative_humidity_pct": 50., "shortwave_w_m2": 80.,
+                                "wind_m_s": 2., "precipitation_mm": 0.}, index=timestamps)
+        parameters = [ParameterRange("soil.crop_coefficient", .4, 1.2)]
+        first = stratified_sample(parameters, 4, 42)
+        np.testing.assert_array_equal(first, stratified_sample(parameters, 4, 42))
+        scenarios = {"scenario_irrigation_mm": 0., "rain_interception_fraction": .05}
+        bands, results = physical_ensemble(WeatherData(weather, pd.DataFrame(index=timestamps)),
+                                           Assumptions(), ref, scenarios, parameters, draws=4)
+        np.testing.assert_array_equal(bands["air_temperature_c_lower"], weather["air_temperature_c"])
+        self.assertIsNone(results["features"]["air_temperature_c"]["spearman_correlation_of_mean"][
+            "soil.crop_coefficient"])
+        self.assertGreater(results["features"]["eta_mm_interval"]["spearman_correlation_of_mean"][
+            "soil.crop_coefficient"], .8)
