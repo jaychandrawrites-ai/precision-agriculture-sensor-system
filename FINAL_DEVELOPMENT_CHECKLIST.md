@@ -7,9 +7,8 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | Classification | Count |
 | --- | ---: |
 | BLOCKED — EXTERNAL HARDWARE | 7 |
-| PARTIALLY IMPLEMENTED | 36 |
+| PARTIALLY IMPLEMENTED | 37 |
 | BLOCKED — COMPUTATIONAL RESOURCE | 2 |
-| NOT STARTED | 1 |
 | BLOCKED — EXTERNAL DATA | 6 |
 | COMPLETE — VERIFIED | 43 |
 | BLOCKED — USER APPROVAL | 1 |
@@ -38,8 +37,8 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R013 | Complete configurable multi-head attention. | COMPLETE — VERIFIED | Four-head, two-layer attention exercised with full-stack gradients, masking tests and saved inference. Tests/test_phase7_sequence_evolution.py and Tests/test_phase5_sequence_layers.py. 0fff76e. |
 | R014 | Complete remaining optimizer and scheduler capabilities. | PARTIALLY IMPLEMENTED | Audit scheduler/optimizer coverage and verify resume for additional options. |
 | R015 | Verify mixed-precision numerical stability. | BLOCKED — COMPUTATIONAL RESOURCE | Requires suitable CUDA hardware and a matched precision/equivalence matrix. |
-| R016 | Complete memory-aware training. | PARTIALLY IMPLEMENTED | Measure peak memory and verify batch or accumulation behavior under an enforced budget. |
-| R017 | Complete optional multi-GPU candidate evaluation. | NOT STARTED | Define and implement process-isolated multi-device candidate execution. |
+| R016 | Complete memory-aware training. | PARTIALLY IMPLEMENTED | Direct and sequence CLIs exercise estimated allocation budgets and gradient accumulation. Verify OS and device enforcement across supported trainers. 6a5580d. |
+| R017 | Complete optional multi-GPU candidate evaluation. | PARTIALLY IMPLEMENTED | Fresh candidate processes, timeout cleanup and reruns verified on CPU. Physical multi-GPU verification remains. 5c1c40d. |
 | R018 | Verify CPU/CUDA numerical equivalence. | BLOCKED — COMPUTATIONAL RESOURCE | Requires suitable CUDA hardware and a matched precision/equivalence matrix. |
 
 ## 3. Physics-informed modeling
@@ -75,7 +74,7 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 | R035 | Expand genome representation to sequence architectures. | COMPLETE — VERIFIED | `Evolution/Genome.py` encodes family, context, convolution and attention parameters. `Tests/test_phase7_sequence_evolution.py`, cac9c0e. |
 | R036 | Complete recurrent and attention candidate search. | COMPLETE — VERIFIED | Five-method search shares chronological windows, with recurrent and attention families. `Tests/test_phase7_sequence_evolution.py`, cac9c0e. |
 | R037 | Complete multi-objective Pareto optimization. | COMPLETE — VERIFIED | Constrained nondomination and crowding integrated with the sequence search. Tests/test_phase8_search_objectives.py. 3f59750. |
-| R038 | Include memory and inference costs in fitness objectives. | PARTIALLY IMPLEMENTED | Search measures inference latency and training time, estimates candidate memory, and reports process peak RSS. Candidate-isolated peak memory remains. 3f59750. |
+| R038 | Include memory and inference costs in fitness objectives. | PARTIALLY IMPLEMENTED | Search measures inference latency and training time, estimates candidate memory, and reports process peak RSS. Fresh worker RSS is measured on supported CPU platforms. Integrate this observation into a selectable objective and verify device metrics. 5c1c40d, 6a5580d. |
 | R039 | Complete adaptive exploration and diversity diagnostics. | PARTIALLY IMPLEMENTED | Verify exploration and diversity diagnostics across the expanded candidate space. |
 | R040 | Verify expanded architecture checkpoint recovery. | COMPLETE — VERIFIED | Generation recovery verifies candidate manifests and recurrent/convolution/attention artifacts. Tests/test_phase8_search_objectives.py. 3f59750, ec12d9d. |
 | R041 | Run matched-budget fixed/random/classical/amplitude/hybrid comparisons. | PARTIALLY IMPLEMENTED | Run all named methods on matched independent sequence-search experiments. |

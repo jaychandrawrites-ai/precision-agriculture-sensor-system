@@ -71,3 +71,8 @@ verified, 37 partial, one unstarted and 16 externally blocked.
 
 R082 is verified through synthetic predictive mean and interval-width
 figure exports. The current checklist has 43 verified requirements.
+
+Phase 9 Part 2 started C01. Isolated CPU fits, timeout cleanup and direct
+training allocation controls are verified. R017 moved from unstarted to
+partial. The checklist remains at 43 verified, with 37 partial and 16
+externally blocked. The consolidated C01–C06 queue is in the runbook.

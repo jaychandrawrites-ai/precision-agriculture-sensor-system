@@ -969,3 +969,28 @@ installed. R082 is verified.
 
 The full suite after the covariance and holdout changes ran 173 tests,
 with 171 passes and two optional CUDA skips, including Chromium.
+
+### Phase 9 Part 2 resource-aware training
+
+- `5c1c40d` runs opt-in sequence candidate fits in fresh processes.
+  Candidate device assignment is stable across runs. CUDA devices are
+  exclusive within a search, CPU workers can run concurrently and a failed
+  worker leaves the previous generation checkpoint available for retry.
+  Workers receive only the fit and validation windows and target scaler.
+  The focused tests passed on CPU and covered a forced timeout followed by
+  successful evaluation plus agreement with in-process fit results.
+- `6a5580d` exposes memory budgets in sequence search and the direct CLI,
+  and exposes the existing optimizer and scheduler controls. Adagrad and
+  a plateau scheduler completed two epochs with an effective batch of 128,
+  microbatches of six and an estimated allocation of 28,992 bytes under a
+  30,000-byte budget. The operating-system process peak was about 69 MB,
+  including data and the runtime. A 360-row synthetic sequence search
+  completed with two isolated CPU workers under a per-candidate estimated
+  allocation budget of 1,000,000 bytes.
+
+Reproduce with `python experiments.py hourly.csv --sequence-space --epochs 1
+--population 2 --generations 1 --candidate-epochs 1 --candidate-device cpu
+--workers 2 --candidate-memory-bytes 1000000` on the synthetic fixture.
+The direct and search budgets model training allocations. Candidate-isolated
+CPU RSS is a separate diagnostic. Actual multi-GPU behavior and direct
+optimizer/scheduler recovery remain unverified.
