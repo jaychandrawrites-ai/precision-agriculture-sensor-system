@@ -7,7 +7,7 @@ header { padding: 2.2rem; color: #f8fbff; background: #132e45; border-radius: 1r
 h1 { font-size: clamp(2rem, 6vw, 3.4rem); margin: .45rem 0; }
 h2 { margin-block: 0 1rem; }
 .panel { background: #fff; border: 1px solid #d8e2ec; border-radius: .85rem; padding: 1.2rem; margin-bottom: 1rem; }
-form { display: grid; grid-template-columns: repeat(auto-fit,minmax(14rem,1fr)); gap: 1rem; align-items: end; }
+form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 1rem; align-items: end; }
 label { display: grid; gap: .35rem; font-weight: 600; }
 input,select,button { min-height: 2.5rem; padding: .45rem; font: inherit; border: 1px solid #a7b9ca; border-radius: .4rem; }
 button { background: #0b6257; color: white; font-weight: 700; cursor: pointer; border-color: #0b6257; }
@@ -67,5 +67,17 @@ progress { width: 7rem; }
 
 .workspace-nav a {
   color: inherit;
-  white-space: nowrap;
+}
+
+form > *, .result-controls label {
+  min-width: 0;
+}
+
+form input, form select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.workspace-nav a, #jobs a {
+  overflow-wrap: anywhere;
 }
