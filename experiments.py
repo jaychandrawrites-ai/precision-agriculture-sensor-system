@@ -1,6 +1,7 @@
 """Compare temporal architecture searches with an untouched chronological test split."""
 import argparse
-from dataclasses import replace
+from dataclasses import asdict, replace
+from hashlib import sha256
 import json
 from pathlib import Path
 from time import perf_counter
@@ -13,6 +14,7 @@ from Data.TimeSeries import calendar_cutoffs
 from Evolution.Diagnostics import diversity, pareto_front, random_search
 from Evolution.Fitness import validation_fitness
 from Evolution.GeneticAlgorithm import search as genetic_search
+from Evolution.Genome import Architecture
 from Evolution.Resumable import SearchOptions, run_search, validation_fingerprint
 from Framework.Backend import create_backend
 from QuantumInspired.QuantumEvolution import search as amplitude_search
@@ -26,7 +28,7 @@ from Utils.Metrics import horizon_metrics, physical_metrics
 
 
 def compare(values, timestamps, settings, budget, *, recursive=False, include_random=False,
-            search_directory=None, search_options=SearchOptions()):
+            include_hybrid=False, search_directory=None, search_options=SearchOptions()):
     cutoffs = (calendar_cutoffs(timestamps, settings.train_fraction, settings.validation_fraction)
                if recursive else None)
     dataset = build_dataset(values, timestamps, settings.train_fraction,
@@ -35,29 +37,36 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
     if recursive:
         windows = tuple(rollout_windows(dataset, rows, values, timestamps, settings.rollout_steps)
                         for rows in (dataset.train, dataset.validation))
-    score = validation_fitness(dataset, settings, budget, rollout_windows_pair=windows)
-    selections = {"fixed": ((settings.hidden, ()), [], None, 0.0, [])}
+    score = validation_fitness(dataset, settings, budget, rollout_windows_pair=windows,
+                               parameter_count_limit=search_options.max_parameters)
+    fixed = Architecture(tuple(settings.hidden), (), ("relu",) * len(settings.hidden))
+    selections = {"fixed": (fixed, [], None, 0.0, [])}
+    use_structured_search = search_directory is not None or search_options != SearchOptions() or include_hybrid
     if search_directory is not None:
         search_directory = Path(search_directory)
         search_directory.mkdir(exist_ok=True)
+    if use_structured_search:
         fingerprint = validation_fingerprint(dataset, settings, windows)
         if settings.device != "cpu" and search_options.workers > 1:
             raise ValueError("Parallel candidate training is CPU-only")
     searches = {"classical_ga": genetic_search, "quantum_inspired": amplitude_search}
     if include_random:
         searches["random"] = random_search
+    if include_hybrid:
+        searches["hybrid_amplitude"] = None
     for name, search in searches.items():
         started = perf_counter()
         generation_report = []
-        if search_directory is None:
+        if not use_structured_search:
             winner, history = search(score, budget, seed=settings.seed)
         else:
+            checkpoint = None if search_directory is None else search_directory / f"{name}.json"
             winner, history, generation_report = run_search(
-                name, score, budget, settings.seed, search_directory / f"{name}.json",
+                name, score, budget, settings.seed, checkpoint,
                 fingerprint, search_options
             )
         candidates = [candidate for generation in history for candidate in generation]
-        selections[name] = (winner.genome.architecture(), candidates, winner, perf_counter() - started, generation_report)
+        selections[name] = (winner.genome.decode(), candidates, winner, perf_counter() - started, generation_report)
 
     # Test windows and scores are only constructed once both selections are final.
     if recursive:
@@ -67,9 +76,9 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
             raise ValueError("No complete held-out windows for the experiment horizon")
         persistence, seasonal, fallback = baseline_forecasts(values, timestamps, test)
     reports = {}
-    for name, ((hidden, skips), candidates, winner, search_seconds, generation_report) in selections.items():
+    for name, (architecture, candidates, winner, search_seconds, generation_report) in selections.items():
         backend = create_backend(settings.device, settings.dtype, settings.seed)
-        model = TemporalModel(backend, hidden, settings.dropout, skips)
+        model = TemporalModel(backend, dropout=settings.dropout, **architecture.model_arguments())
         started = perf_counter()
         if recursive:
             result, inputs, diagnostics = fit_rollout(
@@ -80,7 +89,7 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
             result = fit(model, dataset, backend, settings)
         fit_seconds = perf_counter() - started
         report = {
-            "hidden": hidden, "skips": skips, "parameters": model.parameter_count,
+            **architecture.model_arguments(), "parameters": model.parameter_count,
             "candidate_count": len(candidates),
             "candidate_epoch_budget": len(candidates) * budget.candidate_epochs,
             "candidate_epochs_used": sum(item.epochs for item in candidates),
@@ -89,12 +98,23 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
             "candidate_model_sample_steps": sum(item.model_sample_steps for item in candidates),
             "candidate_parameter_sample_steps": sum(item.parameters * item.model_sample_steps
                                                      for item in candidates),
+            "actual_candidate_evaluations": (sum(item["actual_evaluations"] for item in generation_report)
+                                             if generation_report else len(candidates)),
+            "actual_candidate_model_sample_steps": (
+                sum(item["actual_training_sample_steps"] for item in generation_report)
+                if generation_report else sum(item.model_sample_steps for item in candidates)
+            ),
+            "actual_candidate_parameter_sample_steps": (
+                sum(item["actual_parameter_sample_steps"] for item in generation_report)
+                if generation_report else sum(item.parameters * item.model_sample_steps for item in candidates)
+            ),
             "selection_score": winner.score if winner is not None else None,
             "winning_bits": winner.genome.bits if winner is not None else None,
             "candidate_diversity": diversity(candidates),
             "generations": generation_report,
             "validation_pareto_front": [
-                {"bits": item.genome.bits, "validation_loss": item.validation_loss,
+                {"bits": item.genome.bits, **item.genome.decode().model_arguments(),
+                 "validation_loss": item.validation_loss,
                  "parameters": item.parameters} for item in pareto_front(candidates)
             ],
             "search_seconds": search_seconds, "final_fit_seconds": fit_seconds,
@@ -121,7 +141,10 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
         reports["protocol"] = {
             "seed": settings.seed, "calendar_cutoffs_utc": [str(cutoff) + "Z" for cutoff in cutoffs],
             "budget": {"population": budget.population, "generations": budget.generations,
-                       "candidate_epochs": budget.candidate_epochs, "horizon": settings.rollout_steps},
+                       "candidate_epochs": budget.candidate_epochs, "horizon": settings.rollout_steps,
+                       "candidate_parameter_step_limit": budget.candidate_parameter_step_limit},
+            "search_options": asdict(search_options),
+            "fitness": "validation loss plus complexity penalty",
         }
         reports["baselines"] = {
             "persistence": horizon_metrics(persistence, test.targets, persistence),
@@ -144,15 +167,32 @@ def main():
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--cache-fitness", action="store_true")
     parser.add_argument("--random-baseline", action="store_true")
+    parser.add_argument("--extended-space", action="store_true",
+                        help="Search independent residual and activation choices")
+    parser.add_argument("--adaptive-amplitude", action="store_true")
+    parser.add_argument("--hybrid-baseline", action="store_true",
+                        help="Compare classical offspring and adaptive amplitude sampling in one search")
+    parser.add_argument("--max-parameters", type=int)
+    parser.add_argument("--parent-selection", choices=("tournament", "rank"), default="tournament")
+    parser.add_argument("--crossover", choices=("uniform", "single_point"), default="uniform")
     parser.add_argument("--legacy", action="store_true")
+    parser.add_argument("--synthetic", action="store_true", help="Label the input as synthetic in the report")
     args = parser.parse_args()
     settings = replace(TrainingConfig(), epochs=args.epochs, seed=args.seed)
     budget = EvolutionConfig(population=args.population, generations=args.generations,
                              candidate_epochs=args.candidate_epochs,
                              candidate_parameter_step_limit=args.candidate_parameter_step_limit)
     report = compare(*read_hourly(args.source), settings, budget, recursive=not args.legacy,
-                     include_random=args.random_baseline, search_directory=args.search_directory,
-                     search_options=SearchOptions(workers=args.workers, cache=args.cache_fitness))
+                     include_random=args.random_baseline, include_hybrid=args.hybrid_baseline,
+                     search_directory=args.search_directory,
+                     search_options=SearchOptions(workers=args.workers, cache=args.cache_fitness,
+                                                  extended=args.extended_space,
+                                                  adaptive_amplitude=args.adaptive_amplitude,
+                                                  max_parameters=args.max_parameters,
+                                                  parent_selection=args.parent_selection,
+                                                  crossover=args.crossover))
+    report["source_sha256"] = sha256(Path(args.source).read_bytes()).hexdigest()
+    report["synthetic"] = args.synthetic
     print(json.dumps(report, allow_nan=False, indent=2))
 
 

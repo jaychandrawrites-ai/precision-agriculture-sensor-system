@@ -10,7 +10,8 @@ import numpy as np
 
 from Evolution.Diagnostics import diversity
 from Evolution.Fitness import Candidate
-from Evolution.Genome import Genome
+from Evolution.Genome import Architecture, Genome, WIDTHS
+from QuantumInspired.Adaptive import adaptive_update, amplitude_diagnostics
 from QuantumInspired.QuantumGenome import QuantumGenome
 from Utils.Serialization import read_json, write_json
 
@@ -22,12 +23,30 @@ class SearchOptions:
     patience: int | None = None
     elite: int = 1
     tournament: int = 3
+    extended: bool = False
+    adaptive_amplitude: bool = False
+    hybrid_fraction: float = 0.25
+    entropy_floor: float = 0.35
+    max_parameters: int | None = None
+    parent_selection: str = "tournament"
+    crossover: str = "uniform"
 
     def __post_init__(self):
         if min(self.workers, self.elite, self.tournament) < 1 or (
             self.patience is not None and self.patience < 1
         ):
             raise ValueError("Invalid search settings")
+        minimum = Architecture((min(WIDTHS),), (), ("relu",)).parameter_count
+        if self.max_parameters is not None and (
+            type(self.max_parameters) is not int or self.max_parameters < minimum
+        ):
+            raise ValueError(f"Parameter cap must be at least {minimum}")
+        if not 0 < self.hybrid_fraction < 1 or not 0 <= self.entropy_floor <= 1:
+            raise ValueError("Invalid hybrid fraction or entropy floor")
+        if self.parent_selection not in ("tournament", "rank") or self.crossover not in (
+            "uniform", "single_point"
+        ):
+            raise ValueError("Invalid selection or crossover operator")
 
 
 def validation_fingerprint(dataset, settings, windows):
@@ -67,25 +86,34 @@ def _unpack(item):
 
 
 def _key(genome):
-    return str(genome.architecture())
+    return str(genome.decode())
 
 
-def _breed(ranked, rng, config, options):
-    elite = [item.genome for item in ranked[:min(options.elite, config.population)]]
+def _breed(ranked, rng, config, options, *, size, preserve_elite=True):
+    elite_count = min(options.elite, size) if preserve_elite else 0
+    elite = [item.genome for item in ranked[:elite_count]]
     mutation = min(.5, config.mutation_probability * (1.5 - diversity(ranked)))
+    rank_weights = np.arange(len(ranked), 0, -1, dtype=float)
+    rank_weights /= rank_weights.sum()
 
-    def tournament():
+    def select_parent():
+        if options.parent_selection == "rank":
+            return ranked[rng.choice(len(ranked), p=rank_weights)].genome
         indices = rng.integers(len(ranked), size=options.tournament)
         return ranked[min(indices)].genome
 
     pool = elite.copy()
-    while len(pool) < config.population:
-        left, right = tournament(), tournament()
-        mask = rng.random(len(left.bits)) < .5
-        bits = np.where(mask, left.bits, right.bits)
-        bits ^= rng.random(len(bits)) < mutation
-        pool.append(Genome(tuple(map(int, bits))))
-    return pool
+    while len(pool) < size:
+        left, right = select_parent(), select_parent()
+        if options.crossover == "single_point":
+            child = left.offspring(right, rng, mutation)
+        else:
+            mask = rng.random(len(left.bits)) < .5
+            bits = np.where(mask, left.bits, right.bits)
+            bits ^= rng.random(len(bits)) < mutation
+            child = Genome(tuple(map(int, bits)))
+        pool.append(child)
+    return pool, mutation
 
 
 def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=SearchOptions(),
@@ -96,8 +124,9 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
     count as logical evaluations, with actual work and cache hits reported
     separately. Disable caching when matching physical evaluation counts.
     """
-    if mode not in ("classical_ga", "quantum_inspired", "random") or not fingerprint:
+    if mode not in ("classical_ga", "quantum_inspired", "random", "hybrid_amplitude") or not fingerprint:
         raise ValueError("Unknown mode or missing validation fingerprint")
+    amplitude_mode = mode in ("quantum_inspired", "hybrid_amplitude")
     rng = np.random.default_rng(seed)
     pool = []
     amplitudes = []
@@ -106,10 +135,10 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
     cache = {}
     best = None
     stale = 0
-    checkpoint = Path(checkpoint)
-    recipe = {"version": 1, "mode": mode, "seed": seed, "data": fingerprint,
+    checkpoint = Path(checkpoint) if checkpoint is not None else None
+    recipe = {"version": 2, "mode": mode, "seed": seed, "data": fingerprint,
               "evolution": asdict(settings), "options": asdict(options)}
-    if checkpoint.exists():
+    if checkpoint is not None and checkpoint.exists():
         state = read_json(checkpoint)
         if recipe != state["recipe"]:
             raise ValueError("Search checkpoint recipe, data, or settings differ")
@@ -118,16 +147,14 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
         diagnostics = state["diagnostics"]
         cache = {name: _unpack(candidate) for name, candidate in state["cache"].items()}
         pool = [Genome(tuple(bits)) for bits in state["population"]]
-        for angles in state["angles"]:
-            individual = QuantumGenome()
-            individual.angles = np.asarray(angles, dtype=float)
-            amplitudes.append(individual)
+        amplitudes = [QuantumGenome(extended=options.extended, angles=angles)
+                      for angles in state["angles"]]
         best = min((item for generation in history for item in generation), key=lambda item: item.score)
         stale = state["stale"]
-    elif mode == "quantum_inspired":
-        amplitudes = [QuantumGenome() for _ in range(settings.population)]
+    elif amplitude_mode:
+        amplitudes = [QuantumGenome(extended=options.extended) for _ in range(settings.population)]
     elif mode == "classical_ga":
-        pool = [Genome.random(rng) for _ in range(settings.population)]
+        pool = [Genome.random(rng, extended=options.extended) for _ in range(settings.population)]
 
     stop = settings.generations if stop_after is None else min(stop_after, settings.generations)
     if stop < 1:
@@ -136,10 +163,27 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
         for generation in range(len(history), stop):
             if options.patience is not None and stale >= options.patience:
                 break
-            if mode == "quantum_inspired":
-                pool = [item.measure(rng) for item in amplitudes]
+            hybrid_mutation = None
+            measured = []
+            if amplitude_mode:
+                injected = 0
+                if mode == "hybrid_amplitude" and history:
+                    injected = min(settings.population - 1,
+                                   max(1, int(settings.population * options.hybrid_fraction)))
+                measured = list(range(len(amplitudes)))
+                if injected:
+                    excluded = set(rng.choice(len(amplitudes), size=injected, replace=False))
+                    measured = [slot for slot in measured if slot not in excluded]
+                pool = [amplitudes[slot].measure(rng) for slot in measured]
+                if injected:
+                    offspring, hybrid_mutation = _breed(history[-1], rng, settings, options,
+                                                        size=injected, preserve_elite=False)
+                    pool.extend(offspring)
             elif mode == "random":
-                pool = [Genome.random(rng) for _ in range(settings.population)]
+                pool = [Genome.random(rng, extended=options.extended) for _ in range(settings.population)]
+            repaired = [genome.repair(options.max_parameters) for genome in pool]
+            repairs = sum(before != after for before, after in zip(pool, repaired))
+            pool = repaired
 
             if options.cache:
                 pending = {}
@@ -161,24 +205,40 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
                 stale = 0
             else:
                 stale += 1
-            diagnostics.append({
+            generation_metrics = {
                 "generation": generation + 1, "best_selection_score": best.score,
                 "diversity": diversity(ranked), "actual_evaluations": len(actual),
                 "cache_hits": len(pool) - len(actual),
                 "actual_training_sample_steps": sum(item.model_sample_steps for item in actual),
                 "actual_parameter_sample_steps": sum(item.model_sample_steps * item.parameters
                                                      for item in actual),
-            })
+                "repaired_candidates": repairs,
+            }
             if mode == "classical_ga":
-                pool = _breed(ranked, rng, settings, options)
-            elif mode == "quantum_inspired":
-                for individual, candidate in zip(amplitudes, candidates):
-                    individual.rotate(candidate.genome, best.genome, settings.rotation_radians)
+                pool, mutation = _breed(ranked, rng, settings, options, size=settings.population)
+                generation_metrics["breeding_mutation_probability"] = mutation
+            elif amplitude_mode:
+                sampled = [(slot, candidates[i]) for i, slot in enumerate(measured)]
+                if options.adaptive_amplitude or mode == "hybrid_amplitude":
+                    generation_metrics.update(adaptive_update(
+                        amplitudes, sampled, candidates, best.genome, settings.rotation_radians,
+                        generation / max(1, settings.generations - 1), options.entropy_floor
+                    ))
+                else:
+                    for slot, candidate in sampled:
+                        amplitudes[slot].rotate(candidate.genome, best.genome, settings.rotation_radians)
+                    generation_metrics.update(amplitude_diagnostics(amplitudes))
+                generation_metrics["amplitude_samples"] = len(measured)
+                generation_metrics["classical_offspring"] = len(pool) - len(measured)
+                if hybrid_mutation is not None:
+                    generation_metrics["breeding_mutation_probability"] = hybrid_mutation
+            diagnostics.append(generation_metrics)
             state = {"recipe": recipe, "rng": rng.bit_generator.state,
                      "history": [[_pack(item) for item in group] for group in history],
                      "diagnostics": diagnostics, "stale": stale,
                      "cache": {name: _pack(item) for name, item in cache.items()},
                      "population": [item.bits for item in pool],
                      "angles": [item.angles for item in amplitudes]}
-            write_json(checkpoint, state, indent=None)
+            if checkpoint is not None:
+                write_json(checkpoint, state, indent=None)
     return best, history, diagnostics

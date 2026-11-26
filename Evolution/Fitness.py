@@ -19,7 +19,8 @@ class Candidate:
     epochs: int = 0
 
 
-def validation_fitness(dataset, training, evolution, *, rollout_windows_pair=None):
+def validation_fitness(dataset, training, evolution, *, rollout_windows_pair=None,
+                       parameter_count_limit=None):
     cap = evolution.candidate_parameter_step_limit
     if rollout_windows_pair is None:
         samples_per_epoch = len(dataset.train)
@@ -31,15 +32,19 @@ def validation_fitness(dataset, training, evolution, *, rollout_windows_pair=Non
     widest = max(WIDTHS)
     # Upper bound for three hidden layers and a projection at each layer.
     maximum_parameters = 2 * (19 * widest + 2 * (widest + 1) * widest) + 6 * (widest + 1)
+    if parameter_count_limit is not None:
+        maximum_parameters = min(maximum_parameters, parameter_count_limit)
     if cap is not None and cap < maximum_parameters * samples_per_epoch:
         raise ValueError(f"Candidate work limit must be at least {maximum_parameters * samples_per_epoch}"
                          " parameter sample-steps to permit one epoch for every genome")
 
     def score(genome):
-        hidden, skips = genome.architecture()
+        architecture = genome.decode()
         backend = create_backend(training.device, training.dtype, training.seed)
-        model = TemporalModel(backend, hidden, training.dropout, skips)
+        model = TemporalModel(backend, dropout=training.dropout, **architecture.model_arguments())
         count = model.parameter_count
+        if parameter_count_limit is not None and count > parameter_count_limit:
+            raise ValueError("Candidate architecture exceeds the parameter limit")
         epochs = evolution.candidate_epochs
         if cap is not None:
             epochs = min(epochs, cap // (count * samples_per_epoch))

@@ -15,6 +15,8 @@ def recipe(model, settings, options, training, validation, inputs, targets, **tr
                                  "dropout": model.dropout},
                 "rollout": asdict(options), "training": training_options,
                 "numpy": np.__version__}
+    if any(name != "relu" for name in model.activations):
+        metadata["architecture"]["activations"] = list(model.activations)
     metadata = json.loads(json.dumps(metadata))
     digest = sha256()
     for array in (training.histories, training.targets, validation.histories, validation.targets,

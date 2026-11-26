@@ -26,6 +26,8 @@ def save(path, model, dataset, backend, result, settings, *, provenance=None):
         "training_config": asdict(settings),
         "training_result": asdict(result),
     }
+    if any(name != "relu" for name in model.activations):
+        state["architecture"]["activations"] = model.activations
     options = getattr(model, "rollout_options", None)
     if options is not None:
         state["version"] = 2
