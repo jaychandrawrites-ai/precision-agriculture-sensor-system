@@ -63,3 +63,15 @@ class HourlyETTests(unittest.TestCase):
             "soil.crop_coefficient"])
         self.assertGreater(results["features"]["eta_mm_interval"]["spearman_correlation_of_mean"][
             "soil.crop_coefficient"], .8)
+
+    def test_correlated_scenario_draws_preserve_marginal_strata(self):
+        from physical_ensemble import ParameterRange, stratified_sample
+
+        specs = [ParameterRange("soil.crop_coefficient", 0, 1),
+                 ParameterRange("scenario.rain_interception_fraction", 0, 1)]
+        values = stratified_sample(specs, 256, 19, latent_correlation=[[1, .9], [.9, 1]])
+        self.assertGreater(np.corrcoef(values.T)[0, 1], .7)
+        for column in values.T:
+            np.testing.assert_array_equal(np.sort((column * 256).astype(int)), np.arange(256))
+        with self.assertRaisesRegex(ValueError, "positive definite"):
+            stratified_sample(specs, 4, 1, latent_correlation=[[1, 1], [1, 1]])

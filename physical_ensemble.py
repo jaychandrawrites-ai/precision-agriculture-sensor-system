@@ -2,6 +2,7 @@
 import argparse
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from statistics import NormalDist
 from time import perf_counter
 
 import numpy as np
@@ -32,12 +33,27 @@ class ParameterRange:
             raise ValueError("Expected a varied soil, leaf, crop or scenario parameter range")
 
 
-def stratified_sample(parameters, draws, seed):
+def stratified_sample(parameters, draws, seed, *, latent_correlation=None):
     if (type(draws) is not int or not 4 <= draws <= 256 or not parameters or
             len({p.path for p in parameters}) != len(parameters)):
         raise ValueError("Use 4–256 draws and unique parameter paths")
     rng = np.random.default_rng(seed)
     u = np.column_stack([(rng.permutation(draws) + rng.random(draws)) / draws for _ in parameters])
+    if latent_correlation is not None:
+        matrix = np.asarray(latent_correlation, dtype=float)
+        if (matrix.shape != (len(parameters), len(parameters)) or not np.isfinite(matrix).all()
+                or not np.allclose(matrix, matrix.T, atol=1e-12, rtol=0)
+                or not np.allclose(np.diag(matrix), 1., atol=1e-12, rtol=0)):
+            raise ValueError("Latent correlation must be a symmetric unit-diagonal matrix")
+        try:
+            factor = np.linalg.cholesky(matrix)
+        except np.linalg.LinAlgError as error:
+            raise ValueError("Latent correlation must be positive definite") from error
+        distribution = NormalDist()
+        latent = np.vectorize(distribution.inv_cdf, otypes=[float])(u) @ factor.T
+        ranks = np.argsort(latent, axis=0, kind="stable")
+        # Copula ranks rearrange the independent strata while preserving every marginal stratum.
+        np.put_along_axis(u, ranks, np.sort(u, axis=0), axis=0)
     bounds = np.array([(entry.lower, entry.upper) for entry in parameters])
     return bounds[:, 0] + u * np.diff(bounds, axis=1)[:, 0]
 
@@ -68,12 +84,12 @@ def _ranks(inputs, summaries):
     return score, denom > 0
 
 
-def physical_ensemble(weather, base, reference, scenario, parameters, *, draws=16, seed=42, mass=.9):
+def physical_ensemble(weather, base, reference, scenario, parameters, *, draws=16, seed=42, mass=.9, latent_correlation=None):
     """Report scenario spread on common hours for train-independent forcing."""
     if not 0 < mass < 1:
         raise ValueError("Central mass must be between zero and one")
     parameters = tuple(parameters)
-    samples = stratified_sample(parameters, draws, seed)
+    samples = stratified_sample(parameters, draws, seed, latent_correlation=latent_correlation)
     try:
         configured = [_configured(base, scenario, parameters, draw) for draw in samples]
     except (ValueError, TypeError) as exc:
@@ -100,7 +116,9 @@ def physical_ensemble(weather, base, reference, scenario, parameters, *, draws=1
         for index, feature in enumerate(FEATURES):
             bands[f"{feature}_{label}"] = values[:, index]
     result = {"draws": draws, "seed": seed, "central_mass": mass,
-              "design": "independently stratified uniform assumption ranges",
+              "design": ("independently stratified uniform assumption ranges" if latent_correlation is None
+                         else "Gaussian copula rank dependence with uniform stratified marginals"),
+              "latent_correlation_assumption": latent_correlation,
               "interpretation": "sensitivity to supplied scenarios, without empirical calibration",
               "source": weather.provenance, "reference": asdict(reference),
               "base_physics": base.metadata(), "base_scenario": scenario,
@@ -124,6 +142,7 @@ def main():
     parser.add_argument("ranges", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--draws", type=int, default=16)
+    parser.add_argument("--latent-correlation", type=Path, help="JSON matrix in range-file parameter order")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     mapping = read_json(args.mapping)
@@ -133,7 +152,8 @@ def main():
                          source_label=mapping["source_label"], synthetic=mapping.get("synthetic", False))
     parameters = [ParameterRange(**item) for item in read_json(args.ranges)]
     bands, summary = physical_ensemble(weather, base, reference, mapping["scenario"], parameters,
-                                       draws=args.draws, seed=args.seed)
+                                       draws=args.draws, seed=args.seed, latent_correlation=
+                                       read_json(args.latent_correlation) if args.latent_correlation else None)
     with atomic_output(args.output.with_suffix(".csv")) as handle:
         bands.to_csv(handle)
     write_json(args.output, summary)
