@@ -413,3 +413,50 @@ visits without disconnecting the receiver. See the
 The [requirements inventory](MASTER_REQUIREMENTS.md) and
 [development status](DEVELOPMENT_STATUS.md) track completed work and remaining
 validation separately.
+
+### Supplied Yuma Valley export and native AquaMap
+
+```sh
+python -m pip install -r requirements.txt
+python -m Dashboard.Server --workspace ./jupiter-dashboard
+```
+
+In the console, inspect the weather CSV, then choose **Prepare AZMET dataset**
+with `Examples/azmet/yuma-valley-az43.json` as the mapping. Use the prepared
+dataset to train a direct model or run sequence search and select its saved
+winner. For a repeatable CLI workflow, use an unused output directory.
+
+```sh
+python azmet.py prepare supplied-az43.csv Examples/azmet/yuma-valley-az43.json az43-prepared
+python direct_forecast.py train az43-prepared/hourly.csv az43-model.json --epochs 1 --width 8 --horizon 72
+python forecast.py az43-prepared/hourly.csv az43-model.json --steps 72
+python experiments.py az43-prepared/hourly.csv --sequence-space --epochs 1 --population 2 --generations 1 --candidate-epochs 1 --max-parameters 1500 --export-selected az43-winners > az43-search.json
+python -m Examples.NativeRelease az43-winners/classical_ga.json native-demo
+python -m Examples.DiffusionStudy diffusion-study.json
+```
+
+The supplied export has no measured precipitation in any row. The mapping
+declares an explicit dry precipitation and irrigation scenario for the
+derived leaf and soil states. The quality flags retain missing precipitation
+and identify scenario use. Reference ET is the causal Hargreaves estimate.
+The exported station ETo and cotton heat-stress columns are distinct from
+Jupiter's modeled features. Do not use this scenario to infer actual rainfall,
+irrigation or measured crop stress. The export's hour-ending HHMM values use
+Arizona local standard time. The 2400 record is midnight of the following day.
+
+In **AI Trace**, select **AquaMap base station**, choose the allowed serial
+port and connect at 115200 baud. Use separate recording visits and configure
+measured calibration for field feature preparation. Choose `received_at` for
+the hourly clock because the base-station payload has no measurement time.
+The synthetic demonstration uses fixture calibration only. A missing GPS
+pair remains missing. A backward sample counter marks a possible restart
+or reordering boundary, since the payload lacks a boot identifier.
+
+For diffusion, enter the center, radius and grid resolution in AI Trace.
+Observed maps use diffusion. Select one forecast model and leave additional
+members empty to render a diffusion forecast at the requested lead.
+The solver uses an explicit stable heat step, no-flux domain boundaries and
+pinned seed cells. Seeds sharing a grid cell are averaged. The map diagnostics
+report convergence and distance to the nearest seed. Computational diffusion
+time is separate from forecast lead time. Ensemble uncertainty and the
+research baselines remain available.

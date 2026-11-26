@@ -2,24 +2,24 @@
 
 Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERIFIED entries count. The [original master requirements](MASTER_REQUIREMENTS.md) remain authoritative.
 
-**43/96 verified (44.8%).**
+**46/96 verified (47.9%).**
 
 | Classification | Count |
 | --- | ---: |
-| BLOCKED — EXTERNAL HARDWARE | 7 |
+| BLOCKED — EXTERNAL HARDWARE | 5 |
 | PARTIALLY IMPLEMENTED | 36 |
 | IMPLEMENTED — VERIFICATION PENDING | 1 |
 | BLOCKED — COMPUTATIONAL RESOURCE | 2 |
-| BLOCKED — EXTERNAL DATA | 6 |
-| COMPLETE — VERIFIED | 43 |
+| BLOCKED — EXTERNAL DATA | 5 |
+| COMPLETE — VERIFIED | 46 |
 | BLOCKED — USER APPROVAL | 1 |
 
 ## 1. AI Trace and hardware integration
 
 | ID | Requirement | Status | Evidence or remaining work |
 | --- | --- | --- | --- |
-| R001 | Verify native AquaMap packet format against actual firmware. | BLOCKED — EXTERNAL HARDWARE | Requires verified AquaMap field/base source or representative native receiver bytes with field, unit and clock metadata. |
-| R002 | Complete native AquaMap protocol adapter. | BLOCKED — EXTERNAL HARDWARE | Requires verified AquaMap field/base source or representative native receiver bytes with field, unit and clock metadata. |
+| R001 | Verify native AquaMap packet format against actual firmware. | COMPLETE — VERIFIED | Firmware source confirms RX CSV, units, receipt clock and no boot or GPS quality fields. c8b7c1e. |
+| R002 | Complete native AquaMap protocol adapter. | COMPLETE — VERIFIED | Native parser, receiver and replay routes tested with firmware-derived CSV. Tests/test_aquamap_diffusion.py, c8b7c1e. |
 | R003 | Test physical LoRa receiver connection. | BLOCKED — EXTERNAL HARDWARE | Requires physical receiver, installed sensors and independent calibration/GPS references as applicable. |
 | R004 | Verify all available sensor measurements. | BLOCKED — EXTERNAL HARDWARE | Requires physical receiver, installed sensors and independent calibration/GPS references as applicable. |
 | R005 | Verify measured soil and leaf wetness calibration. | BLOCKED — EXTERNAL HARDWARE | Requires physical receiver, installed sensors and independent calibration/GPS references as applicable. |
@@ -58,7 +58,7 @@ Starting commit `9f33690` on `jupiter-clean-development`. Only COMPLETE — VERI
 
 | ID | Requirement | Status | Evidence or remaining work |
 | --- | --- | --- | --- |
-| R026 | Integrate actual May 2023–November 2026 Yuma Valley export. | BLOCKED — EXTERNAL DATA | Requires the actual modern Yuma Valley export and its schema. |
+| R026 | Integrate actual May 2023–November 2026 Yuma Valley export. | COMPLETE — VERIFIED | Supplied az43 CSV prepared with HHMM and an explicit dry scenario. Actual training and inference smoke passed. 3437830. |
 | R027 | Add independent station-year evaluation datasets. | COMPLETE — VERIFIED | Pinned AZMET releases and held-out station/year evaluation in `station_study.py` and `rolling_station_study.py`, with `Tests/test_phase4_station.py` and `Tests/test_phase5_rolling.py`. See 2a80d77, c6c8fdb and 2dd3bcb. |
 | R028 | Complete seasonal and harmonic neural hybrids. | PARTIALLY IMPLEMENTED | Benchmark additional causal neural/harmonic combinations on predeclared independent periods. |
 | R029 | Complete horizon-specific ensemble selection. | PARTIALLY IMPLEMENTED | `ValidationBlend` fits convex lead/feature-specific weights with causal fallback. Integrate with named checkpoint members and independent calibration in the application. b14fdad. |

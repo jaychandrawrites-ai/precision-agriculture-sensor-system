@@ -1035,3 +1035,29 @@ calibration and abstention in the console, separate measurement scenarios,
 resumable survey exports, exact direct optimizer/scheduler recovery and a
 unified equal-compute experiment runner. Independent scientific acceptance,
 full requirement crosswalk and real-world validation remain open.
+
+### Supplied-data and native receiver release checks
+
+- c8b7c1e implements the actual base-station RX CSV and circular diffusion.
+  The adapter was derived from field_unit/src/main.cpp and
+  base_station/src/main.cpp in the supplied archive. Firmware was preserved.
+- 3437830 maps the uploaded az43 schema without republishing the source.
+  Source SHA-256 is c573586d736fce0847ef3878287acde63e026b9c44951647e60d4fd599bfc3e4.
+  All 31,176 rainfall values were missing. The first training attempt
+  correctly refused the empty complete-feature split. Declaring the actual
+  NA token and an explicit zero-rain scenario yielded 31,153 complete rows.
+  One-epoch direct training saved a model and inferred all 72 leads.
+- a0ed86e adds synthetic held-out diffusion comparison and figure exports.
+  The 5-site synthetic holdout gave diffusion, IDW and kriging temperature
+  RMSE of 1.242, 1.131 and 1.015 °C, respectively. Diffusion did not reach
+  tolerance in 1,000 iterations. This is not measured-field validation.
+- The az43 sequence search used 21,771/4,671/4,672 complete chronological
+  fit, validation and evaluation windows at six leads. Single-seed
+  six-hour temperature RMSE was 7.642 fixed, 5.348 random and classical,
+  and 6.496 amplitude and hybrid. Actual aggregate candidate work ranged
+  from 210.0 to 284.2 million parameter-sample steps. These unequal-work
+  smoke runs do not establish an advantage. The saved classical winner
+  served three synthetic native replay visits and six diffusion maps.
+- Full local regression with Chromium passed 177 tests and skipped two CUDA
+  tests. Separate software tests cover malformed and missing native fields,
+  counter regression, original packet replay and circular mask behavior.
