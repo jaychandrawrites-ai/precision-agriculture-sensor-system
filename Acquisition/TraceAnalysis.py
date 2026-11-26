@@ -63,7 +63,7 @@ def _prepare_segment(records, configuration, started_at, ended_at):
     return selected, config
 
 
-def survey_forecasts(store, survey_id, configuration, checkpoint=None, steps=None):
+def survey_forecasts(store, survey_id, configuration, checkpoint=None, steps=None, *, ensemble=()):
     """Return eligible closed segments without merging locations, revisits or device histories.
 
     By default this only checks readiness. A checkpoint and a positive horizon
@@ -75,6 +75,10 @@ def survey_forecasts(store, survey_id, configuration, checkpoint=None, steps=Non
     if steps is not None and (checkpoint is None or type(steps) is not int or not 1 <= steps <= 168):
         raise ValueError("Forecasting requires a saved checkpoint and 1–168 hourly steps")
     forecaster = load_forecaster(checkpoint) if checkpoint is not None else None
+    members = (forecaster, *(load_forecaster(path) for path in ensemble)) if forecaster is not None else ()
+    hashes = [member.checkpoint_sha256 for member in members]
+    if ensemble and (steps is None or len(set(hashes)) != len(members)):
+        raise ValueError("An ensemble needs forecasting steps and distinct checkpoints")
     survey = store.status(survey_id)
     report = {"survey_id": survey_id, "scope": "independent closed segments",
               "locations": [], "forecast_steps": steps}
@@ -106,11 +110,21 @@ def survey_forecasts(store, survey_id, configuration, checkpoint=None, steps=Non
                             for timestamp, values in forecast.iterrows()
                         ]
                         detail["checkpoint_sha256"] = diagnostics["checkpoint_sha256"]
+                        if ensemble:
+                            # Evaluate the same ordered checkpoints at every location and lead.
+                            draws = [forecast.to_numpy(dtype=float)]
+                            for member in members[1:]:
+                                prediction, _, _, _ = forecast_field(prepared, member, steps)
+                                draws.append(prediction.to_numpy(dtype=float))
+                            detail["member_forecasts"] = np.stack(draws).tolist()
                 except (ValueError, TypeError, KeyError) as error:
+                    detail.pop("forecast", None)
                     detail.update(ready=False, reason=str(error))
             report["locations"].append({"id": location["id"], "label": location["label"],
                                         "ready": any(item["ready"] for item in segments),
                                         "segments": segments})
+    if ensemble:
+        report["member_checkpoint_sha256"] = hashes
     report["ready_locations"] = sum(item["ready"] for item in report["locations"])
     return report
 
@@ -188,16 +202,31 @@ def observational_map(store, survey_id, feature, timestamp, window_minutes=60,
 def _raster(sites, samples, grid_size):
     if len(set(sites)) < 2:
         raise ValueError("At least two distinct locations with values and coordinates are required")
+    grid, points = _forecast_grid(sites, grid_size)
+    estimate = idw(points, [sample["value"] for sample in samples], grid.points()).reshape(grid.shape)
+    return {"east_m": grid.east.tolist(), "north_m": grid.north.tolist(), "estimate": estimate.tolist()}
+
+
+def _forecast_grid(sites, grid_size):
     points = local_coordinates(sites, sites[0])
     limits = points.min(axis=0), points.max(axis=0)
     padding = max(1.0, float(np.max(limits[1] - limits[0])) * 0.05)
     east, north = [np.linspace(low - padding, high + padding, grid_size) for low, high in zip(*limits)]
-    grid = SpatialGrid(east, north)
-    estimate = idw(points, [sample["value"] for sample in samples], grid.points()).reshape(grid.shape)
-    return {"east_m": east.tolist(), "north_m": north.tolist(), "estimate": estimate.tolist()}
+    return SpatialGrid(east, north), points
 
 
 def forecast_map(store, survey_id, report, feature, valid_at, origin, *, gps_minutes=60, grid_size=25):
+    sites, samples, issued, valid, lead, excluded = _forecast_sites(
+        store, survey_id, report, feature, valid_at, origin, gps_minutes, grid_size
+    )
+    return {"survey_id": survey_id, "feature": feature, "forecast_origin": issued.isoformat(),
+            "valid_at": valid.isoformat(), "lead_hours": int(lead), "interpolation": "IDW",
+            "provenance": "point_model_forecasts", "uncertainty": "not estimated",
+            "excluded_locations": excluded, "samples": samples,
+            **_raster(sites, samples, grid_size)}
+
+
+def _forecast_sites(store, survey_id, report, feature, valid_at, origin, gps_minutes, grid_size):
     """Map point forecasts at one issued and valid time using GPS known at issue."""
     if (report.get("survey_id") != survey_id or feature not in FEATURES
             or type(gps_minutes) not in (int, float) or not 0 < gps_minutes <= 1440
@@ -248,8 +277,47 @@ def forecast_map(store, survey_id, report, feature, valid_at, origin, *, gps_min
         samples.append({"location_id": location["id"], "segment_id": segment["id"],
                         "coordinate_source": coordinate[2], "value": value,
                         "checkpoint_sha256": segment.get("checkpoint_sha256")})
-    return {"survey_id": survey_id, "feature": feature, "forecast_origin": issued.isoformat(),
-            "valid_at": valid.isoformat(), "lead_hours": int(lead), "interpolation": "IDW",
-            "provenance": "point_model_forecasts", "uncertainty": "not estimated",
-            "excluded_locations": len(locations) - len(samples), "samples": samples,
-            **_raster(points, samples, grid_size)}
+    return points, samples, issued, valid, lead, len(locations) - len(samples)
+
+
+def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probability=.9, grid_size=25):
+    """Propagate shared model draws, keeping site, lead and feature dependencies."""
+    from spatial_forecast import ensemble_maps
+
+    hashes = report.get("member_checkpoint_sha256", [])
+    if (len(hashes) < 2 or len(set(hashes)) != len(hashes)
+            or type(steps) is not int or not 1 <= steps <= 72):
+        raise ValueError("Provide at least two distinct ensemble members and 1–72 leads")
+    issued = _aware(origin)
+    sites, samples, *_ = _forecast_sites(store, survey_id, report, FEATURES[0],
+                                         issued + timedelta(hours=1), issued, 60, grid_size)
+    by_segment = {segment["id"]: segment for location in report["locations"]
+                  for segment in location["segments"]}
+    retained, points, ids = [], [], []
+    for site, sample in zip(sites, samples):
+        segment = by_segment[sample["segment_id"]]
+        values = np.asarray(segment.get("member_forecasts"), dtype=float)
+        timestamps = [_aware(row["timestamp"]) for row in segment["forecast"][:steps]]
+        if (values.ndim != 3 or values.shape[0] != len(hashes) or values.shape[1] < steps
+                or values.shape[2] != len(FEATURES) or not np.isfinite(values).all()
+                or timestamps != [issued + timedelta(hours=i) for i in range(1, steps + 1)]):
+            continue
+        points.append(site)
+        ids.append(sample["location_id"])
+        retained.append(values[:, :steps])
+    if len(set(points)) != len(points) or len(points) < 2:
+        raise ValueError("Forecast maps require distinct coordinates and at least two complete ensemble sites")
+    grid, xy = _forecast_grid(points, grid_size)
+    members = np.stack(retained, axis=1)  # member × site × lead × feature
+    arrays = ensemble_maps(grid, xy, members.reshape(len(hashes), len(points), -1),
+                           probability=probability)
+    result = {name: value.reshape(*grid.shape, steps, len(FEATURES)).transpose(2, 0, 1, 3)
+              for name, value in arrays.items()}
+    result.update(east_m=grid.east, north_m=grid.north, site_member_forecasts=members)
+    return result, {
+        "survey_id": survey_id, "issued_at": issued.isoformat(), "features": FEATURES,
+        "valid_at": [(issued + timedelta(hours=i)).isoformat() for i in range(1, steps + 1)],
+        "sites": ids, "checkpoint_sha256": hashes, "central_mass": probability,
+        "axes": ["lead", "north", "east", "feature"],
+        "interpretation": "propagated empirical model disagreement; field coverage is unverified",
+    }
