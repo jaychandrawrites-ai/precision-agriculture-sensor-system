@@ -63,12 +63,7 @@ def _tiles(shape, tile, fixed, columns, temperature):
 def block_metropolis(energy, initial, settings=BlockSampling()):
     """Run independent chains, adapting within burn-in then freezing scales."""
     columns, fixed, anchor, info = field_system(energy)
-    free = ~fixed
-    fidelity = energy.backend.to_host(energy.fidelity).ravel()
-    smoothing = energy.weights.gradient > 0 or energy.weights.curvature > 0
-    if free.any() and not ((smoothing and (fixed.any() or (fidelity > 0).any()))
-                           or (fidelity[free] > 0).all()):
-        raise ValueError("Field has an improper conditional distribution")
+    energy.require_anchored()
     shape = energy.grid.shape
     initial = np.asarray(energy.backend.to_host(initial), dtype=float)
     if initial.shape != shape or not np.isfinite(initial).all():

@@ -26,17 +26,21 @@ def reconstruct(grid, points, values, backend, settings, hard_seeds=False):
 
 def reconstruct_variational(grid, points, values, backend, settings, *, hard_seeds=False,
                             boundary_values=None, boundary_weight=None, boundary="neumann",
-                            algorithm="descent", measurement_variance=None):
+                            algorithm="descent", measurement_variance=None, domain=None):
     """Build a model energy and minimize it from an IDW initialization."""
     from Spatial.EnergyFunctional import EnergyFunctional, EnergyWeights
     from Spatial.SeedManager import seed_constraints
     from Spatial.VariationalSolver import minimize, minimize_conjugate
 
+    if domain is not None and not domain.contains(points).all():
+        raise ValueError("All observations must lie in the admissible field domain")
     constraints = seed_constraints(grid, points, values, settings.seed_weight, hard_seeds,
                                    boundary_values, boundary_weight,
                                    measurement_variance=measurement_variance)
     weights = EnergyWeights(settings.gradient_weight, settings.curvature_weight)
-    energy = EnergyFunctional(grid, constraints, backend, weights, boundary)
+    energy = EnergyFunctional(grid, constraints, backend, weights, boundary, domain=domain)
+    if domain is not None:
+        energy.require_anchored()
     initial = idw(points, values, grid.points()).reshape(grid.shape)
     solvers = {"descent": minimize, "conjugate_gradient": minimize_conjugate,
                "preconditioned_cg": lambda *args, **kwargs: minimize_conjugate(

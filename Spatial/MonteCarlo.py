@@ -50,12 +50,7 @@ def metropolis(energy: EnergyFunctional, initial, settings=SamplingConfig()):
     fixed = backend.to_host(energy.fixed).ravel()
     free = np.flatnonzero(~fixed)
     fidelity = backend.to_host(energy.fidelity).ravel()
-    if len(free) and not (
-        (fixed.any() or (fidelity > 0).any())
-        and (energy.weights.gradient > 0 or energy.weights.curvature > 0
-             or (fidelity[free] > 0).all())
-    ):
-        raise ValueError("The free field is unanchored and has no proper sampling density")
+    energy.require_anchored()
     shape = energy.grid.shape
     columns = hessian_columns(energy)
     scales = np.zeros(len(fixed))

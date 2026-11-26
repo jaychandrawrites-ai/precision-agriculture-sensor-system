@@ -32,6 +32,7 @@ def exact_gaussian_field(energy, temperature=1.0, max_free=256):
     """Solve the fixed-cell conditional distribution in row-major order."""
     if not np.isfinite(temperature) or temperature <= 0:
         raise ValueError("Temperature must be positive")
+    energy.require_anchored()
     columns, fixed, anchor, info = field_system(energy)
     free = np.flatnonzero(~fixed)
     if len(free) > max_free:
