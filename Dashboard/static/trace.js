@@ -281,7 +281,7 @@ submit("trace-import-csv", async event => {
   await listSurveys();
 }, "Measurements imported.");
 submit("trace-connect", async event => perform("connect", {port: event.target.elements.port.value,
-  baud: Number(event.target.elements.baud.value), mapping: await jsonFile(el("trace-mapping"))}),
+  baud: Number(event.target.elements.baud.value), mapping: el("trace-protocol").value || await jsonFile(el("trace-mapping"))}),
 "Receiver connection requested.");
 press("trace-disconnect", () => perform("disconnect"), "Receiver disconnected.");
 submit("trace-start", async event => {
@@ -303,7 +303,7 @@ submit("trace-replay", async event => {
   }
   await perform("replay", {archive: await base64File(fields.archive.files[0]),
     label: fields.label.value || undefined, location_id: fields.location.value || undefined,
-    mapping: await jsonFile(el("trace-mapping"))});
+    mapping: el("trace-protocol").value || await jsonFile(el("trace-mapping"))});
 }, "Replay saved as its own recording segment.");
 submit("trace-forecast-form", async event => {
   const action = event.submitter.value;
@@ -333,6 +333,17 @@ submit("trace-ensemble-form", async event => {
   const lead = Number(fields.lead.value);
   const members = [...fields.members.selectedOptions].map(item => item.value).filter(Boolean);
   if (members.includes(fields.model.value)) throw new Error("Choose distinct ensemble models.");
+  if (!members.length) {
+    const forecast = await perform("diffusion-forecast", {
+      ...mapDomain(), model: fields.model.value, origin: new Date(fields.origin.value).toISOString(),
+      configuration: await jsonFile(fields.configuration, true), lead, feature: fields.feature.value,
+      diffusion: {iterations: Number(el("map-diffusion-iterations").value)}
+    });
+    drawMap(forecast.estimate, "trace-map", "Diffusion forecast map");
+    el("trace-spread").hidden = true;
+    showResult({lead_hours: lead, feature: forecast.feature, diffusion: forecast.diffusion});
+    return;
+  }
   const result = await perform("ensemble-map", {configuration: await jsonFile(fields.configuration, true),
     model: fields.model.value, members, origin: new Date(fields.origin.value).toISOString(),
     ...mapDomain(), steps: lead, lead, feature: fields.feature.value, adaptive: await jsonFile(fields.adaptive),
@@ -358,6 +369,7 @@ submit("trace-ensemble-form", async event => {
 submit("trace-map-form", async event => {
   const fields = event.target.elements;
   const result = await perform("map", {...mapDomain(), feature: fields.feature.value,
+    diffusion: {iterations: Number(el("map-diffusion-iterations").value)},
     timestamp: new Date(fields.timestamp.value).toISOString(), window_minutes: Number(fields.window_minutes.value)});
   drawMap(result.estimate);
   el("trace-spread").hidden = true;
@@ -374,12 +386,17 @@ el("trace-surveys").addEventListener("change", operation(async event => {
 async function setup() {
   const [ports, jobs] = await Promise.all([request("/api/ports"), request("/api/jobs"), listSurveys()]);
   setOptions(el("trace-ports"), ports.map(value => [value, value]), "Select an enabled port");
-  const models = jobs.filter(job => job.kind === "train" && job.status === "complete")
+  const models = jobs.filter(job => job.status === "complete" &&
+    ["model.json", "direct-model.json", "quantile-model.json", "blend.json", "models/classical_ga.json"]
+      .some(name => job.artifacts.includes(name)))
     .map(job => [job.id, job.label || job.id]);
   setOptions(el("trace-models"), models, "Check data without a model");
   setOptions(el("trace-ensemble-model"), models, "Select a saved model");
   el("trace-ensemble-members").replaceChildren(...models.map(([value, name]) => option(value, name)));
   render();
 }
+el("trace-protocol").addEventListener("change", event => {
+  if (event.target.value === "aquamap_rx_csv") el("trace-connect").elements.baud.value = "115200";
+});
 setup().catch(error => { el("trace-alert").textContent = error.message; });
 setInterval(() => { if (!trace.busy && trace.id) refresh().catch(() => {}); }, 1200);

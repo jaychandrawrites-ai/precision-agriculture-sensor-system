@@ -12,7 +12,7 @@ class SolverResult:
 
 def solve(initial,seeds,mask,backend,kappa=1.0,gamma=0.1,penalty=100.0,
           dx=1.0,dy=1.0,iterations=500,tolerance=1e-6,step=None,
-          hard_seeds=False,boundary="neumann"):
+          hard_seeds=False,boundary="neumann",domain=None):
     if min(kappa,gamma,penalty)<0 or iterations<1 or tolerance<=0:
         raise ValueError("Invalid solver configuration")
     with backend.scope():
@@ -35,12 +35,34 @@ def solve(initial,seeds,mask,backend,kappa=1.0,gamma=0.1,penalty=100.0,
             raise ValueError("Explicit step exceeds stability bound")
         if hard_seeds:
             u=xp.where(m!=0,z,u)
+        active = None
+        if domain is not None:
+            if boundary != "neumann":
+                raise ValueError("Masked diffusion requires no-flux boundaries")
+            active = backend.array(domain, dtype=bool)
+            if active.shape != u.shape or u.ndim != 2 or not bool(backend.scalar(active.any())):
+                raise ValueError("Expected a nonempty grid domain mask")
+            if bool(backend.scalar(xp.any((m != 0) & ~active))):
+                raise ValueError("Seeds must lie inside the domain")
+
+        def stencil(v):
+            if active is None:
+                return laplacian(v, backend, dx, dy, boundary)
+            out = xp.zeros_like(v)
+            horizontal = xp.where(active[:, 1:] & active[:, :-1], xp.diff(v, axis=1) / dx**2, 0.)
+            vertical = xp.where(active[1:] & active[:-1], xp.diff(v, axis=0) / dy**2, 0.)
+            out[:, :-1] += horizontal
+            out[:, 1:] -= horizontal
+            out[:-1] += vertical
+            out[1:] -= vertical
+            return out
+
         energies=[]
         def evaluate(v):
-            lap=laplacian(v,backend,dx,dy,boundary)
+            lap=stencil(v)
             residual=m*(v-z)
             energy=-0.5*kappa*(v*lap).sum()+0.5*gamma*(lap*lap).sum()
-            gradient=-kappa*lap+gamma*laplacian(lap,backend,dx,dy,boundary)
+            gradient=-kappa*lap+gamma*stencil(lap)
             if not hard_seeds:
                 energy+=0.5*penalty*(residual*residual).sum()
                 gradient+=penalty*residual

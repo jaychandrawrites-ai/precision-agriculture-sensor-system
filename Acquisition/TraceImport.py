@@ -7,6 +7,7 @@ from itertools import chain
 import csv
 from uuid import uuid4
 
+from Acquisition.AquaMap import AquaMapParser
 from Acquisition.AITrace import _json, _label, _time
 from Acquisition.DataLogger import replay
 from Acquisition.MappedPackets import MappedPacketParser, PacketSchema
@@ -71,7 +72,8 @@ def import_csv(store, payload, label, mapping):
 
 
 def replay_segment(store, survey_id, source, *, label=None, location_id=None, schema=None):
-    parser = PacketParser() if schema is None else MappedPacketParser(PacketSchema.from_dict(schema))
+    parser = (AquaMapParser() if schema == "aquamap_rx_csv" else
+              PacketParser() if schema is None else MappedPacketParser(PacketSchema.from_dict(schema)))
     records = iter(replay(source))
     first = next(records, None)
     if first is None:

@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event, RLock, Thread
 
+from Acquisition.AquaMap import AquaMapParser, NATIVE
 from Acquisition.MappedPackets import GPS_FIELDS, MappedPacketParser, PacketSchema
 from Acquisition.PacketParser import PacketParser
 from Acquisition.TraceDiagnostics import TraceDiagnostics, calibration_readout, units_for
@@ -51,14 +52,16 @@ class TraceReceiver:
         self._segment_last_receipt = None
 
     def _reset_parser(self):
-        self._parser = PacketParser() if self._schema is None else MappedPacketParser(self._schema)
+        self._parser = (AquaMapParser() if self._schema is NATIVE else
+                        PacketParser() if self._schema is None else MappedPacketParser(self._schema))
 
     def connect(self, survey_id, port, baud=9600, mapping=None):
         if port not in self.ports:
             raise ValueError("Select a serial port enabled when the dashboard was launched")
         if type(baud) is not int or not 300 <= baud <= 2_000_000:
             raise ValueError("Invalid serial baud rate")
-        schema = PacketSchema.from_dict(mapping) if mapping is not None else None
+        schema = (NATIVE if mapping == "aquamap_rx_csv" else
+                  PacketSchema.from_dict(mapping) if mapping is not None else None)
         with self._lock:
             self.store.status(survey_id)
             if self._worker is not None and self._worker.is_alive():

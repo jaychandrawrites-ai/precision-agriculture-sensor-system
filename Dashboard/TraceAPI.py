@@ -6,6 +6,15 @@ from Acquisition.TraceImport import import_csv
 from Utils.Serialization import decode_json
 
 
+
+def _trace_model(handler, identifier):
+    for artifact in ("model.json", "direct-model.json", "quantile-model.json", "blend.json", "models/classical_ga.json"):
+        try:
+            return handler.server.jobs.artifact(identifier, artifact)
+        except KeyError:
+            continue
+    raise ValueError("Choose an available saved forecast model")
+
 def _metadata(status):
     """Keep exact coordinates in explicit local exports, not routine polling."""
     for location in status.get("locations", []):
@@ -91,9 +100,23 @@ def trace_post(handler, body):
         steps = body.get("steps", 6)
         if type(steps) is not int or not 1 <= steps <= 72:
             raise ValueError("Choose a forecast horizon from 1 to 72 hours")
-        checkpoint = handler.server.jobs.artifact(body["model"], "model.json")
+        checkpoint = _trace_model(handler, body["model"])
         return handler._json(200, survey_forecasts(store, identifier, body["configuration"], checkpoint,
                                                     steps=steps))
+    elif action == "diffusion-forecast":
+        from datetime import timedelta
+        from Acquisition.Hourly import _aware
+        from Acquisition.TraceAnalysis import forecast_map
+
+        lead = body.get("lead", 1)
+        if type(lead) is not int or not 1 <= lead <= 72:
+            raise ValueError("Choose a forecast lead from 1 to 72 hours")
+        checkpoint = _trace_model(handler, body["model"])
+        forecast = survey_forecasts(store, identifier, body["configuration"], checkpoint, lead)
+        origin = _aware(body["origin"])
+        return handler._json(200, forecast_map(
+            store, identifier, forecast, body["feature"], origin + timedelta(hours=lead), origin,
+            grid_size=body.get("resolution", 25), domain=body.get("domain"), diffusion=body.get("diffusion", {})))
     elif action == "ensemble-map":
         import numpy as np
 
@@ -105,8 +128,8 @@ def trace_post(handler, body):
             isinstance(member, str) for member in members
         ):
             raise ValueError("Choose one to five additional saved models")
-        checkpoint = handler.server.jobs.artifact(body["model"], "model.json")
-        other = [handler.server.jobs.artifact(member, "model.json") for member in members]
+        checkpoint = _trace_model(handler, body["model"])
+        other = [_trace_model(handler, member) for member in members]
         forecast = survey_forecasts(store, identifier, body["configuration"], checkpoint, steps,
                                     ensemble=other)
         adaptive = body.get("adaptive")
@@ -148,7 +171,8 @@ def trace_post(handler, body):
     elif action == "map":
         return handler._json(200, observational_map(store, identifier, body["feature"], body["timestamp"],
                                                     window_minutes=body.get("window_minutes", 60),
-                                                    grid_size=body.get("resolution", 25), domain=body.get("domain")))
+                                                    grid_size=body.get("resolution", 25), domain=body.get("domain"),
+                                                    diffusion=body.get("diffusion")))
     else:
         return handler._json(404, {"error": "Trace action not found"})
     return _reply_status(handler, identifier)

@@ -151,7 +151,7 @@ def _coordinates(values, location, flags):
 
 
 def observational_map(store, survey_id, feature, timestamp, window_minutes=60,
-                      clock="received_at", grid_size=25, domain=None):
+                      clock="received_at", grid_size=25, domain=None, diffusion=None):
     """Interpolate recent measured values with one eligible sample per location.
 
     The map is a bounded-window composite, not a simultaneous measurement.
@@ -194,22 +194,29 @@ def observational_map(store, survey_id, feature, timestamp, window_minutes=60,
                         "segment_id": segment_id, "sample_at": observed.isoformat(),
                         "received_at": received.isoformat(), "coordinate_source": source,
                         "value": value})
-    raster = _raster(sites, samples, grid_size, domain)
+    raster = _raster(sites, samples, grid_size, domain, diffusion)
     return {"survey_id": survey_id, "feature": feature, "provenance": "measured_window_composite",
-            "unit": next(iter(FIELDS[feature][2])), "interpolation": "IDW", "clock": clock,
+            "unit": next(iter(FIELDS[feature][2])), "interpolation": "diffusion" if diffusion is not None else "IDW", "clock": clock,
             "window_start_exclusive": start.isoformat(),
             "window_end_inclusive": end.isoformat(), "excluded_locations": len(locations) - len(sites),
             "samples": samples, **raster}
 
-def _raster(sites, samples, grid_size, domain=None):
+def _raster(sites, samples, grid_size, domain=None, diffusion=None):
     if len(set(sites)) < 2:
         raise ValueError("At least two distinct locations with values and coordinates are required")
     grid, points = _forecast_grid(sites, grid_size, domain)
-    estimate = idw(points, [sample["value"] for sample in samples], grid.points()).reshape(grid.shape)
+    values = [sample["value"] for sample in samples]
     inside = _circle_mask(grid.points(), domain).reshape(grid.shape)
+    diagnostics = None
+    if diffusion is None:
+        estimate = idw(points, values, grid.points()).reshape(grid.shape)
+    else:
+        from Spatial.DiffusionMap import diffusion_map
+
+        estimate, diagnostics = diffusion_map(grid, points, values, inside, **diffusion)
     return {"east_m": grid.east.tolist(), "north_m": grid.north.tolist(),
             "estimate": np.where(inside, estimate, None).tolist(), "inside": inside.tolist(),
-            "domain": _domain_metadata(domain)}
+            "domain": _domain_metadata(domain), "diffusion": diagnostics}
 
 def _domain_metadata(domain):
     return None if domain is None else {"shape": "circle", "radius_m": float(domain["radius_m"])}
@@ -244,15 +251,15 @@ def _forecast_grid(sites, grid_size, domain=None):
     return SpatialGrid(east, north), points
 
 
-def forecast_map(store, survey_id, report, feature, valid_at, origin, *, gps_minutes=60, grid_size=25, domain=None):
+def forecast_map(store, survey_id, report, feature, valid_at, origin, *, gps_minutes=60, grid_size=25, domain=None, diffusion=None):
     sites, samples, issued, valid, lead, excluded = _forecast_sites(
         store, survey_id, report, feature, valid_at, origin, gps_minutes, grid_size
     )
     return {"survey_id": survey_id, "feature": feature, "forecast_origin": issued.isoformat(),
-            "valid_at": valid.isoformat(), "lead_hours": int(lead), "interpolation": "IDW",
+            "valid_at": valid.isoformat(), "lead_hours": int(lead), "interpolation": "diffusion" if diffusion is not None else "IDW",
             "provenance": "point_model_forecasts", "uncertainty": "not estimated",
             "excluded_locations": excluded, "samples": samples,
-            **_raster(sites, samples, grid_size, domain)}
+            **_raster(sites, samples, grid_size, domain, diffusion)}
 
 
 def _forecast_sites(store, survey_id, report, feature, valid_at, origin, gps_minutes, grid_size):
