@@ -1,15 +1,16 @@
 name: Jupiter CPU tests
 on:
   push:
-    branches: [jupiter-development]
+    branches: [jupiter-clean-development, jupiter-development]
   pull_request:
-    branches: [jupiter-development, main]
+    branches: [jupiter-clean-development, jupiter-development, main]
 permissions:
   contents: read
 jobs:
   unittest:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
         python: ["3.11", "3.12"]
