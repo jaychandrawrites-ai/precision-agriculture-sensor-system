@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from config import FEATURES, TrainingConfig
-from Data.DataQuality import invalid_rows
+from Data.ForecastHistory import require_history
 from Data.Dataset import build_dataset
 from Data.Preprocessing import read_hourly
 from Data.RolloutWindows import rollout_windows
@@ -38,11 +38,9 @@ def train(source, checkpoint, settings, horizon, width=32, *, architecture="gate
 
 def predict(source, checkpoint):
     values, times = read_hourly(source)
-    if (len(values) < 3 or invalid_rows(values[-3:]).any()
-            or not (np.diff(times[-3:]) == np.timedelta64(1, "h")).all()):
-        raise ValueError("Direct forecasts require three valid consecutive observations")
+    history = require_history(values, times, "Direct forecasts require three valid consecutive observations")
     model = load_direct(checkpoint)
-    prediction = model.predict(values[None, -3:])[0]
+    prediction = model.predict(history[None])[0]
     start = pd.Timestamp(times[-1] + np.timedelta64(1, "h"), tz="UTC")
     return pd.DataFrame(prediction, columns=FEATURES,
                         index=pd.date_range(start, periods=len(prediction), freq="h", name="timestamp"))

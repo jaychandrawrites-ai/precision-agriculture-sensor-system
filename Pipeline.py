@@ -5,7 +5,6 @@ from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from Acquisition.Calibration import LeafCalibration, SoilCalibration
@@ -16,7 +15,7 @@ from Acquisition.SpatialObservations import spatial_observations
 from assumptions import Assumptions
 from azmet import prepare
 from config import FEATURES, SpatialConfig, TrainingConfig
-from Data.DataQuality import invalid_rows
+from Data.ForecastHistory import inspect_history, require_history
 from Data.QualityReport import quality_report
 from Data.TimeSeries import calendar_cutoffs
 from Data.WeatherPhysics import ReferenceET
@@ -64,9 +63,8 @@ def forecast_prepared_session(readings, configuration, forecaster, steps):
     if not provenance["complete_hour_bins_only"]:
         raise ValueError("Forecasting requires closed hourly bins")
     verified = forecaster.require_compatible_field(provenance)
-    history = features.iloc[-3:].to_numpy()
-    if len(history) < 3 or invalid_rows(history).any():
-        raise ValueError("Latest three hours need all six valid features and sufficient ET history")
+    history = require_history(features.to_numpy(), features.index.to_numpy(dtype="datetime64[ns]"),
+                              "Latest three hours need all six valid features and sufficient ET history")
     prediction = SpatiotemporalModel(forecaster).forecast(history, steps)
     future = pd.date_range(features.index[-1] + pd.offsets.Hour(), periods=steps, freq="h",
                            name="timestamp")
@@ -77,6 +75,32 @@ def forecast_prepared_session(readings, configuration, forecaster, steps):
               "quality": quality_report(features, flags),
               "forecast": forecast_diagnostics(history, prediction, forecaster.targets)}
     return forecast, report, gps, coverage
+
+
+def check_session(readings, configuration, checkpoint=None):
+    """Check a recorded session without training or emitting forecasts or GPS."""
+    features, flags, provenance, _, _ = prepare_session(readings, configuration)
+    result = inspect_history(features.to_numpy(), features.index.to_numpy(dtype="datetime64[ns]"))
+    history_hours = provenance["reference_et"]["history_hours"]
+    result.update({
+        "closed_hour_bins": bool(provenance["complete_hour_bins_only"]),
+        "ready": result["ready"] and bool(provenance["complete_hour_bins_only"]),
+        "minimum_temperature_history_hours": history_hours + result["required_hours"] - 1,
+        "latest_hour_utc": features.index[-1].isoformat() if len(features) else None,
+        "reference_et_unavailable_hours": int(flags["reference_et_unavailable"].sum()),
+    })
+    if checkpoint is not None:
+        model = load_forecaster(checkpoint)
+        result["checkpoint_sha256"] = model.checkpoint_sha256
+        try:
+            verified = model.require_compatible_field(provenance)
+        except ValueError as error:
+            result.update(ready=False, checkpoint_physics="incompatible", checkpoint_reason=str(error))
+        else:
+            result["checkpoint_physics"] = "matched" if verified else "metadata unavailable"
+    else:
+        result["checkpoint_physics"] = "unchecked"
+    return result
 
 
 def map_measurements(source, configuration, output):
@@ -168,7 +192,7 @@ def main():
     health = commands.add_parser("session-health")
     health.add_argument("source", type=Path)
     health.add_argument("output", type=Path)
-    for name in ("train-history", "prepare-session", "forecast-session", "extract-spatial", "map"):
+    for name in ("train-history", "prepare-session", "forecast-session", "check-session", "extract-spatial", "map"):
         sub = commands.add_parser(name)
         sub.add_argument("source", type=Path)
         sub.add_argument("configuration", type=Path)
@@ -177,6 +201,8 @@ def main():
             sub.add_argument("--also", type=Path, action="append", default=[])
         if name == "train-history":
             sub.add_argument("--epochs", type=int, default=TrainingConfig().epochs)
+        if name == "check-session":
+            sub.add_argument("--checkpoint", type=Path)
         if name == "forecast-session":
             sub.add_argument("--checkpoint", type=Path, required=True)
             sub.add_argument("--steps", type=int, default=6)
@@ -185,7 +211,9 @@ def main():
         write_json(args.output, session_health(args.source))
         return
     configuration = read_json(args.configuration)
-    if args.command == "train-history":
+    if args.command == "check-session":
+        write_json(args.output, check_session(args.source, configuration, args.checkpoint))
+    elif args.command == "train-history":
         report = train_historical(args.source, configuration, args.output,
                                   replace(TrainingConfig(), epochs=args.epochs))
         write_json(args.output.with_suffix(args.output.suffix + ".report.json"), report)

@@ -27,3 +27,17 @@ source identity and does not use GPS as a temporal feature.
 Checkpoint-compatible preprocessing, station metadata and experimental
 protocol details are in [DATA_FORMAT.md](DATA_FORMAT.md) and
 [EXPERIMENT_PROTOCOL.md](EXPERIMENT_PROTOCOL.md).
+
+## Source layout
+
+`Framework/` and `Numerical/` contain the execution and numerical kernels.
+`Physics/` is organized into `Evapotranspiration/`, `Soil/`, `Leaf/` and
+`Crop/`, with shared physical bounds at the package root. `Data/` owns
+preparation and forecast context validation. `Temporal/`, `Evolution/`,
+`QuantumInspired/`, and `Spatial/` keep the forecasting, search and field
+algorithms separate. `Acquisition/` handles hardware, archives and field
+features. `Dashboard/` contains the local UI and service. `Utils/` holds
+shared support, `Tests/` holds verification, and `Examples/` holds examples
+and schema fixtures. The root contains CLI entry points, shared configuration,
+and the integration interfaces for combined loss and spatiotemporal modeling.
+The PlatformIO tree uses `src/`, `lib/`, `include/`, and `platformio.ini`.

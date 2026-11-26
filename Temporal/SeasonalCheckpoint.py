@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from Data.DataQuality import invalid_rows
+from Data.ForecastHistory import require_history
 from Temporal.DirectCheckpoint import load_direct, save_direct
 from Temporal.Seasonality import ConvexCorrection, SeasonalLookup
 from Utils.Serialization import read_json, write_json
@@ -82,12 +82,9 @@ def load_seasonal(checkpoint, device="cpu"):
 
 
 def forecast_saved(checkpoint, values, timestamps, device="cpu"):
-    if (len(values) < 3 or invalid_rows(values[-3:]).any()
-            or not (np.diff(timestamps[-3:]) == np.timedelta64(1, "h")).all()):
-        raise ValueError("Need three latest consecutive, physically valid hourly observations")
+    history = require_history(values, timestamps, "Need three latest consecutive, physically valid hourly observations")
     ensemble = load_seasonal(checkpoint, device)
-    history = np.asarray(values[-3:], dtype=float)[None]
-    point, daily, fallback = ensemble.predict(values, timestamps, timestamps[-1:], history)
+    point, daily, fallback = ensemble.predict(values, timestamps, timestamps[-1:], history[None])
     point, radius, joint = point[0], ensemble.intervals.marginal_radius, ensemble.intervals.trajectory_radius
     return {"point": point, "daily": daily[0], "used_current_state": fallback[0],
             "lower": point - radius, "upper": point + radius,

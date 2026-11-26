@@ -19,3 +19,16 @@ Per-device packet flags and coverage distinguish missing records, duplicates
 and restarts. Use only supplied, measured soil and leaf calibration values.
 GPS fixes must have been received by a spatial forecast's origin. Keep
 serial settings, calibration records and exact field locations local.
+
+## Recorded-session readiness
+
+```sh
+python Pipeline.py check-session readings.jsonl field-config.json readiness.json --checkpoint model.json
+```
+
+This offline check reports whether the latest closed hourly bins can supply a
+forecast. It reports incomplete features, ET warmup, the latest closed bin
+context, and whether the checkpoint's field physics metadata matches.
+The default ET warmup plus the three-hour forecast context require at least
+26 consecutive hourly temperatures. The report contains no GPS coordinates.
+For a specific operational cutoff, set `hourly.as_of` in the field configuration.

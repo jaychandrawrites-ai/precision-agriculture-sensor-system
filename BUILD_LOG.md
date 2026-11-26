@@ -642,3 +642,33 @@ A spatial_benchmark.py
 A spatial_forecast.py
 M BUILD_LOG.md
 ```
+
+## 2026-11-25 — Foundation and layout audit
+
+Verified active `jupiter-clean-development` at Phase 5 head `a6da6c4`.
+The consolidated foundation is `9c80c96`, whose parent is `main` at
+`cbd2992`. Its tree matches the archived `4f468ee` tree. The archive
+contains 41 original Jupiter 01–10 commits and remains in the ancestry of
+historical `jupiter-development`. None of those 41 commit IDs or individual
+subjects is in the active branch's ancestry. All 37 subsequent implementation
+commits through historical `38190fd` replay with matching commit messages and
+per-commit trees on the clean branch. No branch reconstruction was necessary.
+
+Reviewed the tracked foundation and current source paths. Module placement
+already matches the functional layout in ARCHITECTURE.md. Root-level
+entry points, shared configuration, and integration interfaces remain in
+place. The pre-existing empty Arduino-named marker is tracked in main and
+was preserved alongside the PlatformIO firmware. No tracked cache or
+temporary build artifacts were found.
+
+Moved the duplicated latest-three-hour forecast eligibility logic into
+`Data/ForecastHistory.py` for the recursive, direct, seasonal and field-session
+paths. Added the offline `Pipeline.py check-session` report with optional
+checkpoint physics compatibility. It requires no training or network
+access and contains no coordinates. Added regressions for hourly gaps,
+invalid feature values and the transition through the synthetic 26-hour
+default warmup and forecast context. Checkpoint formats remain unchanged.
+
+`OPENBLAS_NUM_THREADS=1 python -W error::DeprecationWarning -m unittest discover -s Tests -q`
+ran 118 tests with 116 passing and two optional CUDA checks skipped.
+Live hardware and calibration remain to be verified on the field equipment.
