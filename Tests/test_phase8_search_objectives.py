@@ -53,7 +53,9 @@ class SearchObjectivesTests(unittest.TestCase):
             artifacts = root / "models"
             scorer = sequence_fitness(dataset, settings, budget, windows, artifact_directory=artifacts)
             checkpoint = root / "search.json"
-            complete = run_search("random", scorer, budget, 28, None, "fixture", options, policy=policy)
+            uninterrupted = sequence_fitness(dataset, settings, budget, windows,
+                                             artifact_directory=root / "reference-models")
+            complete = run_search("random", uninterrupted, budget, 28, None, "fixture", options, policy=policy)
             run_search("random", scorer, budget, 28, checkpoint, "fixture", options, policy=policy, stop_after=1)
             resumed = run_search("random", scorer, budget, 28, checkpoint, "fixture", options, policy=policy)
             # Measured latency and RSS are diagnostics. Compare deterministic outcome and model bytes.
@@ -61,10 +63,12 @@ class SearchObjectivesTests(unittest.TestCase):
             self.assertEqual([[row.genome for row in generation] for generation in complete[1]],
                              [[row.genome for row in generation] for generation in resumed[1]])
             self.assertEqual(complete[0].artifact_sha256, resumed[0].artifact_sha256)
+            self.assertEqual([[row.artifact_sha256 for row in generation] for generation in complete[1]],
+                             [[row.artifact_sha256 for row in generation] for generation in resumed[1]])
             checkpoint_data = read_json(checkpoint)
             self.assertTrue(checkpoint_data["pareto_front"])
-            self.assertTrue(any(row.genome.decode().family.startswith(("gru", "lstm"))
-                                for generation in resumed[1] for row in generation))
+            families = {row.genome.decode().family for generation in resumed[1] for row in generation}
+            self.assertLessEqual({"lstm", "gru", "lstm_attention", "gru_attention", "convolution", "attention"}, families)
             (artifacts / resumed[1][0][0].artifact_file).unlink()
             with self.assertRaisesRegex(ValueError, "checkpoint is missing"):
                 run_search("random", scorer, budget, 28, checkpoint, "fixture", options, policy=policy)
