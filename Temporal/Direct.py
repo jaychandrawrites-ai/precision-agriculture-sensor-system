@@ -10,6 +10,10 @@ from Framework.Optimizer import Adam
 from Framework.Scheduler import CosineAnnealing
 from Physics.Constraints import project
 from Temporal.Losses import regression_loss
+from Temporal.SequenceForecast import SequenceForecastModel
+
+
+DIRECT_ARCHITECTURES = ("gated", "gru", "convolution", "attention")
 
 
 class DerivativeGain(Layer):
@@ -57,6 +61,8 @@ class GatedDense(Layer):
 
 
 class DirectModel(Sequential):
+    architecture = "gated"
+
     def __init__(self, backend, horizon, width=32):
         if min(horizon, width) < 1:
             raise ValueError("Invalid direct model size")
@@ -65,10 +71,18 @@ class DirectModel(Sequential):
         self.horizon = horizon
 
 
-def direct_features(histories):
+def make_direct_model(backend, horizon, width, architecture="gated"):
+    if architecture == "gated":
+        return DirectModel(backend, horizon, width)
+    return SequenceForecastModel(backend, horizon, width, architecture)
+
+
+def direct_features(histories, architecture="gated"):
     histories = np.asarray(histories, dtype=float)
     if histories.ndim != 3 or histories.shape[1:] != (3, 6) or not np.isfinite(histories).all():
         raise ValueError("Expected finite [origin, 3, 6] observations")
+    if architecture != "gated":
+        return histories.reshape(len(histories), 18)
     return (lag_coefficients(.65) @ histories).reshape(len(histories), 18)
 
 
@@ -78,7 +92,7 @@ class DirectForecast:
         self.inputs, self.targets = input_scaler, target_scaler
 
     def predict(self, histories, *, anchor=None):
-        inputs = self.inputs.transform(direct_features(histories))
+        inputs = self.inputs.transform(direct_features(histories, self.model.architecture))
         with self.backend.scope():
             prediction, _ = self.model.forward(self.backend.array(inputs), training=False)
         output = self.backend.to_host(prediction).reshape(-1, self.model.horizon, 6)
@@ -86,7 +100,7 @@ class DirectForecast:
         return project(base + output * self.targets.scale)
 
     def ood_score(self, histories):
-        z = self.inputs.transform(direct_features(histories))
+        z = self.inputs.transform(direct_features(histories, self.model.architecture))
         return np.max(np.abs(z), axis=1)
 
 
@@ -101,7 +115,8 @@ def _forecast_anchor(histories, horizon, anchor):
 
 
 def fit_direct(training, validation, target_scaler, backend, settings, *, width=32,
-               horizon_weights=None, training_anchor=None, validation_anchor=None):
+               horizon_weights=None, training_anchor=None, validation_anchor=None,
+               architecture="gated"):
     if (not len(training.starts) or not len(validation.starts)
             or training.targets.shape[1:] != validation.targets.shape[1:]):
         raise ValueError("Need matching nonempty direct forecast windows")
@@ -109,8 +124,8 @@ def fit_direct(training, validation, target_scaler, backend, settings, *, width=
     weight = np.ones(horizon) if horizon_weights is None else np.asarray(horizon_weights, dtype=float)
     if weight.shape != (horizon,) or not np.isfinite(weight).all() or (weight < 0).any() or not weight.any():
         raise ValueError("Use one nonnegative weight per horizon")
-    model = DirectModel(backend, horizon, width)
-    features = direct_features(training.histories)
+    model = make_direct_model(backend, horizon, width, architecture)
+    features = direct_features(training.histories, architecture)
     inputs = Standardizer().fit(features)
     forecast = DirectForecast(model, backend, inputs, target_scaler)
     if (training_anchor is None) != (validation_anchor is None):
@@ -148,6 +163,6 @@ def fit_direct(training, validation, target_scaler, backend, settings, *, width=
                 weights = model.state_dict(backend)
             schedule.step()
     model.load_state_dict(weights, backend)
-    return forecast, {"training_loss": train_trace, "validation_loss": val_trace,
+    return forecast, {"architecture": architecture, "training_loss": train_trace, "validation_loss": val_trace,
                       "parameters": sum(p.value.size for p in model.parameters()),
                       "clipped_updates": clipped, "peak_gradient_norm": peak}

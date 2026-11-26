@@ -4,7 +4,7 @@ import numpy as np
 from config import FEATURES
 from Data.Normalization import Standardizer
 from Framework.Backend import create_backend
-from Temporal.Direct import DirectForecast, DirectModel
+from Temporal.Direct import DirectForecast, make_direct_model
 from Utils.Serialization import read_json, write_json
 
 
@@ -17,15 +17,20 @@ def save_direct(path, forecast, width, *, provenance=None):
         "parameters": forecast.model.state_dict(forecast.backend),
         "provenance": provenance or {},
     }
+    if forecast.model.architecture != "gated":
+        record["format"] = "jupiter-direct-v2"
+        record["architecture"] = forecast.model.architecture
     write_json(path, record)
 
 
 def load_direct(path, device="cpu"):
     record = read_json(path)
-    if record.get("format") != "jupiter-direct-v1" or tuple(record.get("features", ())) != FEATURES:
+    version = record.get("format")
+    if version not in ("jupiter-direct-v1", "jupiter-direct-v2") or tuple(record.get("features", ())) != FEATURES:
         raise ValueError("Unsupported experimental forecast checkpoint")
     backend = create_backend(device=device, dtype=record["dtype"])
-    model = DirectModel(backend, record["horizon"], record["width"])
+    architecture = "gated" if version == "jupiter-direct-v1" else record["architecture"]
+    model = make_direct_model(backend, record["horizon"], record["width"], architecture)
     inputs = Standardizer.from_state(record["inputs"])
     targets = Standardizer.from_state(record["targets"])
     if inputs.mean.shape != (18,) or targets.mean.shape != (6,):

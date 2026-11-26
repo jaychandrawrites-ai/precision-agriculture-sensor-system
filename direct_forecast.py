@@ -14,12 +14,12 @@ from Data.Preprocessing import read_hourly
 from Data.RolloutWindows import rollout_windows
 from Data.TimeSeries import calendar_cutoffs
 from Framework.Backend import create_backend
-from Temporal.Direct import fit_direct
+from Temporal.Direct import DIRECT_ARCHITECTURES, fit_direct
 from Temporal.DirectCheckpoint import load_direct, save_direct
 from Utils.Serialization import atomic_output, write_json
 
 
-def train(source, checkpoint, settings, horizon, width=32):
+def train(source, checkpoint, settings, horizon, width=32, *, architecture="gated"):
     values, times = read_hourly(source)
     cuts = calendar_cutoffs(times, settings.train_fraction, settings.validation_fraction)
     data = build_dataset(values, times, cutoffs=cuts)
@@ -27,7 +27,7 @@ def train(source, checkpoint, settings, horizon, width=32):
     validation = rollout_windows(data, data.validation, values, times, horizon)
     model, report = fit_direct(train_windows, validation, data.target_scaler,
                                create_backend(settings.device, settings.dtype, settings.seed),
-                               settings, width=width)
+                               settings, width=width, architecture=architecture)
     save_direct(checkpoint, model, width, provenance={
         "source_sha256": sha256(Path(source).read_bytes()).hexdigest(),
         "cutoffs_utc": [str(value) + "Z" for value in cuts],
@@ -59,12 +59,14 @@ def main():
             sub.add_argument("--epochs", type=int, default=30)
             sub.add_argument("--horizon", type=int, default=24)
             sub.add_argument("--width", type=int, default=32)
+            sub.add_argument("--architecture", choices=DIRECT_ARCHITECTURES, default="gated")
         else:
             sub.add_argument("output", type=Path)
     args = parser.parse_args()
     if args.command == "train":
         settings = replace(TrainingConfig(), epochs=args.epochs, dropout=0)
-        report = train(args.source, args.checkpoint, settings, args.horizon, args.width)
+        report = train(args.source, args.checkpoint, settings, args.horizon, args.width,
+                       architecture=args.architecture)
         write_json(args.checkpoint.with_suffix(".training.json"), report)
     else:
         with atomic_output(args.output) as file:
