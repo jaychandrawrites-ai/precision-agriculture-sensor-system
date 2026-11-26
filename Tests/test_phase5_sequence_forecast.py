@@ -31,11 +31,19 @@ class SequenceForecastTests(unittest.TestCase):
                 expected = "jupiter-direct-v1" if architecture == "gated" else "jupiter-direct-v2"
                 self.assertEqual(read_json(checkpoint)["format"], expected)
             history.unlink()
+            from Data.Preprocessing import read_hourly
+            from Utils.ModelLoader import load_forecaster
+
+            values, _ = read_hourly(session)
             for architecture, checkpoint in checkpoints.items():
                 prediction = predict(session, checkpoint)
                 self.assertEqual(prediction.shape, (3, 6))
                 self.assertTrue(np.isfinite(prediction.to_numpy()).all())
                 self.assertEqual(load_direct(checkpoint).model.architecture, architecture)
+                shared = load_forecaster(checkpoint)
+                np.testing.assert_allclose(shared.forecast(values, 3), prediction.to_numpy())
+                with self.assertRaisesRegex(ValueError, "supports"):
+                    shared.forecast(values, 4)
 
     def test_sequence_features_keep_observations_in_chronological_order(self):
         history = np.arange(18).reshape(1, 3, 6)

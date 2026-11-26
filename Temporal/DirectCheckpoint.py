@@ -24,7 +24,10 @@ def save_direct(path, forecast, width, *, provenance=None):
 
 
 def load_direct(path, device="cpu"):
-    record = read_json(path)
+    return load_direct_state(read_json(path), device)
+
+
+def load_direct_state(record, device="cpu"):
     version = record.get("format")
     if version not in ("jupiter-direct-v1", "jupiter-direct-v2") or tuple(record.get("features", ())) != FEATURES:
         raise ValueError("Unsupported experimental forecast checkpoint")
