@@ -164,3 +164,18 @@ class SurveyUncertaintyTests(unittest.TestCase):
                         np.testing.assert_allclose(reference[key], loaded[key])
             finally:
                 mapping._mmap.close()
+
+    def test_circular_domain_masks_regular_and_predictive_cells(self):
+        from Acquisition.TraceAnalysis import _raster
+        from Spatial.SurveyUncertainty import predictive_fields
+
+        domain = {"center_lat_lon": [0, 179.999], "radius_m": 250.}
+        raster = _raster([(0., 179.998), (0., -179.999)], [{"value": 2.}, {"value": 3.}], 9, domain)
+        self.assertIsNone(raster["estimate"][0][0])
+        self.assertGreater(raster["estimate"][4][4], 2.)
+        self.assertNotIn("center_lat_lon", raster["domain"])
+        points = [[-1., 0.], [1., 0.]]
+        arrays, _ = predictive_fields(points, np.ones((2, 2, 1, 1)), [[0., 0.], [2., 2.]],
+                                      {"method": "idw", "radius_m": 1., "feature_scales": [1.]}, .9)
+        np.testing.assert_array_equal(arrays["predictive_inside"], [True, False])
+        self.assertTrue(np.isnan(arrays["predictive_draws"][:, :, 1]).all())

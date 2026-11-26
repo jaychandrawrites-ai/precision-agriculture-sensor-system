@@ -314,6 +314,20 @@ submit("trace-forecast-form", async event => {
   trace.readiness = report;
   showResult(report);
 }, "Forecast report available.");
+function mapDomain() {
+  const fields = ["map-latitude", "map-longitude", "map-radius"].map(id => el(id));
+  const resolution = Number(el("map-resolution").value);
+  if (!Number.isInteger(resolution) || resolution < 2 || resolution > 100) {
+    throw new Error("Choose a map resolution from 2 to 100.");
+  }
+  if (fields.every(field => !field.value)) return {resolution};
+  if (fields.some(field => !field.value || !field.checkValidity())) {
+    throw new Error("Enter a valid latitude, longitude and radius.");
+  }
+  const [latitude, longitude, radius_m] = fields.map(field => Number(field.value));
+  return {resolution, domain: {center_lat_lon: [latitude, longitude], radius_m}};
+}
+
 submit("trace-ensemble-form", async event => {
   const fields = event.target.elements;
   const lead = Number(fields.lead.value);
@@ -321,7 +335,7 @@ submit("trace-ensemble-form", async event => {
   if (members.includes(fields.model.value)) throw new Error("Choose distinct ensemble models.");
   const result = await perform("ensemble-map", {configuration: await jsonFile(fields.configuration, true),
     model: fields.model.value, members, origin: new Date(fields.origin.value).toISOString(),
-    steps: lead, lead, feature: fields.feature.value, adaptive: await jsonFile(fields.adaptive),
+    ...mapDomain(), steps: lead, lead, feature: fields.feature.value, adaptive: await jsonFile(fields.adaptive),
     predictive: await jsonFile(fields.predictive)});
   if (result.predictive) {
     if (result.adaptive) {
@@ -343,7 +357,7 @@ submit("trace-ensemble-form", async event => {
 }, "Ensemble forecast map available.");
 submit("trace-map-form", async event => {
   const fields = event.target.elements;
-  const result = await perform("map", {feature: fields.feature.value,
+  const result = await perform("map", {...mapDomain(), feature: fields.feature.value,
     timestamp: new Date(fields.timestamp.value).toISOString(), window_minutes: Number(fields.window_minutes.value)});
   drawMap(result.estimate);
   el("trace-spread").hidden = true;

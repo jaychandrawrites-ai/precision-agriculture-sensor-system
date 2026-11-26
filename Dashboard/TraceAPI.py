@@ -95,6 +95,8 @@ def trace_post(handler, body):
         return handler._json(200, survey_forecasts(store, identifier, body["configuration"], checkpoint,
                                                     steps=steps))
     elif action == "ensemble-map":
+        import numpy as np
+
         steps, lead = body.get("steps", 6), body.get("lead", 1)
         if type(steps) is not int or type(lead) is not int or not 1 <= lead <= steps <= 72:
             raise ValueError("Choose a map lead within the 1–72-hour forecast horizon")
@@ -114,12 +116,13 @@ def trace_post(handler, body):
         if predictive is not None and not isinstance(predictive, dict):
             raise ValueError("Predictive map configuration must be an object")
         arrays, report = ensemble_forecast_maps(store, identifier, forecast, body["origin"],
-                                                steps=steps, adaptive=adaptive, predictive=predictive)
+                                                steps=steps, adaptive=adaptive, predictive=predictive,
+                                                grid_size=body.get("resolution", 25), domain=body.get("domain"))
         feature = body["feature"]
         if feature not in report["features"]:
             raise ValueError("Choose a supported forecast feature")
         index = report["features"].index(feature)
-        layers = {key: value[lead - 1, :, :, index].tolist() for key, value in arrays.items()
+        layers = {key: np.where(arrays["grid_inside"], value[lead - 1, :, :, index], None).tolist() for key, value in arrays.items()
                   if key in ("mean", "spread", "lower", "upper")}
         result = {"metadata": report, "feature": feature, "lead_hours": lead, "layers": layers}
         if adaptive is not None:
@@ -130,7 +133,6 @@ def trace_post(handler, body):
                    for key in ("mean", "spread", "lower", "upper")},
             }
         if predictive is not None:
-            import numpy as np
             fields = {}
             mask = arrays["predictive_inside"]
             variational = report["predictive"]["method"] in {"variational", "adaptive_variational"}
@@ -145,7 +147,8 @@ def trace_post(handler, body):
         return handler._json(200, result)
     elif action == "map":
         return handler._json(200, observational_map(store, identifier, body["feature"], body["timestamp"],
-                                                    window_minutes=body.get("window_minutes", 60)))
+                                                    window_minutes=body.get("window_minutes", 60),
+                                                    grid_size=body.get("resolution", 25), domain=body.get("domain")))
     else:
         return handler._json(404, {"error": "Trace action not found"})
     return _reply_status(handler, identifier)

@@ -151,7 +151,7 @@ def _coordinates(values, location, flags):
 
 
 def observational_map(store, survey_id, feature, timestamp, window_minutes=60,
-                      clock="received_at", grid_size=25):
+                      clock="received_at", grid_size=25, domain=None):
     """Interpolate recent measured values with one eligible sample per location.
 
     The map is a bounded-window composite, not a simultaneous measurement.
@@ -194,22 +194,49 @@ def observational_map(store, survey_id, feature, timestamp, window_minutes=60,
                         "segment_id": segment_id, "sample_at": observed.isoformat(),
                         "received_at": received.isoformat(), "coordinate_source": source,
                         "value": value})
-    raster = _raster(sites, samples, grid_size)
+    raster = _raster(sites, samples, grid_size, domain)
     return {"survey_id": survey_id, "feature": feature, "provenance": "measured_window_composite",
             "unit": next(iter(FIELDS[feature][2])), "interpolation": "IDW", "clock": clock,
             "window_start_exclusive": start.isoformat(),
             "window_end_inclusive": end.isoformat(), "excluded_locations": len(locations) - len(sites),
             "samples": samples, **raster}
 
-def _raster(sites, samples, grid_size):
+def _raster(sites, samples, grid_size, domain=None):
     if len(set(sites)) < 2:
         raise ValueError("At least two distinct locations with values and coordinates are required")
-    grid, points = _forecast_grid(sites, grid_size)
+    grid, points = _forecast_grid(sites, grid_size, domain)
     estimate = idw(points, [sample["value"] for sample in samples], grid.points()).reshape(grid.shape)
-    return {"east_m": grid.east.tolist(), "north_m": grid.north.tolist(), "estimate": estimate.tolist()}
+    inside = _circle_mask(grid.points(), domain).reshape(grid.shape)
+    return {"east_m": grid.east.tolist(), "north_m": grid.north.tolist(),
+            "estimate": np.where(inside, estimate, None).tolist(), "inside": inside.tolist(),
+            "domain": _domain_metadata(domain)}
+
+def _domain_metadata(domain):
+    return None if domain is None else {"shape": "circle", "radius_m": float(domain["radius_m"])}
 
 
-def _forecast_grid(sites, grid_size):
+def _circle_mask(points, domain):
+    if domain is None:
+        return np.ones(len(points), dtype=bool)
+    return np.hypot(*points.T) <= float(domain["radius_m"])
+
+
+def _circle_polygon(domain):
+    angles = np.linspace(0, 2 * np.pi, 96, endpoint=False)
+    return float(domain["radius_m"]) * np.column_stack((np.cos(angles), np.sin(angles)))
+
+
+
+def _forecast_grid(sites, grid_size, domain=None):
+    if domain is not None:
+        if not isinstance(domain, dict) or not {"center_lat_lon", "radius_m"} <= domain.keys():
+            raise ValueError("Map domain requires a geographic center and radius")
+        radius = float(domain["radius_m"])
+        if not math.isfinite(radius) or not 0 < radius <= 50000:
+            raise ValueError("Circle radius must be positive and at most 50,000 m for the local projection")
+        points = local_coordinates(sites, domain["center_lat_lon"])
+        axis = np.linspace(-radius, radius, grid_size)
+        return SpatialGrid(axis, axis), points
     points = local_coordinates(sites, sites[0])
     limits = points.min(axis=0), points.max(axis=0)
     padding = max(1.0, float(np.max(limits[1] - limits[0])) * 0.05)
@@ -217,7 +244,7 @@ def _forecast_grid(sites, grid_size):
     return SpatialGrid(east, north), points
 
 
-def forecast_map(store, survey_id, report, feature, valid_at, origin, *, gps_minutes=60, grid_size=25):
+def forecast_map(store, survey_id, report, feature, valid_at, origin, *, gps_minutes=60, grid_size=25, domain=None):
     sites, samples, issued, valid, lead, excluded = _forecast_sites(
         store, survey_id, report, feature, valid_at, origin, gps_minutes, grid_size
     )
@@ -225,7 +252,7 @@ def forecast_map(store, survey_id, report, feature, valid_at, origin, *, gps_min
             "valid_at": valid.isoformat(), "lead_hours": int(lead), "interpolation": "IDW",
             "provenance": "point_model_forecasts", "uncertainty": "not estimated",
             "excluded_locations": excluded, "samples": samples,
-            **_raster(sites, samples, grid_size)}
+            **_raster(sites, samples, grid_size, domain)}
 
 
 def _forecast_sites(store, survey_id, report, feature, valid_at, origin, gps_minutes, grid_size):
@@ -282,7 +309,7 @@ def _forecast_sites(store, survey_id, report, feature, valid_at, origin, gps_min
     return points, samples, issued, valid, lead, len(locations) - len(samples)
 
 
-def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probability=.9, grid_size=25, adaptive=None, predictive=None, physical_sources=None, draw_path=None):
+def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probability=.9, grid_size=25, adaptive=None, predictive=None, physical_sources=None, draw_path=None, domain=None):
     """Propagate shared model draws, keeping site, lead and feature dependencies."""
     from spatial_forecast import ensemble_maps, interpolation_weights
 
@@ -310,16 +337,20 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
         segments.append(segment)
     if len(set(points)) != len(points) or len(points) < 2:
         raise ValueError("Forecast maps require distinct coordinates and at least two complete ensemble sites")
-    grid, xy = _forecast_grid(points, grid_size)
+    grid, xy = _forecast_grid(points, grid_size, domain)
     members = np.stack(retained, axis=1)  # member × site × lead × feature
     arrays = ensemble_maps(grid, xy, members.reshape(len(hashes), len(points), -1),
                            probability=probability)
     result = {name: value.reshape(*grid.shape, steps, len(FEATURES)).transpose(2, 0, 1, 3)
               for name, value in arrays.items()}
-    result.update(east_m=grid.east, north_m=grid.north, site_member_forecasts=members,
+    inside = _circle_mask(grid.points(), domain).reshape(grid.shape)
+    for value in result.values():
+        value[:, ~inside, :] = np.nan
+    result.update(grid_inside=inside, east_m=grid.east, north_m=grid.north, site_member_forecasts=members,
                   interpolation_weights=interpolation_weights(xy, grid.points(), 2).reshape(*grid.shape, len(points)))
     metadata = {
         "survey_id": survey_id, "issued_at": issued.isoformat(), "features": FEATURES,
+        "domain": _domain_metadata(domain),
         "valid_at": [(issued + timedelta(hours=i)).isoformat() for i in range(1, steps + 1)],
         "sites": ids, "checkpoint_sha256": hashes, "central_mass": probability,
         "axes": ["lead", "north", "east", "feature"],
@@ -328,10 +359,14 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
         "interpretation": "propagated empirical model disagreement; field coverage is unverified",
     }
     default_bounds = [grid.east[0], grid.north[0], grid.east[-1], grid.north[-1]]
+    if domain is not None and adaptive is not None:
+        adaptive = dict(adaptive)
+        adaptive.setdefault("field_polygon_m", _circle_polygon(domain))
     if adaptive is not None:
         from Spatial.EnsembleRefinement import adaptive_ensemble
         arrays, metadata["adaptive"] = adaptive_ensemble(
             xy, members, adaptive.get("bounds_m", default_bounds), adaptive, probability)
+        arrays["adaptive_inside"] &= _circle_mask(arrays["adaptive_centers_m"], domain)
         result.update(arrays)
     if adaptive is not None and "variational" in adaptive:
         from Spatial.SurveyUncertainty import variational_trajectories
@@ -340,6 +375,10 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
         options["refinement"] = adaptive["variational"].get("refinement", {})
         arrays, metadata["variational"] = variational_trajectories(
             xy, members, options.get("bounds_m", default_bounds), options, probability)
+        valid_cells = _circle_mask(arrays["variational_centers_m"], domain)
+        arrays["variational_inside"] &= valid_cells
+        for name in ("mean", "std", "lower", "upper", "median", "width", "draws"):
+            arrays["variational_" + name][..., ~valid_cells, :] = np.nan
         result.update(arrays)
     if predictive is not None:
         from Spatial.SurveyUncertainty import predictive_fields
@@ -347,6 +386,8 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
         settings = {key: adaptive[key] for key in ("field_polygon_m", "field_holes_m")
                     if adaptive is not None and key in adaptive}
         settings.update(predictive)
+        if domain is not None:
+            settings["radius_m"] = float(domain["radius_m"])
         provenance = [{"checkpoint_sha256": sha, "physical_scenario_id": None} for sha in hashes]
         physical = settings.pop("physical", None)
         if physical_sources is not None:

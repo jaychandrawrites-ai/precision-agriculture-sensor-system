@@ -107,6 +107,12 @@
           <button value="forecast">Forecast Eligible Locations</button>
         </div>
       </form>
+      <div class="trace-grid">
+        <label>Map center latitude<input id="map-latitude" type="number" step="any" min="-89.99" max="89.99"></label>
+        <label>Map center longitude<input id="map-longitude" type="number" step="any" min="-180" max="180"></label>
+        <label>Map radius (m)<input id="map-radius" type="number" min="1" max="50000"></label>
+        <label>Map grid resolution<input id="map-resolution" type="number" min="2" max="100" value="25"></label>
+      </div>
       <form id="trace-ensemble-form">
         <label>Ensemble field configuration<input name="configuration" type="file" accept=".json,application/json" required></label>
         <label>Primary ensemble model<select name="model" id="trace-ensemble-model" required></select></label>

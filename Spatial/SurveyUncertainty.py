@@ -27,6 +27,8 @@ def predictive_fields(points, members, geometry, settings, mass, *, operator=Non
         raise ValueError("Field holes require an exterior polygon")
     inside = (np.ones(len(queries), dtype=bool) if boundary is None
               else FieldDomain(boundary, tuple(holes)).contains(queries))
+    if "radius_m" in settings:
+        inside &= np.hypot(*queries.T) <= settings["radius_m"]
     sites, leads, features = members.shape[1:]
     method = settings.get("method", "kriging")
     if method not in {"kriging", "idw", "variational", "adaptive_variational"}:

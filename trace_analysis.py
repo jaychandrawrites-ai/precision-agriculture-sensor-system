@@ -14,7 +14,8 @@ def _export_maps(args, store, predictive, physical_sources, draw_path):
     arrays, manifest = ensemble_forecast_maps(
         store, args.survey_id, read_json(args.forecast_report), args.origin, steps=args.steps,
         adaptive=read_json(args.adaptive) if args.adaptive else None, predictive=predictive,
-        physical_sources=physical_sources, draw_path=draw_path)
+        physical_sources=physical_sources, draw_path=draw_path,
+        grid_size=args.resolution, domain=read_json(args.domain) if args.domain else None)
     try:
         write_arrays(args.output.with_suffix(".npz"), **arrays)
     finally:
@@ -32,6 +33,9 @@ def main():
         command = commands.add_parser(name)
         command.add_argument("survey_id")
         command.add_argument("output", type=Path)
+        if name in ("map", "forecast-map", "ensemble-map"):
+            command.add_argument("--domain", type=Path, help="JSON with center_lat_lon and radius_m")
+            command.add_argument("--resolution", type=int, default=25)
         if name == "map":
             command.add_argument("--feature", required=True)
             command.add_argument("--timestamp", required=True)
@@ -98,10 +102,12 @@ def main():
         return
     elif args.command == "map":
         result = observational_map(store, args.survey_id, args.feature, args.timestamp,
-                                   args.window_minutes, args.clock)
+                                   args.window_minutes, args.clock, args.resolution,
+                                   read_json(args.domain) if args.domain else None)
     elif args.command == "forecast-map":
         result = forecast_map(store, args.survey_id, read_json(args.forecast_report),
-                              args.feature, args.valid_at, args.origin)
+                              args.feature, args.valid_at, args.origin, grid_size=args.resolution,
+                              domain=read_json(args.domain) if args.domain else None)
     else:
         result = survey_forecasts(store, args.survey_id, read_json(args.configuration),
                                   args.checkpoint, getattr(args, "steps", None), ensemble=getattr(args, "member", ()))
