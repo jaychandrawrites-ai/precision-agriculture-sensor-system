@@ -1,0 +1,76 @@
+{
+  "source_label": "University of Arizona AZMET Yuma Valley az02, 2016 raw hourly observations",
+  "source_url": "https://azmet.arizona.edu/azmet/data/0216rh.txt",
+  "schema_reference": "https://azmet.arizona.edu/azmet/raw2003.htm",
+  "metadata_url": "https://azmet.arizona.edu/about/station-metadata/az02",
+  "station_id": "az02",
+  "station_eto_mm_column": "station_eto_mm",
+  "schema": {
+    "calendar": {
+      "year": "year",
+      "day_of_year": "day",
+      "hour": "hour",
+      "hour_encoding": "1-24"
+    },
+    "convention": "end",
+    "timezone": "America/Phoenix",
+    "headerless_columns": [
+      "year",
+      "day",
+      "hour",
+      "air_c",
+      "rh_pct",
+      "vpd_kpa",
+      "shortwave_mj",
+      "rain_mm",
+      "soil_10cm_c",
+      "soil_50cm_c",
+      "wind_mps",
+      "wind_vector_mps",
+      "wind_direction_deg",
+      "wind_direction_sd_deg",
+      "wind_max_mps",
+      "station_eto_mm",
+      "vapor_pressure_kpa",
+      "dewpoint_c"
+    ],
+    "columns": {
+      "air_temperature_c": {
+        "source": "air_c",
+        "unit": "C"
+      },
+      "relative_humidity_pct": {
+        "source": "rh_pct",
+        "unit": "%"
+      },
+      "shortwave_w_m2": {
+        "source": "shortwave_mj",
+        "unit": "MJ/m2/hour"
+      },
+      "wind_m_s": {
+        "source": "wind_mps",
+        "unit": "m/s"
+      },
+      "precipitation_mm": {
+        "source": "rain_mm",
+        "unit": "mm/hour"
+      }
+    }
+  },
+  "reference_et": {
+    "solar_offset_minutes": -458.830084
+  },
+  "assumptions": {
+    "site": {
+      "latitude_deg": 32.709828,
+      "elevation_m": 36
+    }
+  },
+  "scenario": {
+    "scenario_irrigation_mm": 0.0,
+    "rain_interception_fraction": 0.05
+  },
+  "source_sha256": "3d182bae20746592be00e4641a7a05abd2a02e5a5a8083f0e4997fd2f9b373a6",
+  "station_history_url": "https://azmet.arizona.edu/azmet/02.htm",
+  "station_site_era": "Second site (archive naming), through 2020-10-14"
+}

@@ -4,6 +4,7 @@
   "schema_reference": "https://azmet.arizona.edu/azmet/raw2003.htm",
   "metadata_url": "https://azmet.arizona.edu/about/station-metadata/az01",
   "station_id": "az01",
+  "source_sha256": "bc4dc71cccf96feaf649336cdc0234d8638ded745ab8273bf5a6f638956c3399",
   "station_eto_mm_column": "station_eto_mm",
   "schema": {
     "calendar": {"year": "year", "day_of_year": "day", "hour": "hour", "hour_encoding": "1-24"},

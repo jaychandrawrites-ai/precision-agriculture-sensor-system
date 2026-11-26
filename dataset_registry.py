@@ -3,6 +3,7 @@ import argparse
 import json
 
 from Data.Registry import DatasetReference, DatasetRegistry
+from Data.StationCatalog import DEFAULT_CATALOG, StationCatalog
 from Data.Studies import seasonal_drift
 from Utils.Serialization import read_json, write_json
 
@@ -10,11 +11,17 @@ from Utils.Serialization import read_json, write_json
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
+    parser.add_argument("--catalog", default=DEFAULT_CATALOG)
     command = parser.add_subparsers(dest="action", required=True)
     importing = command.add_parser("import")
     importing.add_argument("source")
     importing.add_argument("mapping")
     command.add_parser("list")
+    command.add_parser("catalog")
+    official = command.add_parser("import-official")
+    official.add_argument("station")
+    official.add_argument("year", type=int)
+    official.add_argument("source")
     verifying = command.add_parser("verify")
     verifying.add_argument("reference")
     verifying.add_argument("--source")
@@ -31,6 +38,11 @@ def main():
     registry = DatasetRegistry(args.root)
     if args.action == "list":
         print("\n".join(map(str, registry.references())))
+    elif args.action == "catalog":
+        print(json.dumps(StationCatalog(args.catalog).entries(), indent=2))
+    elif args.action == "import-official":
+        mapping = StationCatalog(args.catalog).mapping(args.station, args.year)
+        print(registry.import_archive(args.source, mapping))
     elif args.action == "import":
         print(registry.import_archive(args.source, read_json(args.mapping)))
     elif args.action == "verify":

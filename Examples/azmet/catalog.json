@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "stations": {
+    "az01": {
+      "name": "Tucson",
+      "metadata_url": "https://azmet.arizona.edu/about/station-metadata/az01",
+      "archives": {"2019": "tucson-2019.json"}
+    },
+    "az02": {
+      "name": "Yuma Valley",
+      "metadata_url": "https://azmet.arizona.edu/about/station-metadata/az02",
+      "archives": {
+        "2016": "yuma-valley-2016.json",
+        "2018": "yuma-valley-2018.json",
+        "2019": "yuma-valley-2019.json"
+      }
+    },
+    "az06": {
+      "name": "Maricopa",
+      "metadata_url": "https://azmet.arizona.edu/about/station-metadata/az06",
+      "archives": {"2019": "maricopa-2019.json"}
+    }
+  }
+}

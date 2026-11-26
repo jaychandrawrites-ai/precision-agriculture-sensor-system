@@ -76,3 +76,16 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(fields["reference_finite_hours"], 2)
         self.assertAlmostEqual(fields["target_minus_reference_mean"], 1)
         self.assertGreater(fields["empirical_cdf_distance"], 0)
+
+    def test_verified_release_catalog(self):
+        from Data.StationCatalog import StationCatalog
+
+        catalog = StationCatalog()
+        expected = {("az01", 2019), ("az02", 2016), ("az02", 2018), ("az02", 2019), ("az06", 2019)}
+        self.assertEqual({(row["station"], row["year"]) for row in catalog.entries()}, expected)
+        for station, year in expected:
+            mapping = catalog.mapping(station, year)
+            self.assertEqual(mapping["station_id"], station)
+            self.assertEqual(len(mapping["source_sha256"]), 64)
+        with self.assertRaisesRegex(ValueError, "No verified mapping"):
+            catalog.mapping("az06", 2018)
