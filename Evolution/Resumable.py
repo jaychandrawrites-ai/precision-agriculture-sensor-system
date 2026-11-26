@@ -11,6 +11,7 @@ import numpy as np
 from Evolution.Diagnostics import diversity
 from Evolution.Fitness import Candidate
 from Evolution.Genome import Architecture, Genome, WIDTHS
+from Evolution.Pareto import exploration, rank_candidates, update_archive
 from QuantumInspired.Adaptive import adaptive_update, amplitude_diagnostics
 from QuantumInspired.QuantumGenome import QuantumGenome
 from Utils.Serialization import read_json, write_json
@@ -118,7 +119,7 @@ def _breed(ranked, rng, config, options, *, size, preserve_elite=True):
 
 
 def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=SearchOptions(),
-               *, stop_after=None):
+               *, stop_after=None, policy=None):
     """Checkpoint completed generations. A retried partial generation is recomputed.
 
     Scores are evaluated in fixed order even with parallel workers. Cache hits
@@ -136,9 +137,12 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
     cache = {}
     best = None
     stale = 0
+    frontier = []
     checkpoint = Path(checkpoint) if checkpoint is not None else None
     recipe = {"version": 2, "mode": mode, "seed": seed, "data": fingerprint,
               "evolution": asdict(settings), "options": asdict(options)}
+    if policy is not None:
+        recipe["objective_policy"] = asdict(policy)
     if checkpoint is not None and checkpoint.exists():
         state = read_json(checkpoint)
         if recipe != state["recipe"]:
@@ -150,7 +154,17 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
         pool = [Genome(tuple(bits)) for bits in state["population"]]
         amplitudes = [QuantumGenome(extended=options.extended, sequence=options.sequence, angles=angles)
                       for angles in state["angles"]]
-        best = min((item for generation in history for item in generation), key=lambda item: item.score)
+        if policy is not None:
+            frontier = [_unpack(candidate) for candidate in state["pareto_front"]]
+            if not frontier:
+                raise ValueError("Search checkpoint is missing its Pareto archive")
+            best = frontier[0]
+        else:
+            best = min((item for generation in history for item in generation), key=lambda item: item.score)
+        verify = getattr(score, "verify_artifact", None)
+        if verify is not None:
+            for item in {c.artifact_file: c for group in history for c in group}.values():
+                verify(item)
         stale = state["stale"]
     elif amplitude_mode:
         amplitudes = [QuantumGenome(extended=options.extended, sequence=options.sequence) for _ in range(settings.population)]
@@ -200,13 +214,21 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
                               for genome in pool for hit in (cache[_key(genome)],)]
             else:
                 actual = candidates = list(workers.map(score, pool))
-            ranked = sorted(candidates, key=lambda item: item.score)
+            ranked = (sorted(candidates, key=lambda item: item.score) if policy is None
+                      else rank_candidates(candidates, policy))
             history.append(ranked)
-            if best is None or ranked[0].score < best.score:
-                best = ranked[0]
-                stale = 0
+            if policy is not None:
+                frontier = update_archive(frontier, ranked, policy)
+                selected = frontier[0]
+                improved = best is None or (
+                    policy.constraint_violation(selected), selected.score, selected.genome.bits
+                ) < (policy.constraint_violation(best), best.score, best.genome.bits)
+                best = selected
             else:
-                stale += 1
+                improved = best is None or ranked[0].score < best.score
+                if improved:
+                    best = ranked[0]
+            stale = 0 if improved else stale + 1
             generation_metrics = {
                 "generation": generation + 1, "best_selection_score": best.score,
                 "diversity": diversity(ranked), "actual_evaluations": len(actual),
@@ -216,6 +238,14 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
                                                      for item in actual),
                 "repaired_candidates": repairs,
             }
+            if policy is not None:
+                generation_metrics.update(exploration(ranked))
+                generation_metrics["pareto_archive_size"] = len(frontier)
+                generation_metrics["feasible_candidates"] = sum(policy.constraint_violation(item) == 0
+                                                               for item in candidates)
+                generation_metrics["elite_slots"] = min(options.elite, len(candidates)) if mode == "classical_ga" else 0
+                generation_metrics["parent_selection"] = options.parent_selection
+                generation_metrics["tournament_size"] = options.tournament
             if mode == "classical_ga":
                 pool, mutation = _breed(ranked, rng, settings, options, size=settings.population)
                 generation_metrics["breeding_mutation_probability"] = mutation
@@ -224,7 +254,8 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
                 if options.adaptive_amplitude or mode == "hybrid_amplitude":
                     generation_metrics.update(adaptive_update(
                         amplitudes, sampled, candidates, best.genome, settings.rotation_radians,
-                        generation / max(1, settings.generations - 1), options.entropy_floor
+                        generation / max(1, settings.generations - 1), options.entropy_floor,
+                        ranked=ranked if policy is not None else None
                     ))
                 else:
                     for slot, candidate in sampled:
@@ -241,6 +272,8 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
                      "cache": {name: _pack(item) for name, item in cache.items()},
                      "population": [item.bits for item in pool],
                      "angles": [item.angles for item in amplitudes]}
+            if policy is not None:
+                state["pareto_front"] = [_pack(item) for item in frontier]
             if checkpoint is not None:
                 write_json(checkpoint, state, indent=None)
     return best, history, diagnostics

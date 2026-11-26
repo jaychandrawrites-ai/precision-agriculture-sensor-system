@@ -21,6 +21,11 @@ class Candidate:
     prediction_batch_seconds: float | None = None
     prediction_batch_size: int | None = None
     raw_invalid_fraction: float | None = None
+    estimated_training_bytes: int | None = None
+    observed_process_peak_bytes: int | None = None
+    prediction_warmup_seconds: float | None = None
+    artifact_file: str | None = None
+    artifact_sha256: str | None = None
 
 
 def validation_fitness(dataset, training, evolution, *, rollout_windows_pair=None,
@@ -65,14 +70,19 @@ def validation_fitness(dataset, training, evolution, *, rollout_windows_pair=Non
     return score
 
 
-def sequence_fitness(dataset, training, evolution, windows, *, parameter_count_limit=None):
+def sequence_fitness(dataset, training, evolution, windows, *, parameter_count_limit=None,
+                     artifact_directory=None):
     """Real direct-model validation under the shared context and target windows."""
+    from hashlib import sha256
+    from pathlib import Path
     from statistics import median
     from time import perf_counter
 
     from Data.DataQuality import invalid_rows
     from Evolution.Genome import SEQUENCE_BIT_COUNT, Genome
-    from Temporal.Direct import fit_direct
+    from Framework.Memory import estimate_memory, observed_process_peak
+    from Temporal.Direct import direct_features, fit_direct
+    from Temporal.DirectCheckpoint import save_direct
 
     train_windows, validation = windows
     horizon = train_windows.targets.shape[1]
@@ -89,6 +99,10 @@ def sequence_fitness(dataset, training, evolution, windows, *, parameter_count_l
         if upper < minimum:
             raise ValueError("Work cap cannot train the smallest dense candidate for one epoch")
 
+    artifact_root = None if artifact_directory is None else Path(artifact_directory)
+    if artifact_root is not None:
+        artifact_root.mkdir(parents=True, exist_ok=True)
+
     def score(genome):
         spec = genome.decode()
         size = spec.parameter_count(horizon)
@@ -102,7 +116,9 @@ def sequence_fitness(dataset, training, evolution, windows, *, parameter_count_l
                                         replace(training, epochs=epochs), width=spec.width, architecture=spec)
         seconds = perf_counter() - started
         sample = validation.histories[:16]
+        started = perf_counter()
         model.predict(sample)
+        warmup_seconds = perf_counter() - started
         timings = []
         for _ in range(3):
             started = perf_counter()
@@ -110,10 +126,34 @@ def sequence_fitness(dataset, training, evolution, windows, *, parameter_count_l
             timings.append(perf_counter() - started)
         raw = model.predict(validation.histories, physical=False)
         rate = float(invalid_rows(raw.reshape(-1, 6)).mean())
+        # CPU RSS is process-lifetime, not candidate-isolated. Keep it as diagnostic only.
+        memory = estimate_memory(model.model, backend,
+                                 model.inputs.transform(direct_features(sample[:1], spec)))
+        peak = observed_process_peak()
+        filename = digest = None
+        if artifact_root is not None:
+            key = sha256(repr((spec.as_dict(), training.seed, epochs)).encode()).hexdigest()
+            filename = f"{key}.json"
+            path = artifact_root / filename
+            save_direct(path, model, spec.width, provenance={"phase": "candidate_validation",
+                        "seed": training.seed, "epochs": epochs, "architecture": spec.as_dict()})
+            digest = sha256(path.read_bytes()).hexdigest()
         adjusted = min(diagnostics["validation_loss"]) + evolution.complexity_penalty * size / 1000
         return Candidate(genome, adjusted, min(diagnostics["validation_loss"]), size,
-                         epochs * samples_per_epoch, epochs, seconds, median(timings), len(sample), rate)
+                         epochs * samples_per_epoch, epochs, seconds, median(timings), len(sample), rate,
+                         memory.batch_bytes(training.batch_size), None if peak is None else peak["bytes"],
+                         warmup_seconds, filename, digest)
 
+    def verify_artifact(candidate):
+        if artifact_root is None:
+            return
+        if candidate.artifact_file is None or Path(candidate.artifact_file).name != candidate.artifact_file:
+            raise ValueError("Missing or invalid saved candidate reference")
+        path = artifact_root / candidate.artifact_file
+        if not path.is_file() or sha256(path.read_bytes()).hexdigest() != candidate.artifact_sha256:
+            raise ValueError("Saved candidate checkpoint is missing or has changed")
+
+    score.verify_artifact = verify_artifact
     score.horizon = horizon
     score.max_parameters = upper
     return score

@@ -22,10 +22,11 @@ def amplitude_diagnostics(individuals):
     return {
         "mean_individual_bit_entropy": float(binary_entropy(p).mean()),
         "mean_population_bit_entropy": float(binary_entropy(p.mean(axis=0)).mean()),
+        "mean_population_bit_probabilities": p.mean(axis=0).tolist(),
     }
 
 
-def adaptive_update(individuals, sampled, evaluated, guide, base_angle, progress, entropy_floor):
+def adaptive_update(individuals, sampled, evaluated, guide, base_angle, progress, entropy_floor, *, ranked=None):
     """Rotate poor samples more strongly and relax concentrated distributions.
 
     `sampled` maps the measured population slots to their validation records.
@@ -34,7 +35,8 @@ def adaptive_update(individuals, sampled, evaluated, guide, base_angle, progress
     """
     if not 0 <= progress <= 1 or not 0 <= entropy_floor <= 1 or not 0 <= base_angle <= math.pi / 2:
         raise ValueError("Invalid adaptive amplitude settings")
-    rank = {id(record): index for index, record in enumerate(sorted(evaluated, key=lambda c: c.score))}
+    order = sorted(evaluated, key=lambda c: c.score) if ranked is None else ranked
+    rank = {id(record): index for index, record in enumerate(order)}
     annealed = base_angle * (1 - 0.5 * progress)
     rotations = []
     for slot, candidate in sampled:

@@ -16,6 +16,7 @@ from Evolution.Fitness import validation_fitness
 from Evolution.GeneticAlgorithm import search as genetic_search
 from Evolution.Genome import Architecture
 from Evolution.SequenceSearch import compare_sequences
+from Evolution.Pareto import ObjectivePolicy
 from Evolution.Resumable import SearchOptions, run_search, validation_fingerprint
 from Framework.Backend import create_backend
 from QuantumInspired.QuantumEvolution import search as amplitude_search
@@ -178,6 +179,12 @@ def main():
     parser.add_argument("--crossover", choices=("uniform", "single_point"), default="uniform")
     parser.add_argument("--sequence-space", action="store_true",
                         help="Compare all five methods on matched direct sequence windows")
+    parser.add_argument("--pareto-use-latency", action="store_true",
+                        help="Use measured latency in Pareto ranking; timing noise may affect choices")
+    parser.add_argument("--max-prediction-batch-seconds", type=float)
+    parser.add_argument("--max-estimated-training-bytes", type=int)
+    parser.add_argument("--max-raw-invalid-fraction", type=float)
+    parser.add_argument("--pareto-index", type=int, help="Retrain the indexed ranked Pareto member per method")
     parser.add_argument("--export-selected", type=Path,
                         help="Save each retrained direct sequence winner as a forecast checkpoint")
     parser.add_argument("--legacy", action="store_true")
@@ -196,8 +203,15 @@ def main():
     if args.sequence_space:
         if args.legacy:
             parser.error("Direct sequence search cannot use the legacy one-step protocol")
+        if args.pareto_index is not None and args.pareto_index < 0:
+            parser.error("--pareto-index must be nonnegative")
+        policy = ObjectivePolicy(include_latency=args.pareto_use_latency,
+                                 max_latency_seconds=args.max_prediction_batch_seconds,
+                                 max_estimated_bytes=args.max_estimated_training_bytes,
+                                 max_raw_invalid_fraction=args.max_raw_invalid_fraction)
         report = compare_sequences(*series, settings, budget, options,
                                    search_directory=args.search_directory, export_directory=args.export_selected,
+                                   policy=policy, pareto_index=args.pareto_index,
                                    provenance={"source_sha256": source_hash, "synthetic": args.synthetic})
     else:
         if args.export_selected is not None:
