@@ -27,3 +27,10 @@ kPa. The nighttime cloud ratio is supplied explicitly. The comparison
 leaves the default shared forecasting features unchanged. Agreement between
 the two estimators does not establish accuracy against observed water flux.
 [FAO Irrigation and Drainage Paper 56, Chapter 4](https://www.fao.org/4/x0490e/x0490e08.htm)
+
+`physical_ensemble.py --latent-correlation MATRIX.json` optionally uses
+a declared Gaussian copula rank structure to couple uniform stratified
+parameter scenarios. The matrix follows the parameter-range file order
+and must be positive definite. The tool keeps the marginal strata and
+uses the same physical validation and archived forcing in every draw.
+Input dependence is a scenario assumption.

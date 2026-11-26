@@ -672,3 +672,48 @@ default warmup and forecast context. Checkpoint formats remain unchanged.
 `OPENBLAS_NUM_THREADS=1 python -W error::DeprecationWarning -m unittest discover -s Tests -q`
 ran 118 tests with 116 passing and two optional CUDA checks skipped.
 Live hardware and calibration remain to be verified on the field equipment.
+
+## 2026-11-25 — Phase 6 field workflow and scientific extensions
+
+Started at `74b0229` on `jupiter-clean-development`. Pushed the AI Trace
+milestone at `ef6805b` before continuing with optional modeling. The final
+functional commit is `2cb6f9f`. The archival branches and original Arduino
+firmware retain their previous trees. The cumulative work is tracked in
+MASTER_REQUIREMENTS.md and DEVELOPMENT_STATUS.md.
+
+- AI Trace records separate visits with SQLite, raw-first storage,
+  restarts, durable recovery and portable checksummed archives. It supports
+  five-location synthetic survey capture, recording stops with the receiver
+  connected, revisits, serial interruption and reconnect, explicit manual
+  coordinates, mapped CSV import and location/segment/survey exports.
+- Observational maps retain a bounded observation window and individual
+  sample timestamps. Forecast readiness and inference work independently
+  on closed visits. Point forecast maps require the same issue and valid
+  time and reject GPS fixes received after issuance. The synthetic demo
+  mapped five forecast-eligible locations and produced separate observed and
+  three-hour forecast maps. It provides software evidence only.
+- Experimental LSTM and LSTM-attention models passed finite-difference and
+  checkpoint tests. The baseline remains available. Optional physical
+  sampling passed marginal-strata and positive-definite matrix checks with
+  a declared correlation. Adaptive kriging passed cell-area, budget, mask
+  and variance tests on synthetic coordinates.
+
+```sh
+OPENBLAS_NUM_THREADS=1 python -W error::DeprecationWarning -m unittest discover -s Tests -q
+node --check Dashboard/static/trace.js
+python -m compileall -q .
+python -m Examples.SyntheticTrace /tmp/jupiter-trace-synthetic
+python -m Dashboard.Server --workspace ./jupiter-field --allow-port YOUR_SERIAL_PORT
+```
+
+The full suite ran 131 tests with 129 passing and two optional CUDA checks
+skipped. The AI Trace dashboard milestone passed all four Linux and Windows
+CI jobs. [Milestone CI](https://github.com/jaychandrawrites-ai/precision-agriculture-sensor-system/actions/runs/45764199983)
+Dashboard verification exercised actual loopback routes with a synthetic
+serial connector and checked JavaScript syntax. Browser rendering and live
+instrument behavior remain unverified.
+
+Python grew to 16,867 tracked lines across 205 files, with 1,889 insertions
+and 16 deletions. Native AquaMap verification, calibration with real
+instruments, the specified newer Yuma export, broader sequence architecture
+search and forecast-map uncertainty propagation remain open.

@@ -41,3 +41,13 @@ shared support, `Tests/` holds verification, and `Examples/` holds examples
 and schema fixtures. The root contains CLI entry points, shared configuration,
 and the integration interfaces for combined loss and spatiotemporal modeling.
 The PlatformIO tree uses `src/`, `lib/`, `include/`, and `platformio.ini`.
+
+## AI Trace storage boundary
+
+AI Trace records survey, location, segment and packet relations in a local
+SQLite workspace. Stopping a location finalizes only its segment. A
+receiver failure interrupts the active segment. A revisit always has its
+own identifier. Recorded bytes are committed before parser output, and
+saved JSON survey archives carry an integrity checksum. The map layer
+separates bounded-time measured composites from point forecasts aligned
+to one issue and valid time.

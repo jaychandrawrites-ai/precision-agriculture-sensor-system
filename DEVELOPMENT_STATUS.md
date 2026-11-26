@@ -10,14 +10,14 @@ Status labels describe software and validation evidence separately.
 | R04 | Blocked by external hardware/source | Obtain actual AquaMap field/base firmware or labeled receiver bytes, then verify native fields, units and timestamps |
 | R05 | Implemented, field validation pending | Six-feature physical pipeline, dry-tail checks, ET comparison and constrained scenarios |
 | R06 | Partially implemented | Five pinned releases and manual modern schema path. Obtain the actual May 2023–November 2026 Yuma export before mapping it |
-| R07 | Partially implemented | Manual dense, GRU, conv, attention and numerical kernels. Additional sequence and numerical work follows the field milestone |
+| R07 | Partially implemented | Manual dense, GRU, conv, attention and numerical kernels. Manual LSTM and recurrent-attention train and load through the experimental direct model |
 | R08 | Partially implemented | Portable models and exact CPU recovery. Verify CUDA and mixed precision on a suitable device |
 | R09 | Implemented and integrated with extensions open | Independent visit checks, recursive/direct/seasonal models, explicit refusal when hours are missing |
 | R10 | Partially implemented | Empirical intervals and block comparisons. More quality/transfer diagnostics require independent validation |
 | R11 | Partially implemented | Structured classic/amplitude/hybrid search. Recurrent candidates and broader cost objectives remain |
-| R12 | Partially implemented | Kriging, variational baselines and observed survey composites. Adaptive refinement remains |
+| R12 | Partially implemented | Kriging, variational baselines and observed survey composites. Budgeted adaptive kriging is available; field comparison remains |
 | R13 | Partially implemented | Conditional Gaussian/block sampling and mixing tests. Broader parameter uncertainty remains |
-| R14 | Partially implemented | Survey outputs are segment-specific. Common-valid-time reconstruction and joint field verification remain |
+| R14 | Partially implemented | Survey outputs are segment-specific. Common issue/valid-time point maps are available; survey uncertainty and joint field verification remain |
 | R15 | Partially implemented | Persistent dashboard and dedicated AI Trace controls. Physical receiver and visual browser validation remain |
 | R16 | Partially implemented | Reproducible independent station studies and JSON/CSV. Publication figure coverage remains |
 | R17 | Implemented and integrated | Milestone commits, test commands, build log and requirement inventory |

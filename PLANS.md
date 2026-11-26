@@ -68,3 +68,20 @@ Priorities for the next run:
 4. Verify browser rendering, actual live serial workflows and CUDA parity
    on appropriate hardware. Extend comparisons under equal measured training
    work and add publication figure outputs where results justify them.
+
+## Phase 6 next priorities
+
+1. Verify the live receiver and measured calibration using the AI Trace
+   survey workflow. Confirm the actual AquaMap payload and receipt clock.
+2. Add a frozen-survey interface for aligning complete forecast ensembles
+   across locations and propagating their spread through field maps. The
+   current survey map aligns point forecasts to one issue and valid time.
+3. Complete matched-budget search over LSTM, recurrent-attention and causal
+   convolutional candidates with portable, tested checkpoints.
+4. Add quantitative adaptive-grid and correlated-parameter studies using
+   independently supplied measurements, assumptions and holdouts.
+5. Verify browser rendering and GPU behavior on suitable equipment, and
+   inspect the requested newer Yuma export when its source is provided.
+
+See [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md) for requirement-level
+implementation and evidence.

@@ -37,3 +37,14 @@ a classical Gibbs distribution under the specified energy. Small grids have
 a dense analytical Gaussian reference. Adaptive proposals tune during
 burn-in only. Neither the sampler nor amplitude-based neural search
 implements physical quantum computation.
+
+Phase 6's experimental LSTM uses cell state
+`c_t = f_t c_(t−1) + i_t g_t` and hidden state
+`h_t = o_t tanh(c_t)`. The manual backward pass accumulates both state
+adjoints from the end of the sequence. The recurrent-attention variant
+adds a causal attention layer to the LSTM sequence before its direct head.
+
+`adaptive_map.py` refines a bounded quadtree using model variation,
+conditional standard deviation, vicinity to observations, or a polygon
+boundary. Polygon membership refers to cell centers. Conditional kriging
+variance measures uncertainty under the specified covariance model.

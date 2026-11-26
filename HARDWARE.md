@@ -66,3 +66,12 @@ archives and exact field positions local.
 The native AquaMap protocol still requires a verified firmware source or
 receiver capture. A labeled software demonstration is available via
 `python -m Examples.SyntheticTrace OUTPUT_DIRECTORY`.
+
+Saved forecast reports can also be mapped at a common issue and valid time:
+
+```sh
+python trace_analysis.py --root ./jupiter-field/surveys forecast-map SURVEY_ID map.json --forecast-report forecasts.json --feature air_temperature_c --origin 2025-06-01T12:00Z --valid-at 2025-06-01T15:00Z
+```
+
+Use times present in your report. The command omits sites without eligible
+coordinates and labels the result as a point forecast map.
