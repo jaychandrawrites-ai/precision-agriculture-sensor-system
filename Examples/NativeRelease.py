@@ -49,6 +49,23 @@ def run(checkpoint, output):
     (output / "survey.json").write_bytes(store.export(survey))
     write_json(output / "forecasts.json", forecasts)
     write_json(output / "diffusion-maps.json", {"synthetic": True, "maps": maps})
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    final = maps["6"]
+    figure, axis = plt.subplots(layout="constrained")
+    try:
+        image = axis.pcolormesh(final["east_m"], final["north_m"],
+                                np.asarray(final["estimate"], dtype=float), shading="nearest")
+        axis.set(xlabel="East (m)", ylabel="North (m)", aspect="equal",
+                 title="Synthetic AquaMap replay · six-hour diffusion forecast")
+        figure.colorbar(image, ax=axis, label="Air temperature (°C)")
+        for extension in (".png", ".svg"):
+            figure.savefig(output / ("diffusion" + extension), dpi=200)
+    finally:
+        plt.close(figure)
 
 
 if __name__ == "__main__":

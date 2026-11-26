@@ -1,7 +1,7 @@
 name: Jupiter CPU tests
 on:
   push:
-    branches: [jupiter-clean-development, jupiter-development]
+    branches: [jupiter-clean-development, jupiter-development, main]
   pull_request:
     branches: [jupiter-clean-development, jupiter-development, main]
 permissions:
