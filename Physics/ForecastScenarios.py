@@ -117,11 +117,11 @@ def load_site(path, configuration, kind, issue_at, *, gps_freshness_hours=1):
     return ForecastSite(kind, weather, base, reference, {}, _recent_fix(gps, issue_at, gps_freshness_hours))
 
 
-def _history(site, issue_at, params=(), sample=()):
+def _history(site, issue_at, params=(), sample=(), *, hours=3):
     features, _, provenance = site.prepare(params, sample)
     if features.empty or features.index[-1] != issue_at:
         raise ValueError("A site lacks observations ending at the common issue time")
-    return require_history(features.to_numpy(), features.index.to_numpy(dtype="datetime64[ns]")), provenance
+    return require_history(features.to_numpy(), features.index.to_numpy(dtype="datetime64[ns]"), hours=hours), provenance
 
 
 def _rank_results(parameters, values, inputs):
@@ -146,8 +146,8 @@ def _local_derivatives(site, issue_at, forecaster, steps, params, nominal_parame
             left, right = center.copy(), center.copy()
             left[index] -= step
             right[index] += step
-            a, _ = _history(site, issue_at, params, left)
-            b, _ = _history(site, issue_at, params, right)
+            a, _ = _history(site, issue_at, params, left, hours=forecaster.history_hours)
+            b, _ = _history(site, issue_at, params, right, hours=forecaster.history_hours)
         except ValueError as exc:
             results[param.path] = {"status": "invalid_central_perturbation", "reason": str(exc)}
             continue
@@ -172,10 +172,10 @@ def scenario_forecasts(sites, forecaster, parameters, issue_at, *, steps, draws=
     middle = np.array([(p.lower + p.upper) / 2 for p in params])
     forecasts, histories, summary = [], [], {}
     for name, site in sites.items():
-        baseline, provenance = _history(site, issue_at)
+        baseline, provenance = _history(site, issue_at, hours=forecaster.history_hours)
         compatibility = forecaster.require_compatible_field(provenance)
         nominal = forecaster.forecast(baseline, steps)
-        histories_site = np.stack([_history(site, issue_at, params, sample)[0] for sample in samples])
+        histories_site = np.stack([_history(site, issue_at, params, sample, hours=forecaster.history_hours)[0] for sample in samples])
         predictions = np.stack([forecaster.forecast(history, steps) for history in histories_site])
         histories.append(histories_site)
         forecasts.append(predictions)

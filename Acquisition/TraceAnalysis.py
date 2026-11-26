@@ -110,6 +110,8 @@ def survey_forecasts(store, survey_id, configuration, checkpoint=None, steps=Non
                             for timestamp, values in forecast.iterrows()
                         ]
                         detail["checkpoint_sha256"] = diagnostics["checkpoint_sha256"]
+                        if "quantiles" in diagnostics:
+                            detail["quantiles"] = diagnostics["quantiles"]
                         if ensemble:
                             # Evaluate the same ordered checkpoints at every location and lead.
                             draws = [forecast.to_numpy(dtype=float)]
@@ -280,7 +282,7 @@ def _forecast_sites(store, survey_id, report, feature, valid_at, origin, gps_min
     return points, samples, issued, valid, lead, len(locations) - len(samples)
 
 
-def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probability=.9, grid_size=25, adaptive=None, predictive=None):
+def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probability=.9, grid_size=25, adaptive=None, predictive=None, physical_sources=None):
     """Propagate shared model draws, keeping site, lead and feature dependencies."""
     from spatial_forecast import ensemble_maps, interpolation_weights
 
@@ -293,7 +295,7 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
                                          issued + timedelta(hours=1), issued, 60, grid_size)
     by_segment = {segment["id"]: segment for location in report["locations"]
                   for segment in location["segments"]}
-    retained, points, ids = [], [], []
+    retained, points, ids, segments = [], [], [], []
     for site, sample in zip(sites, samples):
         segment = by_segment[sample["segment_id"]]
         values = np.asarray(segment.get("member_forecasts"), dtype=float)
@@ -305,6 +307,7 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
         points.append(site)
         ids.append(sample["location_id"])
         retained.append(values[:, :steps])
+        segments.append(segment)
     if len(set(points)) != len(points) or len(points) < 2:
         raise ValueError("Forecast maps require distinct coordinates and at least two complete ensemble sites")
     grid, xy = _forecast_grid(points, grid_size)
@@ -344,6 +347,10 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
         settings = dict(predictive)
         provenance = [{"checkpoint_sha256": sha, "physical_scenario_id": None} for sha in hashes]
         physical = settings.pop("physical", None)
+        if physical_sources is not None:
+            if physical is not None:
+                raise ValueError("Choose either saved or live-computed physical scenarios")
+            physical = _survey_physical_scenarios(store, survey_id, ids, segments, issued, steps, physical_sources)
         if physical is not None:
             if (_aware(physical["issue_at"]) != issued or physical["sites"] != ids
                     or list(physical["features"]) != list(FEATURES)
@@ -374,3 +381,30 @@ def ensemble_forecast_maps(store, survey_id, report, origin, *, steps, probabili
         metadata["predictive"] = {**manifest, "members": provenance,
                                   "physical_provenance": physical.get("provenance") if physical else None}
     return result, metadata
+
+
+def _survey_physical_scenarios(store, survey_id, ids, segments, issued, steps, sources):
+    from Physics.ForecastScenarios import load_site, scenario_forecasts, utc_hour
+    from physical_ensemble import ParameterRange
+
+    issue = utc_hour(issued)
+    forecaster = load_forecaster(sources["checkpoint"])
+    spec = sources["scenarios"]
+    config = deepcopy(sources["field_configuration"])
+    config.setdefault("hourly", {})["as_of"] = issue.isoformat()
+    parameters = [ParameterRange(**item) for item in spec["ranges"]]
+    sites = {}
+    with TemporaryDirectory(prefix="jupiter-trace-scenarios-") as directory:
+        path = Path(directory) / "readings.jsonl"
+        for location, segment in zip(ids, segments):
+            records, field = _prepare_segment(store.segment_readings(survey_id, segment["id"]),
+                                               config, segment["started_at"], segment["ended_at"])
+            _write_readings(path, records)
+            sites[location] = load_site(path, field, "field", issue)
+        draws, _, report = scenario_forecasts(
+            sites, forecaster, parameters, issue, steps=steps, draws=spec.get("draws", 16),
+            seed=spec.get("seed", 42), latent_correlation=spec.get("latent_correlation"), perturb=False)
+    return {"issue_at": report["issue_at"], "sites": ids, "features": report["features"],
+            "checkpoint_sha256": forecaster.checkpoint_sha256, "draw_ids": report["draw_ids"],
+            "forecasts": draws, "provenance": {key: report[key] for key in (
+                "parameter_scenarios", "parameter_draws", "latent_correlation_assumption")}}

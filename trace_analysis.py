@@ -26,6 +26,9 @@ def main():
             command.add_argument("--adaptive", type=Path)
             command.add_argument("--predictive", type=Path)
             command.add_argument("--physical-artifacts", type=Path)
+            command.add_argument("--physical-scenarios", type=Path)
+            command.add_argument("--physical-checkpoint", type=Path)
+            command.add_argument("--field-configuration", type=Path)
             command.add_argument("--origin", required=True)
             command.add_argument("--steps", type=int, default=6)
         elif name == "forecast-map":
@@ -59,10 +62,19 @@ def main():
                         "latent_correlation_assumption": report["latent_correlation_assumption"],
                     },
                 }
+        physical_sources = None
+        scenario_args = (args.physical_scenarios, args.physical_checkpoint, args.field_configuration)
+        if any(scenario_args):
+            if not all(scenario_args) or predictive is None or args.physical_artifacts:
+                parser.error("Survey scenarios require --predictive, --physical-scenarios, "
+                             "--physical-checkpoint and --field-configuration")
+            physical_sources = {"scenarios": read_json(args.physical_scenarios),
+                                "checkpoint": args.physical_checkpoint,
+                                "field_configuration": read_json(args.field_configuration)}
         arrays, result = ensemble_forecast_maps(store, args.survey_id, read_json(args.forecast_report),
                                                 args.origin, steps=args.steps,
                                                 adaptive=read_json(args.adaptive) if args.adaptive else None,
-                                                predictive=predictive)
+                                                predictive=predictive, physical_sources=physical_sources)
         write_arrays(args.output.with_suffix(".npz"), **arrays)
     elif args.command == "map":
         result = observational_map(store, args.survey_id, args.feature, args.timestamp,

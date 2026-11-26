@@ -72,3 +72,24 @@ class SurveyUncertaintyTests(unittest.TestCase):
         self.assertGreater(len(arrays["variational_bounds_m"]), 4)
         expected = np.broadcast_to(np.arange(1, 7), arrays["variational_draws"].shape)
         np.testing.assert_allclose(arrays["variational_draws"], expected, atol=1e-6)
+
+    def test_scenarios_rebuild_from_closed_survey_segments(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / "trace"
+            run(root, ensemble=True)
+            manifest = read_json(root / "ensemble-maps.json")
+            store = TraceStore(root / "trace", recover=False)
+            options = {"feature_scales": [1.] * 6, "draws": 8,
+                       "covariance_scenarios": [{"id": "fixture", "weight": 1.,
+                                                 "covariance": {"range_m": 50.}}]}
+            physical = {"checkpoint": root / "synthetic-model.json",
+                        "field_configuration": read_json(root / "field-settings.json"),
+                        "scenarios": {"draws": 4, "ranges": [
+                            {"path": "crop.critical_temperature_c", "lower": 25., "upper": 42.}
+                        ]}}
+            arrays, report = ensemble_forecast_maps(
+                store, manifest["survey_id"], read_json(root / "forecasts.json"),
+                manifest["issued_at"], steps=6, grid_size=5, predictive=options,
+                physical_sources=physical)
+            self.assertEqual(arrays["predictive_source_trajectories"].shape, (6, 5, 6, 6))
+            self.assertEqual(len(report["predictive"]["physical_provenance"]["parameter_draws"]), 4)
