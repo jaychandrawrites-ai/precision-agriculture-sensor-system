@@ -316,3 +316,39 @@ per hour. Daily persistence still achieved 0.904 correlation and
 and made no material difference. Actual ET correlation remained
 undefined. These are one-seed development results, with no fresh test
 period or AquaMap data used. [Curve comparison](Examples/spectral/curve-comparison.png).
+
+## Final spectral-neural experiment
+
+The one-seed experiment reused previously examined AZMET development
+windows. Both runs used seed 42 and the established chronological
+boundaries. The hybrid used four spectral, four residual-only, and one
+joint refit epoch, so this comparison is not equal compute. The best
+residual-only validation objective was 0.7930 and the joint epoch reached
+0.7657. QIGA selected a damped 72/36/24-hour spectrum. AquaMap stayed
+outside training, calibration and selection.
+
+| Temperature | Hour 1 RMSE | Hour 6 | Hour 24 | Hour 72 | Trajectory correlation |
+|---|---:|---:|---:|---:|---:|
+| Recursive QIGA | 1.875 | 9.838 | 5.613 | 8.507 | 0.037 |
+| Original Fourier | 1.237 | 3.366 | 2.849 | 3.869 | 0.876 |
+| Joint Fourier | 1.178 | 3.163 | 2.684 | 3.757 | 0.889 |
+| Joint Fourier–Laplace | 0.999 | 2.693 | 2.749 | 4.078 | 0.887 |
+| Hybrid | 0.941 | 2.559 | 2.518 | 3.377 | 0.908 |
+| Hybrid sparse | 0.941 | 2.560 | 2.518 | 3.377 | 0.908 |
+| Daily persistence | 2.317 | 2.333 | 2.346 | 3.453 | 0.904 |
+
+RMSE is in °C. Sparse augmentation recorded 18 hybrid refit events
+and had no material effect. Actual ET was effectively constant at every
+one of the 4,606 test origins. Values ranged from 0 to 6.40e−15 mm
+because the dry-forcing historical bucket had depleted its available
+water. The undefined correlation came from the target. Only three
+hybrid projected ET trajectories were constant within 1e−8 mm. Raw
+hybrid wetness was outside its bounds on 126,848 of 331,632 rows
+(118,526 for the spectral transient arm), and at least one ET variable
+was negative on 174,435 rows (193,479 for the transient arm). These
+violations come from unconstrained network proposals. The wetness
+tradeoff and degenerate ET target limit any claim of across-feature
+improvement. Keep joint Fourier as the reference for formal evaluation.
+
+[Hybrid trajectory and components](Examples/spectral/hybrid-components.png)
+and [full hourly and pattern metrics](Examples/spectral/hybrid-results.json).

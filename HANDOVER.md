@@ -188,3 +188,23 @@ For joint level-and-curve training, add
 and use a fresh run directory. Keep `--sparse-scale 0.0001` to compare
 the inverse-power augmentation arm. The report records level, centered
 shape, slope and curvature loss components for validation and search.
+
+## Final hybrid experiment on Windows
+
+From the prepared spectral environment above:
+
+```powershell
+$python = ".\.venv\Scripts\python.exe"
+$run = "training/spectral-hybrid"
+& $python spectral_study.py az43-prepared/hourly.csv $run --preparation-report az43-prepared/report.json --hybrid --population 2 --generations 2 --candidate-epochs 1 --epochs 4 --joint-epochs 1 --sparse-scale 0.0001
+& $python forecast.py az43-prepared/hourly.csv "$run/qiga_hybrid/model.json" --steps 72 > "$run/forecast.csv"
+& $python -m Dashboard.Server --workspace "$env:LOCALAPPDATA\Jupiter" --import-training-run "$run/qiga_hybrid"
+```
+
+The hybrid flag defaults to the joint curve-fit preset. Use
+`--joint-epochs 0` for the frozen-spectral comparison with a fresh output
+directory. The same run exports the spectral-only fallback
+`qiga_fourier/model.json`. For formal evaluation, freeze the settings,
+seed, and UTC boundaries before running on an eligible fresh test period
+using `--validation-from` and `--test-from`. Use AquaMap only for
+inference with independent calibration and compatible context.

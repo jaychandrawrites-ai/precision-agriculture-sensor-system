@@ -73,9 +73,11 @@ class LossWeights:
             raise ValueError("Loss weights must be finite and nonnegative, with positive value weight")
 
 
-def loss(coefficients, target, anchor, basis, reference, lower, upper, weights, xp=np):
+def loss(coefficients, target, anchor, basis, reference, lower, upper, weights, xp=np, *, correction=None, residual_penalty=.2):
     """Objective and coefficient gradient in normalized state units."""
     predicted = anchor + basis @ coefficients
+    if correction is not None:
+        predicted = predicted + correction
     error = predicted - target
     residual = predicted - xp.clip(predicted, lower, upper)
     velocity = xp.diff(error, axis=1)
@@ -108,7 +110,12 @@ def loss(coefficients, target, anchor, basis, reference, lower, upper, weights, 
     gradient = basis.T @ state_gradient + 2 * (
         weights.spectral * identified * coefficient_error
         + weights.regularization * penalty * coefficients) / coefficients.size
-    return sum(getattr(weights, key) * value for key, value in terms.items()), gradient, terms
+    total = sum(getattr(weights, key) * value for key, value in terms.items())
+    if correction is not None:
+        terms["residual"] = xp.mean(correction**2)
+        total += residual_penalty * terms["residual"]
+        return total, gradient, terms, state_gradient + 2 * residual_penalty * correction / correction.size
+    return total, gradient, terms
 
 
 def sparse_events(rng, start, shape, scale, bound):
@@ -122,12 +129,13 @@ def sparse_events(rng, start, shape, scale, bound):
 
 
 class SpectralForecaster:
-    def __init__(self, model, backend, modes, inputs, targets):
+    def __init__(self, model, backend, modes, inputs, targets, residual=None):
         self.model = model
         self.backend = backend
         self.modes = modes
         self.inputs = inputs
         self.targets = targets
+        self.residual = residual
 
     def coefficients(self, histories, origins):
         inputs = self.inputs.transform(features(histories, origins))
@@ -137,11 +145,28 @@ class SpectralForecaster:
             raise FloatingPointError("Nonfinite spectral coefficients")
         return result
 
-    def forecast(self, histories, origins, steps, *, raw=False):
+    def components(self, histories, origins, steps):
         if type(steps) is not int or not 1 <= steps <= HORIZON:
             raise ValueError("Spectral forecast requires an integer horizon from 1 through 72 hours")
         coefficients = self.coefficients(histories, origins)
         leads = np.arange(1, steps + 1)
         change = self.modes.anchored_basis(leads) @ coefficients * self.targets.scale
-        prediction = histories[:, -1:, :] + change
+        spectral = histories[:, -1:, :] + change
+        if self.residual is None:
+            return spectral, np.zeros_like(spectral)
+        inputs = self.inputs.transform(features(histories, origins))
+        with self.backend.scope():
+            output, _ = self.residual.forward(self.backend.array(inputs), training=False)
+            correction, _ = residual_transform(output, self.backend.xp)
+        return spectral, self.backend.to_host(correction)[:, :steps] * self.targets.scale
+
+    def forecast(self, histories, origins, steps, *, raw=False):
+        spectral, correction = self.components(histories, origins, steps)
+        prediction = spectral + correction
         return prediction if raw else project(prediction)
+
+
+def residual_transform(output, xp=np):
+    """Bound corrections to half a training standard deviation per feature."""
+    bounded = xp.tanh(output.reshape(-1, HORIZON, 6))
+    return .5 * bounded, .5 * (1 - bounded**2)

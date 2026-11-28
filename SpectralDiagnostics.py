@@ -16,14 +16,22 @@ def publish_spectral(directory, model, histories, origins, targets, predictions,
     lead = np.arange(1, 73)
     basis = model.modes.anchored_basis(lead)
     contributions = basis * coefficients[0, :, 0] * model.targets.scale[0]
+    spectral, residual = model.components(histories[:1], origins[:1], 72)
     write_arrays(directory / "spectral.npz", coefficients=coefficients, lead=lead,
                  basis=basis, first_temperature_components=contributions,
+                 spectral_first_origin=spectral[0], residual_first_origin=residual[0],
                  event_counts=np.asarray(history["event_counts"]))
     figure, axes = plt.subplots(2, 3, figsize=(14, 7), layout="constrained")
     try:
         axes[0, 0].plot(lead, targets[0, :, 0], label="Observed")
         axes[0, 0].plot(lead, predictions[0, :, 0], label="Forecast")
-        axes[0, 0].legend()
+        if model.residual is not None:
+            axes[0, 0].plot(lead, spectral[0, :, 0], label="Spectral")
+            residual_axis = axes[0, 0].twinx()
+            residual_axis.plot(lead, residual[0, :, 0], ":", color="gray", label="Residual")
+            residual_axis.set_ylabel("Correction (°C)")
+            residual_axis.legend(loc="lower right")
+        axes[0, 0].legend(loc="upper left")
         axes[0, 0].set(title="First-origin temperature", xlabel="Lead (hours)", ylabel="°C")
         axes[0, 1].plot(lead, contributions[:, 0], label="Constant and anchor")
         labels = [str(p) + " h" for p in model.modes.periods]

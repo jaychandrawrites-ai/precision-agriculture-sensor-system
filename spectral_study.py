@@ -65,6 +65,12 @@ def pattern_metrics(predicted, observed, modes):
     return row
 
 
+def residual_width(name, bits):
+    if "hybrid" in name:
+        return (8, 16, 24, 32)[2 * bits[15] + bits[16]]
+    return None
+
+
 def run(args):
     from Physics.Constraints import violations
 
@@ -90,24 +96,27 @@ def run(args):
     for name, damped, augmentation in (
         ("qiga_fourier", False, 0.), ("qiga_laplace", True, 0.),
         ("qiga_sparse", False, args.sparse_scale),
+        ("qiga_hybrid", True, 0.),
+        ("qiga_hybrid_sparse", True, args.sparse_scale),
     ):
-        if name == "qiga_sparse" and not augmentation:
+        if ("hybrid" in name and not args.hybrid) or ("sparse" in name and not augmentation):
             continue
 
         def score(genome):
             arch, modes = decode(genome.bits, damped)
             model, history, epoch = fit(train, val, times, dataset.target_scaler, arch, modes,
-                                        replace(settings, epochs=args.candidate_epochs), weights, augmentation)
+                                        replace(settings, epochs=args.candidate_epochs), weights, augmentation, residual_width=residual_width(name, genome.bits),
+                                        joint_epochs=args.joint_epochs)
             result = history["validation_loss"][epoch - 1]
-            return Candidate(genome, result + .0001 * model.model.parameter_count / 1000, result,
-                             model.model.parameter_count, len(train.starts) * args.candidate_epochs,
-                             args.candidate_epochs, training_seconds=history["training_seconds"],
+            return Candidate(genome, result + .0001 * (model.model.parameter_count + (model.residual.parameter_count if model.residual else 0)) / 1000, result,
+                             (model.model.parameter_count + (model.residual.parameter_count if model.residual else 0)), len(train.starts) * len(history["phase"]),
+                             len(history["phase"]), training_seconds=history["training_seconds"],
                              details={"periods": list(modes.periods), "damped": modes.damped,
                                       "components": history["validation_components"][epoch - 1],
                                       "events": sum(history["event_counts"])})
 
         fingerprint = validation_fingerprint(dataset, settings, (train, val))
-        recipe = repr((fingerprint, sha256(Path(__file__).read_bytes()).hexdigest(), name, augmentation, weights))
+        recipe = repr((fingerprint, sha256(Path(__file__).read_bytes()).hexdigest(), name, augmentation, weights, args.joint_epochs))
         winner, _, generations = run_search("hybrid_amplitude", score,
             EvolutionConfig(population=args.population, generations=args.generations,
                             candidate_epochs=args.candidate_epochs), args.seed,
@@ -124,7 +133,8 @@ def run(args):
     persistence, daily, _ = baseline_forecasts(values, times, test)
     for name, (arch, modes, generations, bits) in plans.items():
         model, history, epoch = fit(train, val, times, dataset.target_scaler, arch, modes, settings,
-                                    weights, args.sparse_scale if name == "qiga_sparse" else 0., diagnostics=True)
+                                    weights, args.sparse_scale if "sparse" in name else 0., diagnostics=True,
+                                    residual_width=residual_width(name, bits), joint_epochs=args.joint_epochs)
         raw = model.forecast(test.histories, origins, HORIZON, raw=True)
         tick = perf_counter()
         prediction = model.forecast(test.histories, origins, HORIZON)
@@ -139,17 +149,25 @@ def run(args):
         write_json(path, {"format": "jupiter-spectral-v1", "features": FEATURES,
             "interval_hours": 1, "dtype": settings.dtype, "seed": settings.seed,
             "architecture": {**arch, "dropout": settings.dropout}, "modes": asdict(modes),
+            "residual": None if model.residual is None else {
+                "width": model.residual.hidden[0], "parameters": model.residual.state_dict(model.backend)},
             "parameters": params, "inputs": model.inputs.state_dict(),
             "targets": model.targets.state_dict(), "provenance": provenance})
         report = {"best_epoch": epoch, "fit_diagnostics": history, "configuration": asdict(settings),
                   "modes": asdict(modes), "winning_bits": bits, "generations": generations,
                   "checkpoint_sha256": sha256(path.read_bytes()).hexdigest(),
-                  "parameters": model.model.parameter_count, "test_inference_seconds": latency,
+                  "parameters": (model.model.parameter_count + (model.residual.parameter_count if model.residual else 0)), "test_inference_seconds": latency,
                   "test_rollout": horizon_metrics(prediction, test.targets, persistence),
                   "persistence": horizon_metrics(persistence, test.targets, persistence),
                   "seasonal_persistence": horizon_metrics(daily, test.targets, persistence),
                   "oracle_reconstruction": horizon_metrics(oracle, test.targets),
                   "patterns": pattern_metrics(prediction, test.targets, modes),
+                  "trajectory_ranges": {feature: {
+                      "constant_targets": int((np.ptp(test.targets[:, :, j], axis=1) <= 1e-8).sum()),
+                      "constant_predictions": int((np.ptp(prediction[:, :, j], axis=1) <= 1e-8).sum()),
+                      "target_zero_fraction": float((test.targets[:, :, j] == 0).mean()),
+                      "raw_prediction_range": [float(raw[:, :, j].min()), float(raw[:, :, j].max())],
+                  } for j, feature in enumerate(FEATURES)},
                   "raw_constraint_counts": {key: int(flag.sum()) for key, flag in violations(raw).items()}}
         diagnostics = folder / "diagnostics"
         publish(diagnostics, report, test.targets, prediction, persistence, daily, params, target_times)
@@ -186,7 +204,13 @@ if __name__ == "__main__":
     parser.add_argument("--sparse-scale", type=float, default=0.)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--hybrid", action="store_true")
+    parser.add_argument("--joint-epochs", type=int, default=1)
     args = parser.parse_args()
+    if args.joint_epochs < 0:
+        parser.error("Joint epochs must be nonnegative")
+    if args.hybrid and args.loss_weights is None:
+        args.loss_weights = Path(__file__).resolve().parent / "Examples/spectral/curve-loss.json"
     if ((args.validation_from is None) != (args.test_from is None)
             or (args.validation_from is not None and args.validation_from >= args.test_from)):
         parser.error("Supply both chronological boundaries in increasing order")

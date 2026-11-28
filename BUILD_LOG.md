@@ -1284,3 +1284,19 @@ sparse-input searches. The matched AZMET development comparison improved
 Fourier 72-hour temperature RMSE from 3.869 to 3.757 °C. The new checkpoint
 completed a 72-hour CLI forecast. Finite differences and the level/shape
 decomposition were verified. Details are in AI_VALIDATION.md.
+
+## Final hybrid spectral-neural experiment
+
+Added a bounded direct neural residual branch, staged and joint training,
+QIGA width selection, optionally sparse input augmentation, portable
+hybrid checkpoints, and combined trajectory diagnostics. The comparable
+AZMET development runs and actual ET/projection analysis are in
+AI_VALIDATION.md. Formal testing on fresh AZMET and physical field
+validation remain open. No AquaMap observations entered fitting.
+
+The Chromium-enabled suite ran 199 tests (197 passes and two CUDA skips).
+Focused tests verified both branch gradients, legacy loading, hybrid
+serialization and every horizon prefix. The exported hybrid emitted 72
+CSV rows. Chromium rendered its imported diagnostic, and the AI Trace
+forecast pipeline completed a 72-hour inference on synthetic prepared
+field context. Windows commands are in HANDOVER.md.

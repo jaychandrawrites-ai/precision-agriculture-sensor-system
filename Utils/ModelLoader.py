@@ -132,7 +132,7 @@ def _load_record(record, digest, device, *, allow_blend=True):
         from config import FEATURES
         from Framework.Backend import create_backend
         from Temporal.Model import TemporalModel
-        from Temporal.Spectral import Modes, SpectralForecaster
+        from Temporal.Spectral import HORIZON, Modes, SpectralForecaster
 
         if tuple(record["features"]) != FEATURES or record["interval_hours"] != 1:
             raise ValueError("Invalid spectral feature contract")
@@ -147,7 +147,17 @@ def _load_record(record, digest, device, *, allow_blend=True):
         inputs, targets = (Standardizer.from_state(record[key]) for key in ("inputs", "targets"))
         if inputs.mean.shape != (22,) or targets.mean.shape != (6,):
             raise ValueError("Invalid spectral normalization dimensions")
-        spectral = SpectralForecaster(model, backend, modes, inputs, targets)
+        residual = None
+        if record.get("residual") is not None:
+            entry = record["residual"]
+            residual = TemporalModel(backend, (entry["width"],), activations=("tanh",),
+                                     input_size=22, output_size=HORIZON * 6)
+            weights = {key: np.asarray(value, dtype=backend.dtype)
+                       for key, value in entry["parameters"].items()}
+            if any(not np.isfinite(value).all() for value in weights.values()):
+                raise ValueError("Nonfinite residual parameters")
+            residual.load_state_dict(weights, backend)
+        spectral = SpectralForecaster(model, backend, modes, inputs, targets, residual)
         return Forecaster(model, backend, inputs, targets, digest, provenance, spectral=spectral)
     model, backend, inputs, targets = load_state(record, device)
     return Forecaster(model, backend, inputs, targets, digest, provenance)

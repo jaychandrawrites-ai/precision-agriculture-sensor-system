@@ -158,3 +158,23 @@ squared second-difference error to score changes in slope around turns.
 The adjoint for this last term scatters the second-difference gradient
 with weights [1, −2, 1] before applying the spectral basis transpose.
 The older objective remains available with the new weights at zero.
+
+### Direct nonlinear residual experiment
+
+The hybrid adds a separate one-hidden-layer tanh network to the spectral
+branch. It receives the same 22 issuance features and emits 432 values
+for 72 hourly leads and six features. In normalized units the raw
+forecast is the anchored spectral reconstruction plus 0.5 tanh(u).
+A zero-lead forecast is the observed anchor. Neither branch consumes
+future observations or earlier predicted states. The physical projection
+runs once after addition. The magnitude penalty is 0.2 mean(correction²).
+The residual gradient is the trajectory gradient plus the penalty
+gradient, multiplied by 0.5(1 − tanh²(u)). The spectral branch uses the
+existing basis transpose and coefficient loss.
+
+The spectral branch trains first, then stays frozen while the residual
+learns against its training-origin forecasts. Optional joint epochs
+update both networks. The best validation state across residual-only and
+joint epochs is exported. Two existing genome bits also encode the
+residual width (8, 16, 24 or 32), coupling width selection with the encoded
+spectral architecture. The sparse control augments training inputs only.

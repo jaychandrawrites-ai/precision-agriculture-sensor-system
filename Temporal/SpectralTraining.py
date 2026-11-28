@@ -9,11 +9,11 @@ from Framework.Optimizer import Adam
 from Physics.Constraints import LOWER, UPPER
 from Temporal.LayerDiagnostics import LayerDiagnostics
 from Temporal.Model import TemporalModel
-from Temporal.Spectral import HORIZON, SpectralForecaster, features, loss, sparse_events
+from Temporal.Spectral import HORIZON, SpectralForecaster, features, loss, sparse_events, residual_transform
 
 
 def fit(training, validation, times, scaler, architecture, modes, settings,
-        weights, augmentation=0., augmentation_bound=.25, *, diagnostics=False):
+        weights, augmentation=0., augmentation_bound=.25, *, diagnostics=False, residual_width=None, joint_epochs=0):
     backend = create_backend(settings.device, settings.dtype, settings.seed)
     rng = np.random.default_rng(settings.seed)
     events_rng = np.random.default_rng(settings.seed + 1)
@@ -21,6 +21,12 @@ def fit(training, validation, times, scaler, architecture, modes, settings,
                           input_size=22, output_size=6 * modes.width)
     opt = Adam(model.parameters(), backend, learning_rate=settings.learning_rate,
                max_norm=settings.gradient_norm)
+    residual = None
+    if residual_width is not None:
+        residual = TemporalModel(backend, (residual_width,), activations=("tanh",),
+                                 input_size=22, output_size=HORIZON * 6)
+        residual_opt = Adam(residual.parameters(), backend, learning_rate=settings.learning_rate,
+                            max_norm=settings.gradient_norm)
     train_inputs = features(training.histories, times[training.starts - 1])
     inputs = Standardizer().fit(train_inputs)
     basis = modes.anchored_basis(np.arange(1, HORIZON + 1))
@@ -43,8 +49,33 @@ def fit(training, validation, times, scaler, architecture, modes, settings,
     history.update(layer_diagnostics=[], learning_rate=[], epoch_seconds=[], clipped_updates=0)
     index = 1
     start = perf_counter()
+    def objective(batch, x, selection, phase, training):
+        spectral_out, cache = model.forward(x, training=training and phase != "residual")
+        coefficients = spectral_out.reshape(-1, modes.width, 6)
+        arguments = (coefficients, batch[1][selection], batch[2][selection], device_basis,
+                     batch[3][selection], lower, upper, weights, backend.xp)
+        if phase == "spectral":
+            score, gradient, terms = loss(*arguments)
+        else:
+            residual_out, residual_cache = residual.forward(x, training=training)
+            correction, derivative = residual_transform(residual_out, backend.xp)
+            score, gradient, terms, correction_gradient = loss(*arguments, correction=correction)
+            if training:
+                residual.backward((correction_gradient * derivative).reshape(residual_out.shape), residual_cache)
+        if training and phase != "residual":
+            model.backward(gradient.reshape(spectral_out.shape), cache)
+        return score, terms
+
+    phases = ["spectral"] * settings.epochs
+    if residual is not None:
+        phases += ["residual"] * settings.epochs + ["joint"] * joint_epochs
+    history["phase"] = phases
     with backend.scope():
-        for epoch in range(settings.epochs):
+        for epoch, phase in enumerate(phases):
+            if epoch == settings.epochs and residual is not None:
+                model.load_state_dict(state, backend)
+                history["spectral_best_epoch"] = best_epoch
+                best = float("inf")
             tick = perf_counter()
             history["learning_rate"].append(opt.learning_rate)
             total = peak = count = 0
@@ -59,25 +90,25 @@ def fit(training, validation, times, scaler, architecture, modes, settings,
                     index += perturbation.size
                     count += hits
                 opt.zero_grad()
-                output, cache = model.forward(backend.array(x))
-                score, grad, _ = loss(output.reshape(-1, modes.width, 6),
-                                      *(arr[selection] for arr in train[1:3]), device_basis,
-                                      train[3][selection], lower, upper, weights, backend.xp)
-                model.backward(grad.reshape(output.shape), cache)
+                if residual is not None:
+                    residual_opt.zero_grad()
+                score, _ = objective(train, backend.array(x), selection, phase, True)
                 sample = recorder is not None and start_index == 0
                 before = recorder.before() if sample else None
-                update = opt.step()
-                peak = max(peak, update["gradient_norm"])
-                history["clipped_updates"] += update["clip_factor"] < 1
+                updates = []
+                if phase != "residual":
+                    updates.append(opt.step())
+                if phase != "spectral":
+                    updates.append(residual_opt.step())
+                peak = max(peak, *(update["gradient_norm"] for update in updates))
+                history["clipped_updates"] += sum(update["clip_factor"] < 1 for update in updates)
                 if sample:
                     history["layer_diagnostics"].append({
                         "epoch": epoch + 1, "layers": recorder.report(before),
                         "inference_activations": recorder.activations(backend.array(x[:8])),
                     })
                 total += float(backend.scalar(score)) * len(selection)
-            output, _ = model.forward(backend.array(valid[0]), training=False)
-            score, _, terms = loss(output.reshape(-1, modes.width, 6), *valid[1:3], device_basis,
-                                   valid[3], lower, upper, weights, backend.xp)
+            score, terms = objective(valid, backend.array(valid[0]), slice(None), phase, False)
             score = float(backend.scalar(score))
             history["training_loss"].append(total / len(train_inputs))
             history["validation_loss"].append(score)
@@ -88,7 +119,11 @@ def fit(training, validation, times, scaler, architecture, modes, settings,
             if score < best:
                 best, best_epoch = score, epoch + 1
                 state = model.state_dict(backend)
+                if phase != "spectral":
+                    residual_state = residual.state_dict(backend)
         model.load_state_dict(state, backend)
+        if residual is not None:
+            residual.load_state_dict(residual_state, backend)
     history["training_seconds"] = perf_counter() - start
     history["augmentation_indices"] = index - 1
-    return SpectralForecaster(model, backend, modes, inputs, scaler), history, best_epoch
+    return SpectralForecaster(model, backend, modes, inputs, scaler, residual), history, best_epoch

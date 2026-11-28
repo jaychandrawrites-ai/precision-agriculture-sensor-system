@@ -66,11 +66,16 @@ class SpectralTests(unittest.TestCase):
         model = TemporalModel(backend, (4,), input_size=22, output_size=90)
         with TemporaryDirectory() as directory:
             path = Path(directory) / "model.json"
-            write_json(path, {"format": "jupiter-spectral-v1", "features": FEATURES,
+            record = {"format": "jupiter-spectral-v1", "features": FEATURES,
                 "interval_hours": 1, "modes": asdict(modes), "architecture": {"hidden": [4]},
                 "dtype": "float32", "seed": 42, "parameters": model.state_dict(backend),
                 "inputs": Standardizer().fit(np.zeros((3, 22))).state_dict(),
-                "targets": Standardizer().fit(np.zeros((3, 6))).state_dict()})
+                "targets": Standardizer().fit(np.zeros((3, 6))).state_dict()}
+            write_json(path, record)
+            self.assertIsNone(load_forecaster(path).spectral.residual)
+            residual = TemporalModel(backend, (8,), activations=("tanh",), input_size=22, output_size=432)
+            record["residual"] = {"width": 8, "parameters": residual.state_dict(backend)}
+            write_json(path, record)
             loader = load_forecaster(path)
             history = np.tile([25, 50, .4, .2, .1, .1], (3, 1))
             origin = np.datetime64("2025-01-01T16")
@@ -94,3 +99,30 @@ class SpectralTests(unittest.TestCase):
         self.assertAlmostEqual(terms["shape"], .5)
         self.assertAlmostEqual(terms["value"], terms["level"] + terms["shape"])
         self.assertGreater(terms["curvature"], 0)
+
+    def test_joint_residual_gradient(self):
+        from Temporal.Spectral import residual_transform
+
+        rng = np.random.default_rng(7)
+        basis = Modes((24,), True).anchored_basis(np.arange(1, 73))
+        coefficients = rng.normal(size=(1, 5, 6))
+        output = rng.normal(size=(1, 432))
+        target = rng.normal(size=(1, 72, 6))
+        weights = LossWeights(level=.5, shape=1, curvature=.15)
+
+        def objective(c, y):
+            correction, derivative = residual_transform(y)
+            score, spectral, _, residual = loss(c, target, 0, basis, c * 0, -.8, .8,
+                                                 weights, correction=correction)
+            return score, spectral, (residual * derivative).reshape(y.shape)
+
+        _, spectral, residual = objective(coefficients, output)
+        for values, expected, evaluate in (
+            (coefficients, spectral, lambda x: objective(x, output)[0]),
+            (output, residual, lambda x: objective(coefficients, x)[0]),
+        ):
+            for index in range(0, values.size, 11):
+                offsets = np.zeros_like(values)
+                offsets.flat[index] = 1e-6
+                actual = (evaluate(values + offsets) - evaluate(values - offsets)) / 2e-6
+                self.assertAlmostEqual(actual, expected.flat[index], places=8)
