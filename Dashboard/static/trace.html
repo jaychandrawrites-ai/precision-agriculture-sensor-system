@@ -28,6 +28,14 @@
         <label>Survey archive<input name="archive" type="file" accept=".json,application/json" required></label>
         <button>Import Survey</button>
       </form>
+      <form id="trace-import-batch">
+        <label>Survey label<input name="label" required></label>
+        <label>Cleaned AquaMap CSV files<input type="file" name="files" accept=".csv" multiple required></label>
+        <label>Timezone (IANA)<input name="timezone" placeholder="America/Phoenix" required></label>
+        <label>Location labels (optional, comma-separated in file order)<input name="locations"></label>
+        <button name="operation" value="preview">Preview CSV batch</button>
+        <button name="operation" value="import">Import CSV batch</button>
+      </form>
       <form id="trace-import-csv">
         <label>Imported survey name<input name="label" required maxlength="120"></label>
         <label>Measurements CSV<input name="csv" type="file" accept=".csv" required></label>
@@ -146,6 +154,7 @@
         <label>Window end (local time)<input name="timestamp" type="datetime-local" required></label>
         <label>Window length in minutes<input name="window_minutes" type="number" min="1" max="1440" value="60" required></label>
         <button>Generate Spatial Map</button>
+        <button type="submit" value="composite" formnovalidate>Map CSV session composite</button>
       </form>
     </div>
     <canvas id="trace-map" width="500" height="500" role="img" aria-label="Observational map in local meter coordinates" hidden></canvas>

@@ -69,3 +69,33 @@ class FieldQualityTests(unittest.TestCase):
                 receiver.feed(survey, line.encode(), now)
             self.assertTrue(receiver.diagnostics(survey)["native_readiness"]["ready"])
             self.assertIsNotNone(receiver.start(survey, label="Site")["active_segment_id"])
+
+    def test_batch_preview_is_read_only_and_composite_retains_separate_visits(self):
+        from Acquisition.TraceAnalysis import session_composite
+        from Acquisition.TraceImport import import_csv_batch
+
+        header = ("point,timestamp,latitude,longitude,gps_sats,soil_moisture,soil_temp,ec,ph,"
+                  "air_temp,air_humidity,leaf_wetness,radio_rssi,radio_snr\n")
+
+        def fixture(lon):
+            return (header + "".join(
+                f"{i},2026-11-01T10:00:{i:02},0,{lon},,30,24,400,7,22,50,350,-90,4\n"
+                for i in range(6))).encode()
+
+        files = [("one.csv", fixture(0), None), ("two.csv", fixture(.0004), "Second visit")]
+        with TemporaryDirectory() as root:
+            store = TraceStore(root)
+            preview = import_csv_batch(store, files, "Synthetic", "America/Phoenix", preview=True)
+            self.assertEqual(store.list_surveys(), [])
+            self.assertEqual([item["overlapping_visits"] for item in preview], [1, 1])
+            self.assertEqual(preview[0]["missing_fields"]["gps_satellites"], 6)
+            self.assertNotIn("location", preview[0]["gps"])
+            with self.assertRaisesRegex(ValueError, "distinct"):
+                import_csv_batch(store, files + [files[0]], "Synthetic", "America/Phoenix")
+            self.assertEqual(store.list_surveys(), [])
+            survey = import_csv_batch(store, files, "Synthetic", "America/Phoenix")
+            mapped = session_composite(store, survey["id"], "air_temperature_c", grid_size=9,
+                                       domain={"center_lat_lon": [0, 0], "radius_m": 75}, diffusion={})
+            self.assertEqual(mapped["provenance"], "non_simultaneous_observed_session_composite")
+            self.assertEqual(len(mapped["samples"]), 2)
+            self.assertIsNone(mapped["estimate"][0][0])

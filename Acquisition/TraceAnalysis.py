@@ -40,6 +40,19 @@ def _prepare_segment(records, configuration, started_at, ended_at):
     hourly["as_of"] = cutoff.isoformat()
     clock = hourly.get("clock", "received_at")
     device = hourly.get("device_id")
+    if records and all("receipt_is_import_time" in row["flags"] for row in records):
+        if clock != "observed_at":
+            raise ValueError("Imported CSV requires the observed_at clock, not the import receipt time")
+        times = [_aware(row["observed_at"]) for row in records if row.get("observed_at")]
+        if not times:
+            raise ValueError("No observation timestamps in this visit")
+        start = min(times)
+        cutoff = min(max(times), _aware(requested)) if requested is not None else max(times)
+        hourly["as_of"] = cutoff.isoformat()
+        # For historical reanalysis only, retain the actual receipt in the
+        # archive and use observation time in the temporary preprocessing copy.
+        records = [{**row, "received_at": row["observed_at"]}
+                   for row in records if row.get("observed_at")]
     selected = []
     identities = set()
     boots = set()
@@ -200,6 +213,46 @@ def observational_map(store, survey_id, feature, timestamp, window_minutes=60,
             "window_start_exclusive": start.isoformat(),
             "window_end_inclusive": end.isoformat(), "excluded_locations": len(locations) - len(sites),
             "samples": samples, **raster}
+
+
+def session_composite(store, survey_id, feature, *, grid_size=25, domain=None, diffusion=None):
+    """Map equally weighted observed timestamp medians across distinct visits."""
+    if feature not in FIELDS or feature in EXCLUDED_MEASUREMENTS or not 2 <= grid_size <= 100:
+        raise ValueError("Choose a measured feature and a resolution from 2 to 100")
+    survey = store.status(survey_id)
+    sites, samples = [], []
+    for location in survey["locations"]:
+        visits = []
+        coordinates = []
+        for segment in location["segments"]:
+            if segment["status"] == "recording":
+                continue
+            quality = segment["calibration"].get("csv_quality", {})
+            point = quality.get("gps", {}).get("location")
+            if point is None:
+                continue
+            bins = {}
+            for row in store.segment_readings(survey_id, segment["id"]):
+                value = row["measurements"].get(feature)
+                stamp = row.get("observed_at")
+                if stamp and _measurement(value, feature):
+                    bins.setdefault(stamp, []).append(value)
+            if bins:
+                visits.append(float(np.median([np.median(group) for group in bins.values()])))
+                coordinates.append(point)
+        if visits:
+            from Acquisition.StationaryGPS import stationary_location
+            point = (coordinates[0] if len(coordinates) == 1 else
+                     stationary_location(coordinates, minimum_samples=2)["location"])
+            if point is None:
+                continue
+            sites.append(tuple(point))
+            samples.append({"location_label": location["label"], "location_id": location["id"],
+                            "visit_count": len(visits), "value": float(np.median(visits))})
+    return {"survey_id": survey_id, "feature": feature,
+            "provenance": "non_simultaneous_observed_session_composite", "samples": samples,
+            "interpolation": "diffusion" if diffusion is not None else "IDW",
+            **_raster(sites, samples, grid_size, domain, diffusion)}
 
 def _raster(sites, samples, grid_size, domain=None, diffusion=None):
     if len(set(sites)) < 2:

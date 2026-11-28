@@ -21,6 +21,8 @@ FIELDS = {
     "latitude_deg": (-90, 90, {"deg": (1, 0)}),
     "longitude_deg": (-180, 180, {"deg": (1, 0)}),
     "gps_hdop": (0, math.inf, {"ratio": (1, 0)}),
+    "radio_rssi_dbm": (-math.inf, math.inf, {"dBm": (1, 0)}),
+    "radio_snr_db": (-math.inf, math.inf, {"dB": (1, 0)}),
     "gps_satellites": (0, 255, {"count": (1, 0)}),
 }
 GPS_FIELDS = {"latitude_deg", "longitude_deg"}

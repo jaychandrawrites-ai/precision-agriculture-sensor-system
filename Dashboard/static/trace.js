@@ -274,6 +274,28 @@ submit("trace-restore", async event => {
   trace.readiness = null;
   await listSurveys();
 }, "Survey imported.");
+submit("trace-import-batch", async event => {
+  const fields = event.target.elements;
+  const selected = [...fields.files.files];
+  const labels = fields.locations.value.split(",").map(value => value.trim());
+  if (fields.locations.value.trim() && labels.length !== selected.length) {
+    throw new Error("Enter one location label per file.");
+  }
+  const files = await Promise.all(selected.map(async (file, index) => ({
+    name: file.name, data: await base64File(file), location: labels[index] || null
+  })));
+  const preview = event.submitter.value === "preview";
+  const result = await request("/api/trace/import-csv-batch", {
+    label: fields.label.value, timezone: fields.timezone.value.trim(), files, preview
+  });
+  if (preview) {
+    showResult(result);
+  } else {
+    trace.id = result.id;
+    await listSurveys();
+    await refresh();
+  }
+}, "CSV batch processed.");
 submit("trace-import-csv", async event => {
   const fields = event.target.elements;
   const survey = await request("/api/trace/import-csv", {label: fields.label.value,
@@ -370,10 +392,14 @@ submit("trace-ensemble-form", async event => {
 }, "Ensemble forecast map available.");
 submit("trace-map-form", async event => {
   const fields = event.target.elements;
-  const result = await perform("map", {...mapDomain(), feature: fields.feature.value,
-    diffusion: {iterations: Number(el("map-diffusion-iterations").value)},
-    timestamp: new Date(fields.timestamp.value).toISOString(), window_minutes: Number(fields.window_minutes.value)});
-  drawMap(result.estimate);
+  const composite = event.submitter.value === "composite";
+  const clock = composite ? {} : {timestamp: new Date(fields.timestamp.value).toISOString(),
+    window_minutes: Number(fields.window_minutes.value)};
+  const result = await perform(composite ? "session-map" : "map", {
+    ...mapDomain(), ...clock, feature: fields.feature.value,
+    diffusion: {iterations: Number(el("map-diffusion-iterations").value)}
+  });
+  drawMap(result.estimate, "trace-map", composite ? "Non-simultaneous session composite" : "Observational map");
   el("trace-spread").hidden = true;
   const summary = {...result};
   delete summary.estimate;

@@ -2,7 +2,7 @@
 import base64
 from urllib.parse import parse_qs, urlsplit
 
-from Acquisition.TraceImport import import_csv
+from Acquisition.TraceImport import import_csv, import_csv_batch
 from Utils.Serialization import decode_json
 
 
@@ -76,6 +76,15 @@ def trace_post(handler, body):
                    if "archive_bytes" in body else body["archive"])
         survey = store.restore(archive)
         return handler._json(201, _metadata(survey))
+    if suffix == "import-csv-batch":
+        entries = body.get("files")
+        if not isinstance(entries, list) or not 1 <= len(entries) <= 32:
+            raise ValueError("Select one to 32 CSVs")
+        files = [(item["name"], base64.b64decode(item["data"], validate=True), item.get("location"))
+                 for item in entries]
+        preview = body.get("preview", True)
+        result = import_csv_batch(store, files, body["label"], body.get("timezone"), preview=preview)
+        return handler._json(200 if preview else 201, result if preview else _metadata(result))
     if suffix == "import-csv":
         payload = base64.b64decode(body["csv"], validate=True)
         return handler._json(201, _metadata(import_csv(store, payload, body["label"], body["mapping"])))
@@ -172,6 +181,12 @@ def trace_post(handler, body):
                 fields[key] = values.tolist() if adaptive is not None else values.reshape(len(arrays["north_m"]), len(arrays["east_m"])).tolist()
             result["predictive"] = {**fields, **({"inside": mask.tolist()} if adaptive is not None else {})}
         return handler._json(200, result)
+    elif action == "session-map":
+        from Acquisition.TraceAnalysis import session_composite
+
+        return handler._json(200, session_composite(
+            store, identifier, body["feature"], grid_size=body.get("resolution", 25),
+            domain=body.get("domain"), diffusion=body.get("diffusion", {})))
     elif action == "map":
         return handler._json(200, observational_map(store, identifier, body["feature"], body["timestamp"],
                                                     window_minutes=body.get("window_minutes", 60),

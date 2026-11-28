@@ -32,7 +32,7 @@ def _csv_time(value, timezone):
         stamp = first
     return _time(stamp.isoformat())
 
-def import_csv(store, payload, label, mapping):
+def _csv_archive(payload, label, mapping):
     """Import separate segments using named columns and the verified packet unit registry."""
     text = payload.decode("utf-8-sig") if isinstance(payload, bytes) else payload
     rows = csv.DictReader(StringIO(text))
@@ -50,7 +50,7 @@ def import_csv(store, payload, label, mapping):
     fields = mapping["fields"]
     expected = {spec["column"] for spec in fields.values()}
     expected.update(col for col in (location_col, segment_col) if col)
-    expected.update(col for col in (time_col, observed_col, mapping.get("device_id")) if col)
+    expected.update(col for col in (time_col, observed_col, mapping.get("device_id"), mapping.get("point")) if col)
     if not expected <= set(rows.fieldnames):
         raise ValueError("Manual mapping refers to columns absent from the CSV")
     schema = PacketSchema.from_dict({"fields": {key: {"key": key, "unit": spec["unit"]}
@@ -83,6 +83,8 @@ def import_csv(store, payload, label, mapping):
         parsed["observed_at"] = _csv_time(row[observed_col], zone) if observed_col and row[observed_col] else None
         if mapping.get("device_id"):
             parsed["device_id"] = row[mapping["device_id"]] or None
+        if mapping.get("point"):
+            parsed["source_point"] = row[mapping["point"]]
         parsed["flags"] = [*parsed["flags"], "manual_csv", *([] if time_col else ["receipt_is_import_time"])]
         segment["started_at"] = min(received, segment["started_at"] or received)
         segment["ended_at"] = max(received, segment["ended_at"] or received)
@@ -115,7 +117,74 @@ def import_csv(store, payload, label, mapping):
                                              for j, (other_start, other_end, _) in enumerate(reports) if i != j)
     archive["survey"]["locations"] = list(locations.values())
     archive["sha256"] = sha256(_json(archive).encode()).hexdigest()
-    return store.restore(archive)
+    return archive
+
+
+def import_csv(store, payload, label, mapping):
+    return store.restore(_csv_archive(payload, label, mapping))
+
+
+_CLEANED_FIELDS = {
+    "latitude_deg": ("latitude", "deg"), "longitude_deg": ("longitude", "deg"),
+    "gps_satellites": ("gps_sats", "count"), "soil_moisture_pct": ("soil_moisture", "%"),
+    "soil_temperature_c": ("soil_temp", "C"), "soil_ec_us_cm": ("ec", "uS/cm"),
+    "soil_ph": ("ph", "pH"), "air_temperature_c": ("air_temp", "C"),
+    "relative_humidity_pct": ("air_humidity", "%"), "leaf_mv": ("leaf_wetness", "mV"),
+    "radio_rssi_dbm": ("radio_rssi", "dBm"), "radio_snr_db": ("radio_snr", "dB"),
+}
+
+
+def import_csv_batch(store, files, label, timezone, *, preview=False):
+    """Validate every file before publishing one combined, inference-only survey."""
+    from pathlib import Path
+    from zoneinfo import ZoneInfoNotFoundError
+
+    if not timezone or not 1 <= len(files) <= 32:
+        raise ValueError("Supply an explicit timezone and one to 32 compatible CSVs")
+    combined = None
+    labels = set()
+    visits = []
+    for filename, payload, alias in files:
+        name = _label(alias or Path(filename).stem)
+        if name in labels:
+            raise ValueError("Use a distinct location label for each file")
+        labels.add(name)
+        mapping = {"timezone": timezone, "observed_at": "timestamp", "location_label": name, "point": "point",
+                   "fields": {key: {"column": column, "unit": unit}
+                              for key, (column, unit) in _CLEANED_FIELDS.items()}}
+        try:
+            archive = _csv_archive(payload, label, mapping)
+        except ZoneInfoNotFoundError as error:
+            raise ValueError("Unknown IANA timezone") from error
+        except ValueError as error:
+            raise ValueError(f"{name}: {error}") from error
+        location = archive["survey"]["locations"][0]
+        segment = location["segments"][0]
+        quality = segment["calibration"]["csv_quality"]
+        readings = [row["reading"] for row in segment["records"]]
+        stamps = sorted(row["observed_at"] for row in readings if row["observed_at"])
+        quality.update(observed_start=stamps[0] if stamps else None,
+                       observed_end=stamps[-1] if stamps else None,
+                       missing_fields=dict(Counter(flag.removeprefix("missing:") for row in readings
+                                                   for flag in row["flags"] if flag.startswith("missing:"))))
+        visits.append((name, quality))
+        if combined is None:
+            combined = archive
+        else:
+            combined["survey"]["locations"].append(location)
+    for name, quality in visits:
+        start, end = quality["observed_start"], quality["observed_end"]
+        quality["overlapping_visits"] = sum(
+            other != name and start is not None and item["observed_start"] is not None
+            and item["observed_start"] <= end and start <= item["observed_end"]
+            for other, item in visits)
+    if preview:
+        return [{**quality, "location_label": name,
+                 "gps": {key: value for key, value in quality["gps"].items() if key != "location"}}
+                for name, quality in visits]
+    del combined["sha256"]
+    combined["sha256"] = sha256(_json(combined).encode()).hexdigest()
+    return store.restore(combined)
 
 
 def replay_segment(store, survey_id, source, *, label=None, location_id=None, schema=None):
