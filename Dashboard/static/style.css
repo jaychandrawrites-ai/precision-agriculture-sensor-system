@@ -81,3 +81,5 @@ form input, form select {
 .workspace-nav a, #jobs a {
   overflow-wrap: anywhere;
 }
+
+#diagnostic-results img { max-width: 100%; }

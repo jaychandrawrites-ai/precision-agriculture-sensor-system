@@ -64,7 +64,12 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
     budget = settings.epochs if stop_after_epoch is None else min(settings.epochs, stop_after_epoch)
     if budget < 1:
         raise ValueError("Training budget must allow at least one epoch")
+    from time import perf_counter
+
+    epoch_seconds, learning_rates = [], []
     for epoch in range(start + 1, budget + 1):
+        tick = perf_counter()
+        learning_rates.append(opt.learning_rate)
         epoch_loss = 0.0
         for inputs, targets, _ in loader:
             opt.zero_grad()
@@ -90,6 +95,7 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
             shuffle_state = deepcopy(loader.rng.bit_generator.state)
             rng_state = deepcopy(backend.rng.get_state()) if not backend.is_gpu else None
 
+        epoch_seconds.append(perf_counter() - tick)
         if recovery_path is not None:
             write_recovery(recovery_path, {
                 "recipe": identity, "epoch": epoch, "best_epoch": best_epoch, "history": history,
@@ -104,5 +110,6 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
     result = FitResult(best, best_epoch, history, opt_state, schedule_state, shuffle_state, rng_state)
     diagnostics = {"updates": opt.steps, "peak_gradient_norm": peak_gradient_norm,
                    "clipped_updates": clipped_updates, "training_loss": training_history,
-                   "validation_loss": history}
+                   "validation_loss": history, "learning_rate": learning_rates if not start else [],
+                   "epoch_seconds": epoch_seconds if not start else []}
     return result, input_scaler, diagnostics

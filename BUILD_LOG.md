@@ -1156,3 +1156,21 @@ The model requires three consecutive six-feature hourly inputs. Field
 configuration and measured leaf/soil calibration were unavailable. The
 causal ET calculation also requires adjacent temperature history and a
 declared solar offset. No field measurements were used for fitting.
+
+### Local AI diagnostics and deployment
+
+Four CPU epochs on the prepared az43 historical export used 21,800
+training, 4,667 validation and 4,668 test rollout windows. Epoch four
+had the best validation loss. Six-hour temperature RMSE was 4.316 °C
+for the recursive model, 7.093 °C for persistence and 2.356 °C for
+daily persistence. This prepared archive uses the previously declared
+dry forcing scenario. The field files were excluded from this run.
+
+Added headless Matplotlib training, held-out scatter, horizon RMSE,
+residual and weight plots with underlying NPZ and JSON artifacts.
+Local artifacts are in /tmp/jupiter-diagnostics-run. The model SHA-256
+is cf315e550ce0e1575636c5423e16c71f265ac4ac4eb0da8ca8594e3f5f3e45e9.
+A focused synthetic Chromium test confirmed diagnostic images and the
+checkpoint remained available after restarting the server. Corrected
+PNG MIME handling for browser rendering. The compatibility matrix,
+audit scope and remaining limitations are in AI_VALIDATION.md.

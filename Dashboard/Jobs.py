@@ -36,7 +36,9 @@ SPEC = {
 ARTIFACTS = {
     "inspect": {"report.json"},
     "prepare": {"prepared/hourly.csv", "prepared/flags.csv", "prepared/report.json"},
-    "train": {"report.json", "model.json"},
+    "train": {"report.json", "model.json", "diagnostics/metrics.json", "diagnostics/evaluation.npz",
+              "diagnostics/training.png", "diagnostics/actual-predicted.png", "diagnostics/horizon.png",
+              "diagnostics/residuals.png", "diagnostics/parameters.png"},
     "forecast": {"forecast.csv"},
     "blend": {"blend.json"},
     "figure": {"figure.png", "figure.svg"},
@@ -350,9 +352,12 @@ class Jobs:
         if kind == "prepare":
             return ["azmet.py", "prepare", data, config, folder / "prepared"]
         if kind == "train":
-            return ["train.py", data, folder / "model.json", "--epochs", opts["epochs"],
+            command = ["train.py", data, folder / "model.json", "--epochs", opts["epochs"],
                     "--optimizer", opts["optimizer"], "--loss", opts["loss"],
-                    "--resume-state", folder / "resume.json"]
+                    "--resume-state", folder / "resume.json", "--diagnostics", folder / "diagnostics"]
+            if "dataset" in opts:
+                command += ["--preparation-report", self._linked(opts["dataset"], {"prepare"}, "prepared/report.json")]
+            return command
         if kind == "benchmark":
             args = ["forecast_benchmark.py", data, folder / "report.json", "--epochs", opts["epochs"],
                     "--horizon", opts["horizon"], "--seeds", *opts["seeds"]]

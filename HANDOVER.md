@@ -50,3 +50,8 @@ and an authorized calibrated field forecasting case. For the next
 development session, resume from the pushed development branch, retain the
 field-data isolation rules, and prioritize a dashboard start–restart–reload
 acceptance run with user-supplied calibration and compatible context.
+
+See [AI_VALIDATION.md](AI_VALIDATION.md) for the feature compatibility
+matrix, numerical audit scope and commands for training diagnostics.
+Dashboard training saves plots and held-out predictions under its job
+directory. Open /diagnostics after a completed model training job.

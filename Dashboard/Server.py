@@ -21,7 +21,9 @@ from Dashboard.Reports import dataset_report, forecast_series, metrics_csv, rese
 
 STATIC = Path(__file__).with_name("static")
 MAX_REQUEST = 33 * 1024 * 1024
-ROUTES = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"),
+ROUTES = {"/diagnostics": ("diagnostics.html", "text/html"),
+          "/diagnostics.js": ("diagnostics.js", "text/javascript"),
+          "/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"),
           "/style.css": ("style.css", "text/css"),
           "/trace": ("trace.html", "text/html"), "/trace.js": ("trace.js", "text/javascript")}
 
@@ -128,7 +130,8 @@ class Handler(BaseHTTPRequestHandler):
                 artifact = self.server.jobs.artifact(identifier, name)
             except (KeyError, ValueError):
                 return self._json(404, {"error": "Artifact not found"})
-            kind = {".json": "application/json", ".csv": "text/csv", ".log": "text/plain"}.get(
+            kind = {".json": "application/json", ".csv": "text/csv", ".log": "text/plain",
+                    ".png": "image/png", ".svg": "image/svg+xml"}.get(
                 artifact.suffix, "application/octet-stream"
             )
             return self._file(artifact, kind)
