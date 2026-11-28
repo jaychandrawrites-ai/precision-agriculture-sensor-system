@@ -1094,3 +1094,23 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m Dashboard.Server --workspace "$env:TEMP\jupiter-dashboard"
 ```
+
+### Cleaned AquaMap batch acceptance
+
+The five supplied files were imported into a temporary, inference-only
+survey after explicitly choosing America/Phoenix for this check. Counts
+were 690, 548, 688, 568 and 684 (3,178 total). The maximum gap in spot 05
+was 210 seconds. Spot 06 had two duplicate timestamp groups (four rows).
+Spots 04 and 05 overlapped and remained separate. Each GPS cluster passed
+the stationary threshold. No satellite-fix conclusion follows from that.
+A circular observed-session composite used five diffusion seed cells.
+This is a non-simultaneous summary and does not verify forecast accuracy.
+
+The importer records per-file hashes, quality counts and original point
+identifiers. Its preview does not persist anything. Timestamp duplicates
+remain archived. The composite uses a median within each timestamp and
+then a median across timestamps, giving duplicate timestamps one vote.
+The actual field files were used only for import and spatial checks.
+Hourly checkpoint inference still needs calibrated features and enough
+complete consecutive hours. Multi-receiver support and checkpoint
+training across observation resolutions remain open.
