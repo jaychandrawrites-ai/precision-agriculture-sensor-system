@@ -11,7 +11,7 @@ Arduino acceptance remain local checks.
 For a fresh clone, run:
 
 ```powershell
-git clone --branch jupiter-clean-development https://github.com/jaychandrawrites-ai/precision-agriculture-sensor-system.git
+git clone --branch main https://github.com/jaychandrawrites-ai/precision-agriculture-sensor-system.git
 Set-Location precision-agriculture-sensor-system
 py -3.12 -m venv .venv
 $py = ".\.venv\Scripts\python.exe"
@@ -20,8 +20,8 @@ $py = ".\.venv\Scripts\python.exe"
 & $py -m Dashboard.Server --workspace "$env:LOCALAPPDATA\Jupiter" --import-training-run Examples/spectral/qsen-v3-development
 ```
 
-For an existing clone, run `git switch jupiter-clean-development` and
-`git pull --ff-only origin jupiter-clean-development` first. Open
+For an existing clone, run `git switch main` and
+`git pull --ff-only origin main` first. Open
 http://127.0.0.1:8765/diagnostics or http://127.0.0.1:8765/trace.
 Stop the server with Ctrl+C. Restart with the same workspace to retain
 the registered checkpoint and surveys.

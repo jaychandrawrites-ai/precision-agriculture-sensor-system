@@ -1336,3 +1336,16 @@ CSV and survey workflows, spatial visualization, and forecast APIs.
 Re-prepared the supplied raw Yuma Valley hourly CSV. The new prepared
 CSV matched the training input byte for byte (SHA-256
 4c3433e28a6b1b7fce078198a6d7512937cfcd39a5bf5fb016dc61c336174e57).
+
+## QSEN v3 release preparation
+
+Recorded pre-release main at
+`41e554469843c8a9965b0f2818e93c8c43f5d558`. It is an ancestor of
+the release branch. Verified tracked firmware tree equality against
+that revision. Updated the local guide for the main-branch release.
+The frozen architecture and development checkpoint remain the same.
+
+Final release regression completed 199 Chromium-enabled tests in a
+clean Linux dependency environment. 197 passed and two CUDA tests were
+skipped. The development checkpoint retained its recorded SHA-256,
+and diagnostics and model selection persisted across dashboard restart.
