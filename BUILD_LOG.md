@@ -1332,3 +1332,7 @@ field inference, and fresh AZMET formal evaluation remain open.
 The fresh-environment Chromium-enabled suite completed 199 tests with
 197 passes and two CUDA skips. It covers simulated serial acquisition,
 CSV and survey workflows, spatial visualization, and forecast APIs.
+
+Re-prepared the supplied raw Yuma Valley hourly CSV. The new prepared
+CSV matched the training input byte for byte (SHA-256
+4c3433e28a6b1b7fce078198a6d7512937cfcd39a5bf5fb016dc61c336174e57).
