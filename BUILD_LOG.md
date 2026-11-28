@@ -1198,3 +1198,27 @@ with 189 passes and two CUDA skips. The field CSVs were excluded from
 training and selection. Independent calibration and matched hourly
 context are still required for real-field forecast acceptance. Native
 Windows and physical CUDA remain unverified.
+
+## Recursive evolutionary training and 72-hour verification
+
+Added recursive winner export with per-run diagnostics and recovery,
+generation statistics, and hourly model limits in AI Trace and model
+loading. The existing direct sequence export remains available.
+
+The first 72-hour AZMET search aborted on nonfinite raw rollout output.
+Bounded normalized increments for new long-horizon training and stable
+Huber arithmetic resolved the reproduced overflow. Rollout gradients
+passed finite differences including the new bound. One full AZMET
+development sweep completed all five methods. Two baseline methods led
+at hour 72 (both 3.453 °C), versus 35.815–90.300 °C for the recursive
+refits. The separate 72-hour seasonal study and skill qualifications
+are in AI_VALIDATION.md. QIGA output loaded into the CLI and dashboard,
+with actual internal and evolutionary figures rendered in Chromium.
+
+The final Chromium-enabled suite ran 193 tests, with 191 passes and
+two CUDA skips. The working artifacts are under
+`/workspace/work/jupiter-training/evolution-72`. The research and
+smoke reproduction commands are in HANDOVER.md. Field CSVs were not
+used for fitting, calibration, or selection. Native Windows, CUDA,
+independent field calibration and fresh long-horizon skill verification
+remain open.

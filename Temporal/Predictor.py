@@ -5,8 +5,8 @@ from Physics.Constraints import project
 
 def forecast(model, history, input_scaler, target_scaler, backend, steps,
              interval_hours=1.0, crop_coefficient=None):
-    if steps<1:
-        raise ValueError("Forecast horizon must be positive")
+    if type(steps) is not int or not 1 <= steps <= 72:
+        raise ValueError("Forecast horizon must be an integer from 1 through 72")
     history=np.asarray(history,dtype=float)
     options = getattr(model, "rollout_options", None)
     if options is not None:

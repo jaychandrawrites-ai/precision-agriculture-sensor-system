@@ -30,8 +30,8 @@ def regression_loss(prediction, target, backend, sample_weights=None,
             derivative = 2*residual
         else:
             magnitude = xp.abs(residual)
-            element = xp.where(magnitude <= delta, 0.5*residual**2,
-                               delta*(magnitude-0.5*delta))
+            quadratic = xp.minimum(magnitude, delta)
+            element = 0.5 * quadratic**2 + delta * (magnitude - quadratic)
             derivative = xp.clip(residual, -delta, delta)
         loss = float(backend.scalar((element*weights).sum()/denominator))
         gradient = derivative*weights/denominator

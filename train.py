@@ -72,7 +72,7 @@ def _train_stable(checkpoint, settings, optimizer, loss, values, timestamps,
         rollout_windows(dataset, rows, values, timestamps, steps)
         for rows in (dataset.train, dataset.validation, dataset.test)
     ]
-    options = RolloutOptions()
+    options = RolloutOptions.for_horizon(steps)
     result, inputs, fit_diagnostics = fit_rollout(
         model, dataset, training, validation, backend, settings, options,
         optimizer=optimizer, loss=loss, warmup_epochs=settings.epochs // 3, recovery_path=recovery_path,
@@ -106,6 +106,8 @@ def _train_stable(checkpoint, settings, optimizer, loss, values, timestamps,
             report[name] = horizon_metrics(predictions, test.targets, persistence)
         report["seasonal_fallbacks"] = fallback.tolist()
         report["rollout_diagnostics"] = diagnostics
+    if len(test.starts):
+        provenance = {**(provenance or {}), "validated_horizon_hours": steps}
     save(checkpoint, model, replace(dataset, input_scaler=inputs), backend, result, settings,
          provenance=provenance)
     if diagnostics_dir is not None and len(test.starts):
@@ -136,6 +138,8 @@ def main():
     parser.add_argument("--preparation-report", type=Path)
     parser.add_argument("--diagnostic-every", type=int, default=0)
     parser.add_argument("--diagnostics", type=Path)
+    parser.add_argument("--horizon", type=int, choices=range(1, 73), default=TrainingConfig().rollout_steps,
+                        metavar="1..72")
     parser.add_argument("--epochs", type=int, default=TrainingConfig().epochs)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--optimizer", choices=("adam", "sgd"), default="adam")
@@ -144,7 +148,7 @@ def main():
     parser.add_argument("--legacy", action="store_true",
                         help="Use the original one-step state model")
     args = parser.parse_args()
-    settings = replace(TrainingConfig(), epochs=args.epochs, device=args.device, seed=args.seed)
+    settings = replace(TrainingConfig(), epochs=args.epochs, device=args.device, seed=args.seed, rollout_steps=args.horizon)
     print(json.dumps(train(args.source, args.checkpoint, settings, args.optimizer, args.loss,
                            stable_rollout=not args.legacy, recovery_path=args.resume_state, diagnostics_dir=args.diagnostics, preparation_report=args.preparation_report, diagnostic_every=args.diagnostic_every), indent=2, allow_nan=False))
 

@@ -30,7 +30,10 @@ from Utils.Metrics import horizon_metrics, physical_metrics
 
 
 def compare(values, timestamps, settings, budget, *, recursive=False, include_random=False,
-            include_hybrid=False, search_directory=None, search_options=SearchOptions()):
+            include_hybrid=False, search_directory=None, search_options=SearchOptions(),
+            export_directory=None, provenance=None):
+    if export_directory is not None and not recursive:
+        raise ValueError("Winner export requires recursive rollout training")
     cutoffs = (calendar_cutoffs(timestamps, settings.train_fraction, settings.validation_fraction)
                if recursive else None)
     dataset = build_dataset(values, timestamps, settings.train_fraction,
@@ -43,7 +46,7 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
                                parameter_count_limit=search_options.max_parameters)
     fixed = Architecture(tuple(settings.hidden), (), ("relu",) * len(settings.hidden))
     selections = {"fixed": (fixed, [], None, 0.0, [])}
-    use_structured_search = search_directory is not None or search_options != SearchOptions() or include_hybrid
+    use_structured_search = search_directory is not None or search_options != SearchOptions() or include_hybrid or export_directory is not None
     if search_directory is not None:
         search_directory = Path(search_directory)
         search_directory.mkdir(exist_ok=True)
@@ -82,9 +85,27 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
         backend = create_backend(settings.device, settings.dtype, settings.seed)
         model = TemporalModel(backend, dropout=settings.dropout, **architecture.model_arguments())
         started = perf_counter()
+        if export_directory is not None:
+            from AIDiagnostics import publish_evolution
+            from train import _train_stable
+
+            directory = Path(export_directory) / name
+            directory.mkdir(parents=True, exist_ok=True)
+            run = _train_stable(directory / "model.json", settings, "adam", "huber", values, timestamps,
+                                dataset, model, backend, {**(provenance or {}), "search_method": name},
+                                directory / "resume.json" if settings.device == "cpu" else None,
+                                directory / "diagnostics", 1)
+            publish_evolution(directory / "diagnostics", generation_report)
+            reports[name] = {**run, **architecture.model_arguments(),
+                             "generations": generation_report, "search_seconds": search_seconds,
+                             "candidate_count": len(candidates),
+                             "selection_score": winner.score if winner is not None else None,
+                             "winning_bits": winner.genome.bits if winner is not None else None,
+                             "run_seconds": perf_counter() - started}
+            continue
         if recursive:
             result, inputs, diagnostics = fit_rollout(
-                model, dataset, *windows, backend, settings, RolloutOptions(),
+                model, dataset, *windows, backend, settings, RolloutOptions.for_horizon(settings.rollout_steps),
                 warmup_epochs=settings.epochs // 3,
             )
         else:
@@ -123,7 +144,7 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
             "final_fit_epochs": settings.epochs, "validation_loss": result.validation_loss,
         }
         if recursive:
-            engine = Rollout(model, inputs, dataset.target_scaler, backend, RolloutOptions())
+            engine = Rollout(model, inputs, dataset.target_scaler, backend, RolloutOptions.for_horizon(settings.rollout_steps))
             predictions = engine.predict(test.histories, settings.rollout_steps)
             single = engine.predict(one_step.histories, 1)
             report.update({
@@ -159,6 +180,9 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source")
+    parser.add_argument("--horizon", type=int, choices=range(1, 73), default=TrainingConfig().rollout_steps,
+                        metavar="1..72")
+    parser.add_argument("--preparation-report", type=Path)
     parser.add_argument("--epochs", type=int, default=TrainingConfig().epochs)
     parser.add_argument("--population", type=int, default=EvolutionConfig().population)
     parser.add_argument("--generations", type=int, default=EvolutionConfig().generations)
@@ -193,15 +217,20 @@ def main():
     parser.add_argument("--max-raw-invalid-fraction", type=float)
     parser.add_argument("--pareto-index", type=int, help="Retrain the indexed ranked Pareto member per method")
     parser.add_argument("--export-selected", type=Path,
-                        help="Save each retrained direct sequence winner as a forecast checkpoint")
+                        help="Save each retrained winner as a forecast checkpoint")
     parser.add_argument("--legacy", action="store_true")
     parser.add_argument("--synthetic", action="store_true", help="Label the input as synthetic in the report")
     args = parser.parse_args()
-    settings = replace(TrainingConfig(), epochs=args.epochs, seed=args.seed)
+    settings = replace(TrainingConfig(), epochs=args.epochs, seed=args.seed, rollout_steps=args.horizon)
     budget = EvolutionConfig(population=args.population, generations=args.generations,
                              candidate_epochs=args.candidate_epochs,
                              candidate_parameter_step_limit=args.candidate_parameter_step_limit)
     source_hash = sha256(Path(args.source).read_bytes()).hexdigest()
+    provenance = {"source_sha256": source_hash, "synthetic": args.synthetic}
+    if args.preparation_report is not None:
+        from Utils.Serialization import read_json
+
+        provenance = {**read_json(args.preparation_report)["provenance"], **provenance}
     series = read_hourly(args.source)
     options = SearchOptions(workers=args.workers, cache=args.cache_fitness,
                             extended=args.extended_space, adaptive_amplitude=args.adaptive_amplitude,
@@ -222,15 +251,16 @@ def main():
                                    policy=policy, pareto_index=args.pareto_index,
                                    candidate_devices=args.candidate_device, candidate_timeout=args.candidate_timeout,
                                    memory_budget_bytes=args.candidate_memory_bytes,
-                                   provenance={"source_sha256": source_hash, "synthetic": args.synthetic})
+                                   provenance=provenance)
     else:
         if args.candidate_device or args.candidate_memory_bytes is not None:
             parser.error("--candidate-device requires --sequence-space")
-        if args.export_selected is not None:
-            parser.error("Saved winner export currently requires --sequence-space")
+        if args.export_selected is not None and args.legacy:
+            parser.error("Saved winner export requires sequence search or recursive rollout")
         report = compare(*series, settings, budget, recursive=not args.legacy,
                          include_random=args.random_baseline, include_hybrid=args.hybrid_baseline,
-                         search_directory=args.search_directory, search_options=options)
+                         search_directory=args.search_directory, search_options=options,
+                         export_directory=args.export_selected, provenance=provenance)
     report["source_sha256"] = source_hash
     report["synthetic"] = args.synthetic
     print(json.dumps(report, allow_nan=False, indent=2))

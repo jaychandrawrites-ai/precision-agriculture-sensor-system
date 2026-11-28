@@ -31,12 +31,12 @@ class Forecaster:
     @property
     def maximum_forecast_hours(self):
         if self.blend is not None:
-            return len(self.blend.weights)
+            return min(len(self.blend.weights), *(member.maximum_forecast_hours for member in self.members))
         if self.quantile is not None:
-            return self.quantile.horizon
+            return min(72, self.quantile.horizon)
         if self.direct is not None:
-            return self.direct.model.horizon
-        return None
+            return min(72, self.direct.model.horizon)
+        return 72
 
     def time_requirements(self):
         return {"input_interval_minutes": 60, "consecutive_feature_hours": self.history_hours,
@@ -49,12 +49,13 @@ class Forecaster:
 
     def forecast_bundle(self, history, steps):
         """Return point predictions and optional [lead, feature, probability] quantiles."""
+        cap = min(72, self.maximum_forecast_hours)
+        if type(steps) is not int or not 1 <= steps <= cap:
+            label = "Blend" if self.blend is not None else "Selected checkpoint"
+            raise ValueError(f"{label} supports integer horizons from 1 through {cap} hours")
         if self.blend is not None:
             import numpy as np
 
-            cap = len(self.blend.weights)
-            if type(steps) is not int or not 1 <= steps <= cap:
-                raise ValueError(f"Blend supports 1–{cap} forecast hours")
             predictions = np.asarray([model.forecast(history[-model.history_hours:], steps)
                                       for model in self.members])
             return np.einsum("mlf,lfm->lf", predictions, self.blend.weights[:steps]), None
@@ -64,8 +65,6 @@ class Forecaster:
             trajectories = self.quantile.predict(history[None], steps)[0]
             return quantile_center(trajectories, self.quantile.levels), trajectories
         if self.direct is not None:
-            if type(steps) is not int or not 1 <= steps <= self.direct.model.horizon:
-                raise ValueError(f"Direct checkpoint supports 1–{self.direct.model.horizon} forecast hours")
             return self.direct.predict(history[None])[0, :steps], None
         return forecast(self.model, history, self.inputs, self.targets, self.backend, steps), None
 

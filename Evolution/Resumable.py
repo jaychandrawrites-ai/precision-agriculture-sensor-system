@@ -231,7 +231,12 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
             stale = 0 if improved else stale + 1
             generation_metrics = {
                 "generation": generation + 1, "best_selection_score": best.score,
-                "diversity": diversity(ranked), "actual_evaluations": len(actual),
+                "diversity": diversity(ranked),
+                "fitness": [item.score for item in ranked],
+                "parameter_counts": [item.parameters for item in ranked],
+                "candidate_training_seconds": [item.training_seconds for item in actual],
+                "retained_genotypes": (0 if len(history) == 1 else len(
+                    {item.genome.bits for item in history[-2]} & {item.genome.bits for item in ranked})), "actual_evaluations": len(actual),
                 "cache_hits": len(pool) - len(actual),
                 "actual_training_sample_steps": sum(item.model_sample_steps for item in actual),
                 "actual_parameter_sample_steps": sum(item.model_sample_steps * item.parameters

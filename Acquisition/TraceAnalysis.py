@@ -87,8 +87,8 @@ def survey_forecasts(store, survey_id, configuration, checkpoint=None, steps=Non
     """
     if not isinstance(configuration, dict):
         raise ValueError("A field configuration object is required")
-    if steps is not None and (checkpoint is None or type(steps) is not int or not 1 <= steps <= 168):
-        raise ValueError("Forecasting requires a saved checkpoint and 1–168 hourly steps")
+    if steps is not None and (checkpoint is None or type(steps) is not int or not 1 <= steps <= 72):
+        raise ValueError("Forecasting requires a saved checkpoint and 1–72 hourly steps")
     forecaster = load_forecaster(checkpoint) if checkpoint is not None else None
     members = (forecaster, *(load_forecaster(path) for path in ensemble)) if forecaster is not None else ()
     if steps is not None:

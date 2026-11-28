@@ -33,17 +33,17 @@ class RolloutTests(unittest.TestCase):
         input_scaler = Standardizer.from_state({
             "mean": np.r_[center, np.zeros(12)], "scale": [0.6] * 18, "epsilon": 1e-8,
         })
-        for output in ("state", "delta"):
+        for output, limit in (("state", None), ("delta", None), ("delta", 4.0)):
             model = TemporalModel(backend, (5,))
             # Force bound and proportional-cap activity without evaluating a kink.
             model.layers[-1].bias.value[2:] = [4, 0, 2, -3]
             engine = Rollout(model, input_scaler, output_scaler, backend,
-                             RolloutOptions(output), crop_coefficient=0.8)
+                             RolloutOptions(output, delta_limit=limit), crop_coefficient=0.8)
             projected, raw, _ = engine.predict(histories, 4, True)
             self.assertTrue((raw[:, :, 2] > 1).any())
             self.assertTrue((raw[:, :, 4] > projected[:, :, 4]).any())
             for autoregressive in (True, False):
-                with self.subTest(output=output, autoregressive=autoregressive):
+                with self.subTest(output=output, limit=limit, autoregressive=autoregressive):
                     model.zero_grad()
                     engine.objective(histories, targets, autoregressive=autoregressive, training=False)
                     for param in model.parameters():

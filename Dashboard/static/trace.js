@@ -352,10 +352,11 @@ el("trace-models").addEventListener("change", async event => {
     if (event.target.value !== model || trace.id !== survey) return;
     steps.max = Math.min(72, record.checkpoint_maximum_forecast_hours ?? 72);
     if (Number(steps.value) > Number(steps.max)) steps.value = steps.max;
+    const evaluated = record.validated_horizon_hours;
     status.textContent = record.consecutive_feature_hours + " consecutive hourly feature rows. " +
-      record.short_visit_requirement + ". " + (record.checkpoint_maximum_forecast_hours ?
-        "Checkpoint cap: " + record.checkpoint_maximum_forecast_hours + " hours." :
-        "Recursive checkpoint. Forecast range in this form is a software limit.");
+      record.short_visit_requirement + ". Forecast limit: " + steps.max + " hours. " +
+      (evaluated ? "Historically evaluated through hour " + evaluated + "." :
+        "Historical evaluation horizon is unavailable.");
   } catch (error) {
     status.textContent = error.message;
   }

@@ -60,3 +60,59 @@ For persistent CLI training and dashboard registration see
 [AI_VALIDATION.md](AI_VALIDATION.md). AI Trace displays the selected
 checkpoint's hourly context and horizon constraints. Use a new run directory
 when changing total epochs or layer sampling frequency.
+
+## Recursive evolutionary training on Windows
+
+From the repository root, using a fresh local output directory for each
+recipe and retaining the previous configuration for exact resume:
+
+```powershell
+git switch jupiter-clean-development
+git pull --ff-only origin jupiter-clean-development
+py -3.12 -m venv .venv
+$python = ".\.venv\Scripts\python.exe"
+& $python -m pip install -r requirements.txt
+& $python azmet.py prepare supplied-az43.csv Examples/azmet/yuma-valley-az43.json az43-prepared
+$env:OPENBLAS_NUM_THREADS = "1"
+New-Item -ItemType Directory -Force training/evolution-smoke
+& $python experiments.py az43-prepared/hourly.csv --preparation-report az43-prepared/report.json --population 2 --generations 2 --candidate-epochs 1 --epochs 2 --horizon 6 --max-parameters 2200 --random-baseline --hybrid-baseline --adaptive-amplitude --search-directory training/evolution-smoke/search --export-selected training/evolution-smoke/models > training/evolution-smoke/report.json
+& $python -m Dashboard.Server --workspace "$env:LOCALAPPDATA\Jupiter" --import-training-run training/evolution-smoke/models/quantum_inspired
+```
+
+Open http://127.0.0.1:8765/diagnostics to inspect the imported run and
+http://127.0.0.1:8765/trace to select the saved forecast model. Use
+independently measured calibration and compatible adjacent context before
+running a field forecast. Native Windows execution remains to be verified.
+
+For research, measure the smoke run first. A starting recipe is population
+4, generations 4, candidate epochs 3, final epochs 12 and horizon 72.
+Repeat with predeclared seeds (for example 42, 43 and 44) and separate
+output folders. Use eligible historical data only, and retain an untouched
+evaluation archive before choosing a recipe. Candidate budget equality
+uses the same population, generations and epoch quota. Architectures can
+consume different parameter-sample work, so use the measured work for
+interpretation and configure `--candidate-parameter-step-limit` if
+an explicit ceiling is required. Fixed architecture training uses no
+search trials. Repeat an identical command to restore completed search
+generations and CPU training epoch state.
+
+This PowerShell loop runs the research recipe with independent output
+directories. Adjust the budget after timing a local smoke run.
+
+```powershell
+foreach ($seed in 42,43,44) {
+    $run = "training/evolution-72-$seed"
+    New-Item -ItemType Directory -Force $run
+    & $python experiments.py az43-prepared/hourly.csv --preparation-report az43-prepared/report.json --seed $seed --population 4 --generations 4 --candidate-epochs 3 --epochs 12 --horizon 72 --max-parameters 2200 --random-baseline --hybrid-baseline --adaptive-amplitude --search-directory "$run/search" --export-selected "$run/models" > "$run/report.json"
+    if ($LASTEXITCODE -ne 0) { throw "Training failed for seed $seed" }
+}
+```
+
+To reproduce the historical 72-hour development sweep, use the smoke
+configuration in a fresh directory with `--horizon 72`. To verify a
+saved winner and generate a cross-method plot:
+
+```powershell
+& $python forecast.py az43-prepared/hourly.csv training/evolution-72/models/quantum_inspired/model.json --steps 72 > training/evolution-72/forecast.csv
+& $python research_figures.py evolution-forecast training/evolution-72/report.json training/evolution-72/temperature.png
+```

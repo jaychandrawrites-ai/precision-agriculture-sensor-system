@@ -12,6 +12,7 @@ class RolloutOptions:
     output: str = "delta"
     smoothing: float = 0.65
     acceleration_limit: float | None = 2.0
+    delta_limit: float | None = None
 
     def __post_init__(self):
         if self.output not in ("state", "delta") or not 0 <= self.smoothing <= 1:
@@ -20,6 +21,15 @@ class RolloutOptions:
             not math.isfinite(self.acceleration_limit) or self.acceleration_limit <= 0
         ):
             raise ValueError("Acceleration limit must be finite and positive")
+
+        if self.delta_limit is not None and (self.output != "delta"
+                or not math.isfinite(self.delta_limit) or self.delta_limit <= 0):
+            raise ValueError("Delta limit requires delta output and a finite positive bound")
+
+    @classmethod
+    def for_horizon(cls, hours):
+        # Keep short-horizon training unchanged and bound long unrolled increments.
+        return cls(delta_limit=1.0) if hours > 24 else cls()
 
 
 class Rollout:
@@ -58,6 +68,13 @@ class Rollout:
         xp = self.backend.xp
         inputs, derivative = self.normalized_inputs(history)
         output, cache = self.model.forward(inputs, training=training)
+        output_derivative = 1.0
+        if self.options.delta_limit is not None:
+            self.backend.require_finite(output, "unbounded rollout output")
+            limit = self.options.delta_limit
+            bounded = xp.tanh(output / limit)
+            output_derivative = 1 - bounded**2
+            output = limit * bounded
         if self.options.output == "delta":
             raw = history[:, -1] + output * self.scale
         else:
@@ -69,7 +86,7 @@ class Rollout:
             cap = self.crop * projected[:, 3]
             eta_limited = projected[:, 4] > cap
             projected[:, 4] = xp.minimum(projected[:, 4], cap)
-        return projected, raw, (cache, derivative, eta_limited), inputs
+        return projected, raw, (cache, derivative, eta_limited, output_derivative), inputs
 
     def predict(self, histories, steps, return_diagnostics=False):
         with self.backend.scope():
@@ -130,7 +147,7 @@ class Rollout:
 
             if backward:
                 carry = xp.zeros_like(rolling)
-                for raw, (cache, derivative, eta_limited), direct in reversed(tape):
+                for raw, (cache, derivative, eta_limited, output_derivative), direct in reversed(tape):
                     # Reverse the three-state shift and the optional ETa coupling.
                     feedback_grad = carry[:, 2].copy() if autoregressive else xp.zeros_like(raw)
                     if eta_limited is not None:
@@ -138,7 +155,7 @@ class Rollout:
                         feedback_grad[:, 4] *= ~eta_limited
                     interior = (raw > self.lower) & (raw < self.upper)
                     raw_grad = direct + feedback_grad * interior
-                    input_grad = self.model.backward(raw_grad * self.scale, cache)
+                    input_grad = self.model.backward(raw_grad * self.scale * output_derivative, cache)
                     if derivative is not None:
                         input_grad[:, 12:] *= derivative
                     input_grad = (input_grad / self.input_scale).reshape(-1, 3, 6)

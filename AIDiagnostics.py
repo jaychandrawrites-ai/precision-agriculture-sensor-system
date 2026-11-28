@@ -85,3 +85,52 @@ def publish(directory, report, observed, predicted, persistence, seasonal, param
                 axes[2].hist(summary["sample"], bins=20, histtype="step", label=name)
             axes[2].set(xlabel="Activation", ylabel="Sample count")
         export("internal", internal, 1, 3)
+
+
+def publish_evolution(directory, generations):
+    """Render per-generation measurements from a recorded validation search."""
+    if not generations:
+        return
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    directory = Path(directory)
+    write_json(directory / "evolution.json", generations)
+    steps = [item["generation"] for item in generations]
+    fig, axes = plt.subplots(2, 3, figsize=(13, 7), layout="constrained")
+    fitness = [item.get("fitness") for item in generations]
+    try:
+        if all(fitness):
+            axes[0, 0].boxplot(fitness, positions=steps)
+            for summarize, label in ((np.mean, "Mean"), (np.median, "Median")):
+                axes[0, 0].plot(steps, [summarize(row) for row in fitness], label=label)
+        axes[0, 0].plot(steps, [item["best_selection_score"] for item in generations], label="Best so far")
+        axes[0, 0].legend()
+        axes[0, 0].set_ylabel("Validation fitness (lower is better)")
+        for axis, key, label in (
+            (axes[0, 1], "parameter_counts", "Parameters"),
+            (axes[0, 2], "candidate_training_seconds", "Candidate training seconds"),
+            (axes[1, 2], "mean_population_bit_probabilities", "Probability of bit 1"),
+        ):
+            samples = [(step, [value for value in item.get(key, ()) if value is not None])
+                       for step, item in zip(steps, generations)]
+            measured = [(step, values) for step, values in samples if values]
+            if measured:
+                positions, rows = zip(*measured)
+                axis.boxplot(rows, positions=positions)
+            axis.set_ylabel(label)
+        axes[1, 0].plot(steps, [item["diversity"] for item in generations], label="Hamming diversity")
+        for key, label in (("breeding_mutation_probability", "Mutation probability"),
+                           ("mean_individual_bit_entropy", "Amplitude entropy")):
+            points = [(item["generation"], item[key]) for item in generations if key in item]
+            if points:
+                axes[1, 0].plot(*zip(*points), marker=".", label=label)
+        axes[1, 0].legend()
+        axes[1, 1].plot(steps, [item.get("retained_genotypes", np.nan) for item in generations])
+        axes[1, 1].set_ylabel("Distinct genotypes retained from prior generation")
+        for axis in axes.flat:
+            axis.set_xlabel("Generation")
+        fig.savefig(directory / "evolution.png", dpi=150)
+    finally:
+        plt.close(fig)

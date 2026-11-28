@@ -132,3 +132,83 @@ the ET solar offset and compatible adjacent hourly feature context.
 Use manufacturer procedures or an approved lab protocol for calibration.
 The five field records remain inference-only. An AZMET weather series
 cannot provide measured soil moisture or leaf calibration for those visits.
+
+## Hourly forecast contract and evolutionary deployment
+
+Forecast requests are integers from 1 through 72, with exactly one hour
+per step and six physical features. A shorter fixed-output checkpoint
+advertises its cap. Recursive checkpoints separately report the maximum
+evaluated horizon when known. A legacy recursive model remains callable
+through 72, but its historical evaluation may cover only shorter leads.
+One-hour field visits can supply an eligible hourly anchor. The derivative
+model also needs two preceding consecutive state rows and the independently
+configured reference ET history. Native sub-hour forecasting is outside
+this specification.
+
+Recursive search can save its final refits directly in dashboard training
+run format, with checkpoint, prediction arrays, loss and internal layer
+plots, generation plots and numerical statistics. See [HANDOVER.md](HANDOVER.md)
+for commands and [MATHEMATICS.md](MATHEMATICS.md) for the algorithm.
+
+The 72-hour seasonal comparison used the previously examined az43 archive,
+with July 1 and October 1, 2025 and February 1, 2026 UTC boundaries and two
+epochs each for seeds 42 and 43. Six-hour temperature RMSE (°C) was 7.559
+for persistence, 2.651 for daily persistence, 3.901 for harmonic regression,
+4.737 for direct AI, 3.573 for daily-residual AI and 2.651 for the validation
+blend. At hour 72 the corresponding errors were 3.856, 3.856, 3.894, 4.200,
+4.170 and 3.854. The small blend difference does not establish skill. The
+study exports every feature and hourly lead in a metrics CSV.
+
+The initial unbounded recursive search failed on az43 with a nonfinite raw
+rollout state. The long-horizon increment bound addresses runaway proposed
+states, and the Huber calculation now squares only the bounded quadratic
+region. Independent calibrated field predictions and native Windows and
+CUDA validation remain pending. No field CSV supplied training or
+selection data.
+
+### Recursive evolution on the 72-hour AZMET development split
+
+All five refits used two CPU epochs, seed 42, and 21,726 training, 4,605
+validation, and 4,606 final evaluation origins. Search used two candidates
+per generation for two generations and one training epoch per candidate,
+with a 2,200-parameter candidate ceiling and no caching. Every searched
+method executed 6,257,088 model sample-steps. Parameter-weighted work
+varied from 10.9 to 13.0 billion steps. Fixed architecture training
+performed no candidate evaluations. The boundaries were 2025-10-27
+15:00 UTC and 2026-05-10 11:00 UTC. This split differs from the seasonal
+study above and overlaps previously examined historical observations.
+
+| Method | Parameters | Validation selection score | Hour 1 RMSE °C | Hour 6 | Hour 24 | Hour 72 |
+|---|---:|---:|---:|---:|---:|---:|
+| Persistence | | | 1.574 | 7.106 | 2.346 | 3.453 |
+| Daily persistence | | | 2.317 | 2.333 | 2.346 | 3.453 |
+| Fixed recursive AI | 3,494 | | 7.385 | 49.555 | 90.439 | 90.300 |
+| Random search | 806 | 7.7264 | 7.205 | 28.966 | 45.078 | 35.815 |
+| Classical GA | 2,086 | 6.5016 | 8.456 | 50.778 | 90.387 | 90.300 |
+| QIGA | 1,350 | 2.0294 | 6.716 | 20.990 | 47.833 | 80.521 |
+| Hybrid | 1,782 | 6.1963 | 6.554 | 26.014 | 44.816 | 50.816 |
+
+The QIGA best validation fitness improved from 6.5016 to 2.0294,
+but the resulting forecast performed poorly in physical temperature
+units. Daily persistence strongly outperformed all recursive refits
+at the long leads. The numerical bound enabled a finite run. It did
+not establish forecast accuracy, and the short refits do not identify
+whether longer training can recover useful skill. This is one seed and
+is insufficient for ranking search algorithms.
+
+The recursive report contains all six features at all 72 leads and
+baseline skill, candidate training time, and test-batch inference time.
+The QIGA checkpoint SHA-256 was
+`04b1bc83c738b3c6d77f3967b55875889f40967e33b9b3ee06ce42218ac55e23`.
+The checkpoint produced 72 finite hourly rows in the CLI. Its imported
+evolution and neural diagnostics rendered in Chromium.
+
+### Acceptance status
+
+| Requirement | Evidence and remaining work |
+|---|---|
+| 1–72-hour software contract | Integer API and loader limits verified. The elected QIGA checkpoint produced six values per lead. |
+| Numerical and evolutionary checks | Finite-difference rollout tests cover the bounded output Jacobian. Fixed-seed frequency tests check amplitude sampling, rotation direction, and normalization. Generation and CPU recovery tests are in the regression suite. |
+| Local training workflow | The Linux CLI exported, loaded, forecast from, and registered the winning architecture. PowerShell recipes are in the handover. Native Windows and physical CUDA remain unverified. |
+| Independent scientific validation | 72-hour development evaluation completed. Forecast skill and generalization require a fresh chronological archive and a multi-seed study. |
+| Real-field use | Independent leaf voltage endpoints, soil moisture reference calibration, a declared solar offset, and compatible hourly context remain required. Hardware acceptance remains open. |

@@ -1,5 +1,6 @@
 """Validation-only candidate training under the same epoch and seed budgets."""
 from dataclasses import dataclass, replace
+from time import perf_counter
 
 from Evolution.Genome import WIDTHS
 from Framework.Backend import create_backend
@@ -58,14 +59,16 @@ def validation_fitness(dataset, training, evolution, *, rollout_windows_pair=Non
         if cap is not None:
             epochs = min(epochs, cap // (count * samples_per_epoch))
         settings = replace(training, epochs=epochs)
+        started = perf_counter()
         if rollout_windows_pair is None:
             result = fit(model, dataset, backend, settings)
         else:
             result, _, _ = fit_rollout(model, dataset, train_windows, val_windows, backend,
-                                       settings, RolloutOptions(),
+                                       settings, RolloutOptions.for_horizon(settings.rollout_steps),
                                        warmup_epochs=settings.epochs // 3)
         adjusted = result.validation_loss + evolution.complexity_penalty * count / 1000
-        return Candidate(genome, adjusted, result.validation_loss, count, epochs * samples_per_epoch, epochs)
+        return Candidate(genome, adjusted, result.validation_loss, count, epochs * samples_per_epoch, epochs,
+                         training_seconds=perf_counter() - started)
 
     return score
 
