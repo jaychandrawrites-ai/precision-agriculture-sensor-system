@@ -21,6 +21,10 @@ def _metadata(status):
         location["manual_coordinates_available"] = location.get("latitude_deg") is not None
         location.pop("latitude_deg", None)
         location.pop("longitude_deg", None)
+        for segment in location.get("segments", ()):
+            gps = segment.get("calibration", {}).get("csv_quality", {}).get("gps")
+            if gps is not None:
+                gps["stationary_cluster_verified"] = gps.pop("location", None) is not None
     return status
 
 

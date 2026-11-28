@@ -1066,3 +1066,31 @@ Chromium exercised the new circular diffusion forecast at desktop and
 phone widths, including the no-flux diagnostic and switching back to
 ensemble uncertainty. The same forecast used the existing saved checkpoint
 loader. Main's CI trigger now includes direct pushes.
+
+### 2026-11-27 — Field data isolation and import readiness
+
+Field survey CSV imports remain in the separate AI Trace survey store.
+Imports can declare an IANA timezone and a fixed location label, preserve
+duplicate rounded observations, and report overlapping visits, maximum
+gaps, source hashes and stationary GPS cluster quality. The diagnostics
+identify the import as inference-only. Coordinates remain in the local
+survey archive and are omitted from routine status polling.
+
+Native live recording requires recent complete packets and a stable GPS
+cluster. The gate is checked on the server and reflected in the browser.
+Cluster stability is distinct from satellite fix quality. The irregular
+derivative utility computes rates per hour and leaves duplicates and
+extended gaps unavailable. Existing hourly checkpoints still require
+their original hourly context.
+
+The five-location field ZIP named in the brief was unavailable. No real
+field data were processed or fitted. Tests used only synthetic fixtures.
+Parallel multi-receiver operation and multiresolution training remain open.
+
+Windows PowerShell:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m Dashboard.Server --workspace "$env:TEMP\jupiter-dashboard"
+```

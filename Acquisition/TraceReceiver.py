@@ -1,5 +1,7 @@
 """AI Trace receiver lifecycle, independent of location recording."""
+from collections import deque
 from datetime import datetime, timezone
+import math
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event, RLock, Thread
@@ -8,6 +10,7 @@ from Acquisition.AquaMap import AquaMapParser, NATIVE
 from Acquisition.MappedPackets import GPS_FIELDS, MappedPacketParser, PacketSchema
 from Acquisition.PacketParser import PacketParser
 from Acquisition.TraceDiagnostics import TraceDiagnostics, calibration_readout, units_for
+from Acquisition.StationaryGPS import stationary_location
 from Acquisition.TraceImport import replay_segment, store_record
 
 
@@ -27,11 +30,17 @@ def _recoverable(error):
 class TraceReceiver:
     """Monitor a serial stream while independently starting and stopping recordings."""
 
-    def __init__(self, store, ports=(), connector=None, retry_seconds=1.):
+    def __init__(self, store, ports=(), connector=None, retry_seconds=1., native_fresh_seconds=90., native_gps_samples=5):
         self.store = store
         self.ports = frozenset(ports)
         self.connector = connector or _serial_connection
         self.retry_seconds = retry_seconds
+        if not math.isfinite(native_fresh_seconds) or native_fresh_seconds <= 0 or (
+                type(native_gps_samples) is not int or not 2 <= native_gps_samples <= 100):
+            raise ValueError("Invalid native receiver readiness thresholds")
+        self._fresh_seconds = native_fresh_seconds
+        self._gps_samples = native_gps_samples
+        self._native_samples = deque(maxlen=100)
         self._lock = RLock()
         self._worker = None
         self._stop = None
@@ -88,6 +97,7 @@ class TraceReceiver:
                     with self._lock:
                         if stop.is_set():
                             break
+                        self._native_samples.clear()
                         self._state, self._error = "connected", None
                     while not stop.is_set():
                         with self._lock:
@@ -125,6 +135,12 @@ class TraceReceiver:
                 raise ValueError("Stop the current location before starting another")
             if self._state in ("reconnecting", "connecting", "failed"):
                 raise ValueError("Wait for the receiver to connect or disconnect it before replaying")
+            if self._schema is NATIVE:
+                ready = self._native_readiness()
+                if not ready["ready"]:
+                    raise ValueError("Wait for fresh complete AquaMap packets and a stable GPS location")
+                if location_id is None and coordinates is None:
+                    coordinates = ready["gps"]["location"]
             result = self.store.start(survey_id, label=label, location_id=location_id,
                                       coordinates=coordinates, **metadata)
             self._pending.clear()
@@ -190,6 +206,12 @@ class TraceReceiver:
     def _readout(self, parsed, received_at):
         self._monitor.reading(parsed, received_at)
         measurements = parsed["measurements"]
+        if self._schema is NATIVE:
+            if "device_restart" in parsed["flags"]:
+                self._native_samples.clear()
+            if set(NATIVE.fields) <= measurements.keys() and "duplicate_packet" not in parsed["flags"]:
+                self._native_samples.append((received_at, parsed["device_id"],
+                                             tuple(measurements[key] for key in ("latitude_deg", "longitude_deg"))))
         self._latest = {
             "received_at": received_at.isoformat(),
             "observed_at": parsed["observed_at"],
@@ -234,12 +256,27 @@ class TraceReceiver:
             self._schema, self._parser, self._latest = None, None, None
             return self.diagnostics(survey_id)
 
+    def _native_readiness(self):
+        now = datetime.now(timezone.utc)
+        node = self._native_samples[-1][1] if self._native_samples else None
+        # Observe a longer window for the stationary cluster, but require a fresh last packet.
+        fresh = bool(self._native_samples and
+                     0 <= (now - self._native_samples[-1][0]).total_seconds() <= self._fresh_seconds)
+        points = [point for stamp, device, point in self._native_samples
+                  if device == node and 0 <= (now-stamp).total_seconds() <= self._fresh_seconds * self._gps_samples]
+        gps = stationary_location(points, minimum_samples=self._gps_samples)
+        return {"ready": self._state == "connected" and fresh and gps["location"] is not None,
+                "fresh_complete_packet": fresh, "gps": gps}
+
     def diagnostics(self, survey_id=None):
         with self._lock:
             if survey_id is not None and self._survey != survey_id:
                 return {"state": "disconnected", "bytes_received": 0, "packets_received": 0,
                         "latest": None, "error": None}
-            return {"state": self._state, "port": self._port, "baud": self._baud,
+            verification = self._native_readiness() if self._schema is NATIVE else None
+            if verification is not None:
+                verification["gps"]["stationary_cluster_verified"] = verification["gps"].pop("location") is not None
+            return {"native_readiness": verification, "state": self._state, "port": self._port, "baud": self._baud,
                     "bytes_received": self._bytes, "packets_received": self._packets,
                     "recording": self._recording, "pending_frame_bytes": len(self._pending),
                     "last_receipt": self._last_receipt.isoformat() if self._last_receipt else None,

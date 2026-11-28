@@ -92,7 +92,7 @@ function render() {
   const open = Boolean(trace.survey);
   const receiver = trace.receiver || {state: "disconnected", bytes_received: 0, packets_received: 0};
   const latest = receiver.latest;
-  const connected = ["connected", "connecting", "reconnecting"].includes(receiver.state);
+  const connected = ["connected", "connecting", "reconnecting"].includes(receiver.state) || receiver.native_readiness?.ready === false;
   const blockStart = ["connecting", "reconnecting", "failed"].includes(receiver.state);
   const entries = [["Status", receiver.state], ["Port", receiver.port || "Not connected"],
     ["Baud rate", receiver.baud ?? "—"], ["Received bytes", receiver.bytes_received],
@@ -101,6 +101,8 @@ function render() {
     ["Duplicate packets", receiver.duplicate_packets ?? 0],
     ["GPS", latest?.gps_validity?.replace("_", " ") || "Not reported"],
     ["Valid GPS fixes", receiver.valid_gps_fixes ?? 0], ["Invalid GPS reports", receiver.invalid_gps_reports ?? 0],
+    ["Native readiness", receiver.native_readiness ? (receiver.native_readiness.ready ? "Verified" : "Waiting for fresh sensors and stable GPS") : "—"],
+    ["Stationary GPS samples", receiver.native_readiness?.gps.valid_samples ?? "—"],
     ["Device restarts", receiver.restart_count ?? 0],
     ["Last frame received", receiver.last_receipt ? shortTime(receiver.last_receipt) : "—"],
     ["Latest measurement time", latest?.observed_at ? shortTime(latest.observed_at) : "Not supplied"],

@@ -6,6 +6,10 @@ from io import StringIO
 from itertools import chain
 import csv
 from uuid import uuid4
+from zoneinfo import ZoneInfo
+from collections import Counter
+
+from Acquisition.StationaryGPS import stationary_location
 
 from Acquisition.AquaMap import AquaMapParser
 from Acquisition.AITrace import _json, _label, _time
@@ -14,20 +18,38 @@ from Acquisition.MappedPackets import MappedPacketParser, PacketSchema
 from Acquisition.PacketParser import PacketParser
 
 
+
+def _csv_time(value, timezone):
+    stamp = datetime.fromisoformat(value)
+    if stamp.tzinfo is None:
+        if timezone is None:
+            raise ValueError("Naive CSV timestamps require an explicit timezone")
+        # Reject ambiguous folds and nonexistent wall clocks.
+        first = stamp.replace(tzinfo=timezone)
+        second = stamp.replace(tzinfo=timezone, fold=1)
+        if first.utcoffset() != second.utcoffset():
+            raise ValueError("Ambiguous or nonexistent local timestamp. Supply an explicit offset.")
+        stamp = first
+    return _time(stamp.isoformat())
+
 def import_csv(store, payload, label, mapping):
     """Import separate segments using named columns and the verified packet unit registry."""
     text = payload.decode("utf-8-sig") if isinstance(payload, bytes) else payload
     rows = csv.DictReader(StringIO(text))
     if not rows.fieldnames or len(rows.fieldnames) != len(set(rows.fieldnames)):
         raise ValueError("CSV headers must be present and unique")
-    location_col = mapping["location"]
-    segment_col = mapping["segment"]
+    location_col = mapping.get("location")
+    segment_col = mapping.get("segment")
+    if not location_col and not mapping.get("location_label"):
+        raise ValueError("Supply a location column or a location label")
+    zone = ZoneInfo(mapping["timezone"]) if mapping.get("timezone") else None
     time_col = mapping.get("received_at")
     observed_col = mapping.get("observed_at")
     if not time_col and not observed_col:
         raise ValueError("Map an explicit receipt or observation time column")
     fields = mapping["fields"]
-    expected = {location_col, segment_col, *(spec["column"] for spec in fields.values())}
+    expected = {spec["column"] for spec in fields.values()}
+    expected.update(col for col in (location_col, segment_col) if col)
     expected.update(col for col in (time_col, observed_col, mapping.get("device_id")) if col)
     if not expected <= set(rows.fieldnames):
         raise ValueError("Manual mapping refers to columns absent from the CSV")
@@ -42,7 +64,8 @@ def import_csv(store, payload, label, mapping):
     for index, row in enumerate(rows, 2):
         if None in row or any(value is None for value in row.values()):
             raise ValueError(f"Ragged CSV at row {index}")
-        place, split = _label(row[location_col]), _label(row[segment_col])
+        place = _label(row[location_col] if location_col else mapping["location_label"])
+        split = _label(row[segment_col] if segment_col else "CSV visit")
         if place not in locations:
             locations[place] = {"id": uuid4().hex, "label": place, "latitude_deg": None,
                                 "longitude_deg": None, "coordinate_source": "unavailable", "segments": []}
@@ -53,11 +76,11 @@ def import_csv(store, payload, label, mapping):
             segments[place, split] = segment
             locations[place]["segments"].append(segment)
         segment = segments[place, split]
-        received = _time(row[time_col]) if time_col else stamp
+        received = _csv_time(row[time_col], zone) if time_col else stamp
         packet = {name: row[spec["column"]] or None for name, spec in fields.items()}
         parsed = asdict(parser.feed(_json(packet), datetime.fromisoformat(received)))
         parsed["received_at"] = received
-        parsed["observed_at"] = _time(row[observed_col]) if observed_col and row[observed_col] else None
+        parsed["observed_at"] = _csv_time(row[observed_col], zone) if observed_col and row[observed_col] else None
         if mapping.get("device_id"):
             parsed["device_id"] = row[mapping["device_id"]] or None
         parsed["flags"] = [*parsed["flags"], "manual_csv", *([] if time_col else ["receipt_is_import_time"])]
@@ -66,6 +89,30 @@ def import_csv(store, payload, label, mapping):
         segment["records"].append({"received_at": received, "raw_b64": None, "reading": parsed})
     if not locations:
         raise ValueError("CSV contains no data rows")
+    reports = []
+    for location in locations.values():
+        for segment in location["segments"]:
+            records = [item["reading"] for item in segment["records"]]
+            clock = "observed_at" if observed_col else "received_at"
+            counts = Counter(item[clock] for item in records if item[clock] is not None)
+            ordered = sorted(map(datetime.fromisoformat, counts))
+            gaps = [(b-a).total_seconds() for a, b in zip(ordered, ordered[1:])]
+            points = [(item["measurements"].get("latitude_deg"), item["measurements"].get("longitude_deg"))
+                      for item in records]
+            gps = stationary_location(points, **mapping.get("gps", {}))
+            for item in records:
+                if counts.get(item[clock], 0) > 1:
+                    item["flags"].append("duplicate_csv_timestamp")
+            diagnostics = {"records": len(records), "duplicate_timestamp_rows": sum(n for n in counts.values() if n > 1),
+                           "max_gap_seconds": max(gaps, default=0), "gps": gps,
+                           "source_sha256": sha256(payload if isinstance(payload, bytes) else payload.encode()).hexdigest(),
+                           "data_use": "inference_only"}
+            segment["calibration"]["csv_quality"] = diagnostics
+            if ordered:
+                reports.append((ordered[0], ordered[-1], diagnostics))
+    for i, (start, end, quality) in enumerate(reports):
+        quality["overlapping_visits"] = sum(other_start <= end and start <= other_end
+                                             for j, (other_start, other_end, _) in enumerate(reports) if i != j)
     archive["survey"]["locations"] = list(locations.values())
     archive["sha256"] = sha256(_json(archive).encode()).hexdigest()
     return store.restore(archive)
