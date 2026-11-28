@@ -1,0 +1,193 @@
+[
+  {
+    "generation": 1,
+    "best_selection_score": 1.0016275539230346,
+    "diversity": 0.5,
+    "fitness": [
+      1.0016275539230346,
+      1.1628716195388793
+    ],
+    "parameter_counts": [
+      17774,
+      18846
+    ],
+    "candidate_training_seconds": [
+      1.165411165000478,
+      1.416376092000064
+    ],
+    "candidate_details": [
+      {
+        "periods": [
+          72,
+          36,
+          24
+        ],
+        "damped": true,
+        "components": {
+          "value": 0.700702965259552,
+          "level": 0.2254459708929062,
+          "shape": 0.4752569794654846,
+          "curvature": 0.08351632952690125,
+          "spectral": 0.07791726291179657,
+          "derivative": 0.07120747864246368,
+          "physical": 0.04099605605006218,
+          "regularization": 0.001990821911022067,
+          "residual": 0.034731559455394745
+        },
+        "events": 0
+      },
+      {
+        "periods": [
+          72,
+          36,
+          24,
+          18,
+          12
+        ],
+        "damped": true,
+        "components": {
+          "value": 0.8241465091705322,
+          "level": 0.3070928156375885,
+          "shape": 0.5170537233352661,
+          "curvature": 0.08840911835432053,
+          "spectral": 0.08694279938936234,
+          "derivative": 0.08048684895038605,
+          "physical": 0.03553129360079765,
+          "regularization": 0.0012919738655909896,
+          "residual": 0.09322447329759598
+        },
+        "events": 0
+      }
+    ],
+    "retained_genotypes": 0,
+    "actual_evaluations": 2,
+    "cache_hits": 0,
+    "actual_training_sample_steps": 130356,
+    "actual_parameter_sample_steps": 2386818360,
+    "repaired_candidates": 0,
+    "mean_individual_bit_entropy": 0.9981996368149911,
+    "mean_population_bit_entropy": 0.9991009436323731,
+    "mean_population_bit_probabilities": [
+      0.4999999999999999,
+      0.4999999999999999,
+      0.4999999999999999,
+      0.4999999999999999,
+      0.524958354161707,
+      0.4750416458382929,
+      0.4750416458382929,
+      0.4750416458382929,
+      0.4999999999999999,
+      0.524958354161707,
+      0.524958354161707,
+      0.4999999999999999,
+      0.4750416458382929,
+      0.4750416458382929,
+      0.4999999999999999,
+      0.4999999999999999,
+      0.4750416458382929,
+      0.4999999999999999,
+      0.4750416458382929,
+      0.4999999999999999
+    ],
+    "mean_rotation_radians": 0.037500000000000006,
+    "relaxed_individuals": 0,
+    "amplitude_samples": 2,
+    "classical_offspring": 0
+  },
+  {
+    "generation": 2,
+    "best_selection_score": 1.0016275539230346,
+    "diversity": 0.25,
+    "fitness": [
+      1.082387457131958,
+      1.138283059388733
+    ],
+    "parameter_counts": [
+      18046,
+      19366
+    ],
+    "candidate_training_seconds": [
+      1.0644994810008939,
+      1.2151061879994813
+    ],
+    "candidate_details": [
+      {
+        "periods": [
+          72,
+          36,
+          24
+        ],
+        "damped": true,
+        "components": {
+          "value": 0.7579290866851807,
+          "level": 0.26166707277297974,
+          "shape": 0.49626198410987854,
+          "curvature": 0.0992114245891571,
+          "spectral": 0.09012848883867264,
+          "derivative": 0.07849780470132828,
+          "physical": 0.047555409371852875,
+          "regularization": 0.0017234858823940158,
+          "residual": 0.06464643031358719
+        },
+        "events": 0
+      },
+      {
+        "periods": [
+          72,
+          36,
+          24,
+          18,
+          12
+        ],
+        "damped": true,
+        "components": {
+          "value": 0.7780239582061768,
+          "level": 0.21278494596481323,
+          "shape": 0.5652390122413635,
+          "curvature": 0.09786854684352875,
+          "spectral": 0.08646700531244278,
+          "derivative": 0.08988539129495621,
+          "physical": 0.06193878874182701,
+          "regularization": 0.0043792747892439365,
+          "residual": 0.03641745075583458
+        },
+        "events": 0
+      }
+    ],
+    "retained_genotypes": 0,
+    "actual_evaluations": 2,
+    "cache_hits": 0,
+    "actual_training_sample_steps": 130356,
+    "actual_parameter_sample_steps": 2438439336,
+    "repaired_candidates": 0,
+    "mean_individual_bit_entropy": 0.9978841787704422,
+    "mean_population_bit_entropy": 0.9985827410791455,
+    "mean_population_bit_probabilities": [
+      0.4999999999999999,
+      0.5124947923176695,
+      0.4875052076823303,
+      0.4999999999999999,
+      0.5374531464793766,
+      0.4625468535206233,
+      0.4625468535206233,
+      0.4750416458382929,
+      0.4999999999999999,
+      0.524958354161707,
+      0.524958354161707,
+      0.4999999999999999,
+      0.4750416458382929,
+      0.4750416458382929,
+      0.5124947923176695,
+      0.4999999999999999,
+      0.4750416458382929,
+      0.4999999999999999,
+      0.4625468535206233,
+      0.4999999999999999
+    ],
+    "mean_rotation_radians": 0.025,
+    "relaxed_individuals": 0,
+    "amplitude_samples": 1,
+    "classical_offspring": 1,
+    "breeding_mutation_probability": 0.2
+  }
+]

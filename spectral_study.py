@@ -153,7 +153,8 @@ def run(args):
                 "width": model.residual.hidden[0], "parameters": model.residual.state_dict(model.backend)},
             "parameters": params, "inputs": model.inputs.state_dict(),
             "targets": model.targets.state_dict(), "provenance": provenance})
-        report = {"best_epoch": epoch, "fit_diagnostics": history, "configuration": asdict(settings),
+        report = {"display_name": "QSEN v3" if model.residual is not None else name,
+                  "best_epoch": epoch, "fit_diagnostics": history, "configuration": asdict(settings),
                   "modes": asdict(modes), "winning_bits": bits, "generations": generations,
                   "checkpoint_sha256": sha256(path.read_bytes()).hexdigest(),
                   "parameters": (model.model.parameter_count + (model.residual.parameter_count if model.residual else 0)), "test_inference_seconds": latency,

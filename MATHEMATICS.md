@@ -178,3 +178,11 @@ update both networks. The best validation state across residual-only and
 joint epochs is exported. Two existing genome bits also encode the
 residual width (8, 16, 24 or 32), coupling width selection with the encoded
 spectral architecture. The sparse control augments training inputs only.
+
+## QSEN v3 local release
+
+QSEN v3 (Quantum Spectral Evolutionary Network) is Jupiter's
+quantum-inspired spectral and neural residual forecaster for classical
+hardware. The [QSEN local guide](QSEN_LOCAL_GUIDE.md) is the current
+entry point for installation, training, dashboard import and release
+checks. Earlier commands and results describe reference experiments.

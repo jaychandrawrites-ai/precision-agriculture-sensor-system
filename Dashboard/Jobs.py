@@ -144,7 +144,10 @@ class Jobs:
                 if sha256((folder / "model.json").read_bytes()).hexdigest() != model.checkpoint_sha256:
                     raise ValueError("Checkpoint changed during import")
                 shutil.copyfile(metrics, folder / "report.json")
-                job = Job(identifier, "train", folder, {}, datetime.now(timezone.utc).isoformat(), "complete")
+                options = {}
+                if model.spectral is not None and model.spectral.residual is not None:
+                    options["label"] = f"QSEN v3 ({identifier[:8]})"
+                job = Job(identifier, "train", folder, options, datetime.now(timezone.utc).isoformat(), "complete")
                 self._save(job)
                 self.store[identifier] = job
             except BaseException:
@@ -612,7 +615,8 @@ class Jobs:
                             continue
                         artifacts.append(name)
                 records.append({"id": job.identifier, "kind": job.kind, "status": job.status,
-                                "created_at": job.created_at, "can_resume": self._can_resume(job),
+                                "created_at": job.created_at, "label": job.options.get("label"),
+                                "can_resume": self._can_resume(job),
                                 "forecast_horizon": job.options.get("horizon")
                                 if job.kind in {"direct_train", "quantile_train", "blend"} else None,
                                 "progress": self._progress(job), "artifacts": sorted(artifacts),

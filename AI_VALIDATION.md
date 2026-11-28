@@ -352,3 +352,11 @@ improvement. Keep joint Fourier as the reference for formal evaluation.
 
 [Hybrid trajectory and components](Examples/spectral/hybrid-components.png)
 and [full hourly and pattern metrics](Examples/spectral/hybrid-results.json).
+
+## QSEN v3 local release
+
+QSEN v3 (Quantum Spectral Evolutionary Network) is Jupiter's
+quantum-inspired spectral and neural residual forecaster for classical
+hardware. The [QSEN local guide](QSEN_LOCAL_GUIDE.md) is the current
+entry point for installation, training, dashboard import and release
+checks. Earlier commands and results describe reference experiments.

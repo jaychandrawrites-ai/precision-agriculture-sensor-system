@@ -38,7 +38,7 @@ fetch("/api/jobs").then(response => {
   return response.json();
 }).then(jobs => {
   runs = jobs.filter(job => job.artifacts.includes("diagnostics/metrics.json"));
-  selection.replaceChildren(...runs.map(run => new Option(new Date(run.created_at).toLocaleString(), run.id)));
+  selection.replaceChildren(...runs.map(run => new Option(run.label || new Date(run.created_at).toLocaleString(), run.id)));
   if (runs.length) render();
   else status.textContent = "Complete a Model training job to generate diagnostics.";
 }).catch(error => { status.textContent = error.message; });

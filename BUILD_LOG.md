@@ -1300,3 +1300,35 @@ serialization and every horizon prefix. The exported hybrid emitted 72
 CSV rows. Chromium rendered its imported diagnostic, and the AI Trace
 forecast pipeline completed a 72-hour inference on synthetic prepared
 field context. Windows commands are in HANDOVER.md.
+
+## QSEN v3 acceptance and local training preparation
+
+Froze the forecasting architecture. Named imported hybrid runs QSEN v3
+in AI Trace, diagnostics and new research reports. Bundled the existing
+AZMET development checkpoint with its report, evolution data and selected
+plots under Examples/spectral/qsen-v3-development. The checkpoint hash is
+87aaa7039a262e84f305aea382bfe7b3a590875579255326c63f3cdc1e012043.
+No raw observations or large prediction arrays are in the bundle.
+
+Installed dependencies and Playwright in a fresh Linux Python 3.12
+environment and checked dependencies. Completed the documented CPU smoke
+recipe on the prepared az43 archive. The run used 21,726 training, 4,605
+validation and 4,606 development evaluation origins. Its hybrid final
+fit completed two spectral epochs, two residual epochs and one joint
+epoch. The bundled checkpoint produced finite forecasts at all 72
+integer horizons and completed shared AI Trace inference on synthetic
+prepared context. Chromium rendered training diagnostics and showed
+the model label before and after restarting without the import flag.
+The seeded evolutionary recovery regression passed.
+
+Compared firmware trees with origin/main and found byte-identical
+tracked firmware. Reviewed development history for raw field CSVs,
+private-key signatures and common credential patterns. No matches
+were found by those checks. Local data and generated training directories
+are ignored. QSEN_LOCAL_GUIDE.md contains the Windows recipes and local
+release checks. Native Windows, physical receivers and CUDA, calibrated
+field inference, and fresh AZMET formal evaluation remain open.
+
+The fresh-environment Chromium-enabled suite completed 199 tests with
+197 passes and two CUDA skips. It covers simulated serial acquisition,
+CSV and survey workflows, spatial visualization, and forecast APIs.

@@ -208,3 +208,11 @@ directory. The same run exports the spectral-only fallback
 seed, and UTC boundaries before running on an eligible fresh test period
 using `--validation-from` and `--test-from`. Use AquaMap only for
 inference with independent calibration and compatible context.
+
+## QSEN v3 local release
+
+QSEN v3 (Quantum Spectral Evolutionary Network) is Jupiter's
+quantum-inspired spectral and neural residual forecaster for classical
+hardware. The [QSEN local guide](QSEN_LOCAL_GUIDE.md) is the current
+entry point for installation, training, dashboard import and release
+checks. Earlier commands and results describe reference experiments.

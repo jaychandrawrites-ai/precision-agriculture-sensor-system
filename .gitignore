@@ -4,3 +4,8 @@
 Thumbs.db
 __pycache__/
 .venv/
+
+# Local datasets, dashboard state, and model-training outputs
+/training/
+/az43-prepared/
+/local-data/

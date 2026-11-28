@@ -460,3 +460,11 @@ pinned seed cells. Seeds sharing a grid cell are averaged. The map diagnostics
 report convergence and distance to the nearest seed. Computational diffusion
 time is separate from forecast lead time. Ensemble uncertainty and the
 research baselines remain available.
+
+## QSEN v3 local release
+
+QSEN v3 (Quantum Spectral Evolutionary Network) is Jupiter's
+quantum-inspired spectral and neural residual forecaster for classical
+hardware. The [QSEN local guide](QSEN_LOCAL_GUIDE.md) is the current
+entry point for installation, training, dashboard import and release
+checks. Earlier commands and results describe reference experiments.
