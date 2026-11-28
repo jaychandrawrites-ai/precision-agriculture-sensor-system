@@ -3,7 +3,7 @@ from Framework.Layers import ActivationLayer, Dense, DropoutLayer, Residual, Seq
 
 
 class TemporalModel(Sequential):
-    def __init__(self, backend, hidden, dropout=0.0, skips=(), activations=None):
+    def __init__(self, backend, hidden, dropout=0.0, skips=(), activations=None, *, input_size=18, output_size=6):
         self.backend = backend
         self.hidden = tuple(hidden)
         self.dropout = dropout
@@ -15,7 +15,7 @@ class TemporalModel(Sequential):
                 or any(not 0 <= index < len(self.hidden) for index in self.skips)):
             raise ValueError("Invalid temporal architecture")
         layers = []
-        inputs = 18
+        inputs = input_size
         for index, (width, activation) in enumerate(zip(self.hidden, self.activations)):
             block = [Dense(backend, inputs, width), ActivationLayer(backend, activation)]
             if dropout:
@@ -26,7 +26,7 @@ class TemporalModel(Sequential):
             else:
                 layers.extend(block)
             inputs = width
-        super().__init__([*layers, Dense(backend, inputs, 6)])
+        super().__init__([*layers, Dense(backend, inputs, output_size)])
 
     def forward(self, x, training=True):
         with self.backend.scope():

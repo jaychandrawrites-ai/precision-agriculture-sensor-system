@@ -98,3 +98,51 @@ variant adjusts rotation by rank and progress and relaxes concentrated
 vectors toward π/4. The algorithm uses classical random numbers, training,
 ranking, selection and mutation. The preserved QIGA elite is a best-so-far
 record, not a guaranteed member of the next sampled population.
+
+## Spectral evolutionary forecaster
+
+A 22-input dense network receives the six states, smoothed backward first
+derivatives, backward second derivatives, and daily and annual sine/cosine
+pairs. Calendar hours count from the Unix epoch in UTC, with periods 24
+and 8,765.82 hours. Feature and target normalization use training only.
+
+For each environmental variable the network emits a constant and real
+and imaginary coefficient pairs. The real basis uses
+`exp(-γt) cos(2πt/P)` and `-exp(-γt) sin(2πt/P)`. The full Fourier
+configuration emits 90 neurons for seven periods and six variables.
+Damped configurations can add an 18-hour transient with a 12-hour
+e-folding time. The daily component stays undamped.
+
+Let B(t) be the row of basis values and z₀ be the most recent normalized
+state. The reconstructed trajectory is
+`z(t) = z₀ + [B(t) - exp(-t/3) B(0)] C`.
+The exponential term imposes the observed origin exactly and fades away,
+while preserving the constant and daily mode at long leads. Leads are
+1 through 72 hours. The forecast is reconstructed independently of the
+preceding predicted state.
+
+Shape fitness combines normalized value MSE, identifiable coefficient
+error, first-difference MSE, squared pre-projection violations, and a
+frequency-sensitive regularizer. Coefficient labels use the SVD
+pseudoinverse of the actual anchored basis, including for nonorthogonal
+damped modes. The coefficient gradient includes the transposed basis
+times the state gradient. The difference gradient accumulates with
+opposite signs at successive leads. The final physical projection applies
+during inference.
+
+The spectral search uses 17 architecture bits and three frequency-group
+bits. It retains a 24-hour mode, can add slower and faster mode groups,
+and can enable damping in the damped search arm. The hybrid QIGA starts
+with neutral amplitudes, samples genomes, trains fresh networks, ranks
+validation fitness plus a complexity penalty, rotates toward the best
+genome, and injects mutated and crossed offspring in later generations.
+Search state is saved at generation boundaries.
+
+Optional augmentation counts individual normalized state/derivative inputs
+in training traversal order, starting at x = 1 and continuing across
+batches and epochs. The event probability is 1/x. Its sign is symmetric
+and its unbounded magnitude is nx. The resulting mean is zero, expected
+absolute magnitude is n and variance is n²x. The implementation caps the
+magnitude at b, so the latter two quantities become min(nx,b)/x and
+min(nx,b)²/x. The cap leaves event probability unchanged. Validation,
+testing, calendar inputs, and inference use zero augmentation.

@@ -27,10 +27,10 @@ class SpatialPrediction:
 class SpatiotemporalModel:
     forecaster: object | None = None
 
-    def forecast(self, history, steps):
+    def forecast(self, history, steps, *, origin=None):
         if self.forecaster is None:
             raise ValueError("A saved temporal checkpoint is required")
-        return self.forecaster.forecast(history, steps)
+        return self.forecaster.forecast(history, steps, origin=origin)
 
     def reconstruct(self, grid, coordinates, observations, origin, backend, spatial_settings,
                     *, kriging_range_m=None, sampling=None, hard_seeds=False,

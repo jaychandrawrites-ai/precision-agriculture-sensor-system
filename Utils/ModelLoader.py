@@ -21,6 +21,7 @@ class Forecaster:
     quantile: object | None = None
     blend: object | None = None
     members: tuple = ()
+    spectral: object | None = None
 
     @property
     def history_hours(self):
@@ -43,11 +44,11 @@ class Forecaster:
                 "checkpoint_maximum_forecast_hours": self.maximum_forecast_hours,
                 "validated_horizon_hours": self.provenance.get("validated_horizon_hours"),
                 "short_visit_requirement": "At least one eligible hourly field aggregate and compatible adjacent context"}
-    def forecast(self, history, steps):
-        point, _ = self.forecast_bundle(history, steps)
+    def forecast(self, history, steps, *, origin=None):
+        point, _ = self.forecast_bundle(history, steps, origin=origin)
         return point
 
-    def forecast_bundle(self, history, steps):
+    def forecast_bundle(self, history, steps, *, origin=None):
         """Return point predictions and optional [lead, feature, probability] quantiles."""
         cap = min(72, self.maximum_forecast_hours)
         if type(steps) is not int or not 1 <= steps <= cap:
@@ -56,9 +57,13 @@ class Forecaster:
         if self.blend is not None:
             import numpy as np
 
-            predictions = np.asarray([model.forecast(history[-model.history_hours:], steps)
+            predictions = np.asarray([model.forecast(history[-model.history_hours:], steps, origin=origin)
                                       for model in self.members])
             return np.einsum("mlf,lfm->lf", predictions, self.blend.weights[:steps]), None
+        if self.spectral is not None:
+            import numpy as np
+
+            return self.spectral.forecast(np.asarray(history)[None, -3:], [origin], steps)[0], None
         if self.quantile is not None:
             from Temporal.Quantile import quantile_center
 
@@ -122,5 +127,27 @@ def _load_record(record, digest, device, *, allow_blend=True):
                                                   "epsilon": 1e-8})
         return Forecaster(quantile.network, quantile.backend, normalization, normalization,
                           digest, provenance, quantile=quantile)
+    if record.get("format") == "jupiter-spectral-v1":
+        import numpy as np
+        from config import FEATURES
+        from Framework.Backend import create_backend
+        from Temporal.Model import TemporalModel
+        from Temporal.Spectral import Modes, SpectralForecaster
+
+        if tuple(record["features"]) != FEATURES or record["interval_hours"] != 1:
+            raise ValueError("Invalid spectral feature contract")
+        modes = Modes(**record["modes"])
+        backend = create_backend(device, record["dtype"], record["seed"])
+        model = TemporalModel(backend, **record["architecture"], input_size=22, output_size=6 * modes.width)
+        parameters = {key: np.asarray(value, dtype=backend.dtype)
+                      for key, value in record["parameters"].items()}
+        if any(not np.isfinite(value).all() for value in parameters.values()):
+            raise ValueError("Nonfinite spectral parameters")
+        model.load_state_dict(parameters, backend)
+        inputs, targets = (Standardizer.from_state(record[key]) for key in ("inputs", "targets"))
+        if inputs.mean.shape != (22,) or targets.mean.shape != (6,):
+            raise ValueError("Invalid spectral normalization dimensions")
+        spectral = SpectralForecaster(model, backend, modes, inputs, targets)
+        return Forecaster(model, backend, inputs, targets, digest, provenance, spectral=spectral)
     model, backend, inputs, targets = load_state(record, device)
     return Forecaster(model, backend, inputs, targets, digest, provenance)

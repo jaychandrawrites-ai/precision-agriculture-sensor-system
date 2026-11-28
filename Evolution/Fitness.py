@@ -27,6 +27,7 @@ class Candidate:
     prediction_warmup_seconds: float | None = None
     artifact_file: str | None = None
     artifact_sha256: str | None = None
+    details: dict | None = None
 
 
 def validation_fitness(dataset, training, evolution, *, rollout_windows_pair=None,

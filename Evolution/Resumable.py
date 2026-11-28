@@ -235,6 +235,7 @@ def run_search(mode, score, settings, seed, checkpoint, fingerprint, options=Sea
                 "fitness": [item.score for item in ranked],
                 "parameter_counts": [item.parameters for item in ranked],
                 "candidate_training_seconds": [item.training_seconds for item in actual],
+                "candidate_details": [item.details for item in ranked] if any(item.details for item in ranked) else [],
                 "retained_genotypes": (0 if len(history) == 1 else len(
                     {item.genome.bits for item in history[-2]} & {item.genome.bits for item in ranked})), "actual_evaluations": len(actual),
                 "cache_hits": len(pool) - len(actual),

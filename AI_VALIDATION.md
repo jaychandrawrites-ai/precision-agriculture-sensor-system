@@ -263,3 +263,42 @@ and reproduced the checkpoint hash and generation records after recovery.
 See [stability plots](Examples/forecast-stability/stability.png),
 [six-feature RMSE](Examples/forecast-stability/feature-rmse.png), and
 [underlying values](Examples/forecast-stability/stability.json).
+
+## Spectral AZMET development evaluation
+
+The spectral comparison used seed 42, 21,726 training origins, 4,605
+validation origins, and 4,606 test origins. UTC boundaries were
+2025-10-27 15:00 and 2026-05-10 11:00. This chronological period was
+examined previously and is development evidence. Each searched method
+used two generations of two fresh candidates with one epoch each, then
+four refit epochs. The fixed model used four fit epochs and all seven
+periods. AquaMap files were excluded.
+
+| Method | Temperature RMSE at 1 h | 6 h | 24 h | 72 h | Mean trajectory correlation |
+|---|---:|---:|---:|---:|---:|
+| Stabilized recursive QIGA | 1.875 | 9.838 | 5.613 | 8.507 | 0.037 |
+| Fixed Fourier | 1.581 | 7.112 | 2.349 | 3.459 | 0.003 |
+| QIGA Fourier | 1.237 | 3.366 | 2.849 | 3.869 | 0.876 |
+| QIGA Fourier with transient | 1.049 | 2.829 | 2.875 | 4.256 | 0.875 |
+| QIGA Fourier with sparse inputs | 1.237 | 3.366 | 2.849 | 3.869 | 0.876 |
+| Daily persistence | 2.317 | 2.333 | 2.346 | 3.453 | 0.904 |
+
+RMSE is in °C. The evolved Fourier temperature cycle had amplitude MAE
+1.524 °C and phase MAE 0.163 radians. The recursive reference had 5.344 °C
+and 1.451 radians. The near-flat fixed model displays why matching RMSE
+alone can miss poor trajectory shape. The damped model improved the
+6-hour temperature result, with a higher 72-hour error. Sparse augmentation
+recorded 17 events over four refit epochs and had no material effect in
+this run. There was no raw temperature violation in either evolved
+Fourier model. For QIGA Fourier, raw trajectories had 123,524 wetness
+violations and 186,712 negative-ET rows out of 331,632 origin-lead
+rows, so physical projection still materially affects other variables.
+
+The study saves per-feature and per-lead metrics, an oracle least-squares
+reconstruction comparison, raw physical violation counts, fit and search
+diagnostics, and all evaluated predictions. Results do not establish
+generalization to fresh AZMET periods or calibrated AquaMap visits.
+See [Fourier components](Examples/spectral/qiga-fourier.png),
+[damped components](Examples/spectral/qiga-laplace.png),
+[all six RMSE curves](Examples/spectral/qiga-horizons.png), and
+[pattern metrics and generation records](Examples/spectral/summary.json).

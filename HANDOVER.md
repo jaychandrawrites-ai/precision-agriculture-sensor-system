@@ -154,3 +154,31 @@ For formal evaluation, predeclare hourly UTC boundaries and append
 training and validation periods to make decisions. Keep the test period
 unexamined until settings are frozen. The existing comparison archive
 is development evidence because its evaluation period was already used.
+
+## Spectral training on Windows
+
+After preparing AZMET and installing dependencies with the commands
+above, use a new persistent run directory:
+
+```powershell
+$python = ".\.venv\Scripts\python.exe"
+$env:OPENBLAS_NUM_THREADS = "1"
+$run = "training/spectral-az43"
+& $python spectral_study.py az43-prepared/hourly.csv $run --preparation-report az43-prepared/report.json --population 2 --generations 2 --candidate-epochs 1 --epochs 4 --sparse-scale 0.0001
+& $python forecast.py az43-prepared/hourly.csv "$run/qiga_fourier/model.json" --steps 72 > "$run/forecast.csv"
+& $python -m Dashboard.Server --workspace "$env:LOCALAPPDATA\Jupiter" --import-training-run "$run/qiga_fourier"
+```
+
+Open http://127.0.0.1:8765/diagnostics to inspect the spectral,
+evolutionary and internal network plots. AI Trace derives the UTC
+forecast origin from the most recent eligible closed hourly bin.
+Existing field calibration, compatible adjacent history, and ET
+requirements still apply. To compare with a saved recursive model,
+pass its checkpoint to `--recursive-reference`. Use
+`--validation-from` and `--test-from` to freeze both UTC boundaries.
+Loss weights can be specified in a JSON object with the keys
+`value`, `spectral`, `derivative`, `physical` and `regularization`.
+
+Repeat the same command to recover completed search generations.
+Final spectral weight fits restart from their seeded initialization.
+The Windows commands were exercised with equivalent Linux invocations.

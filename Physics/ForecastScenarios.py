@@ -151,7 +151,7 @@ def _local_derivatives(site, issue_at, forecaster, steps, params, nominal_parame
         except ValueError as exc:
             results[param.path] = {"status": "invalid_central_perturbation", "reason": str(exc)}
             continue
-        gradient = (forecaster.forecast(b, steps) - forecaster.forecast(a, steps)) / (2 * step)
+        gradient = (forecaster.forecast(b, steps, origin=issue_at.to_datetime64()) - forecaster.forecast(a, steps, origin=issue_at.to_datetime64())) / (2 * step)
         results[param.path] = {"status": "estimated", "parameter_delta": step,
                                "derivative_by_history_hour": (b - a) / (2 * step),
                                "derivative_by_lead": gradient}
@@ -174,9 +174,9 @@ def scenario_forecasts(sites, forecaster, parameters, issue_at, *, steps, draws=
     for name, site in sites.items():
         baseline, provenance = _history(site, issue_at, hours=forecaster.history_hours)
         compatibility = forecaster.require_compatible_field(provenance)
-        nominal = forecaster.forecast(baseline, steps)
+        nominal = forecaster.forecast(baseline, steps, origin=issue_at.to_datetime64())
         histories_site = np.stack([_history(site, issue_at, params, sample, hours=forecaster.history_hours)[0] for sample in samples])
-        predictions = np.stack([forecaster.forecast(history, steps) for history in histories_site])
+        predictions = np.stack([forecaster.forecast(history, steps, origin=issue_at.to_datetime64()) for history in histories_site])
         histories.append(histories_site)
         forecasts.append(predictions)
         tail = (1 - mass) / 2

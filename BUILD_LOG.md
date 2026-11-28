@@ -1245,3 +1245,32 @@ smoke test and verified a 72-row forecast from the revised AZMET
 checkpoint and dashboard rendering of its diagnostics. No AquaMap
 field data entered training. Native Windows, physical Arduino/CUDA,
 independent calibration and final chronological evaluation remain open.
+
+## Quantum-inspired spectral forecasting
+
+Added a direct 22-input, paired-coefficient spectral model, optional
+damped transient, manual shape-loss backpropagation, optional bounded
+inverse-power input augmentation, chronological spectral study, saved
+checkpoints and dashboard diagnostics. The spectral QIGA reuses the
+resumable hybrid amplitude search and trains candidates from fresh
+weights. Final spectral refits restart from their seed. Legacy recursive
+training, checkpoint loading and firmware are preserved.
+
+The short AZMET development experiment completed on the prior split.
+Evolved Fourier temperature correlation was 0.876 against 0.037 for
+the recursive comparison and 0.904 for daily persistence. Hour-72
+temperature RMSE was 3.869 °C versus 8.507 °C and 3.453 °C respectively.
+Sparse augmentation provided no material benefit. High raw violation rates
+for wetness and ET remain. Details, plots and generation statistics are in
+AI_VALIDATION.md and Examples/spectral. Commands are in HANDOVER.md.
+
+The learned spectral checkpoint emitted 72 hourly CSV rows and the
+dashboard displayed its spectral, evolutionary and internal network
+plots in Chromium. Hardware, native Windows, CUDA and a fresh
+chronological AZMET evaluation remain open. AquaMap datasets were not
+used in training or selection.
+
+Full Chromium-enabled regression ran 197 tests with 195 passes and two
+CUDA skips. Spectral tests verified Fourier and damped reconstruction,
+origin anchoring, coefficient finite differences, sparse sampling and
+all 72 checkpoint forecast prefixes.

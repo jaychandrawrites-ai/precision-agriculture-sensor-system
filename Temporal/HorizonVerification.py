@@ -39,7 +39,10 @@ class InferenceArtifact:
         else:
             self.predictor = load_forecaster(path, device)
             self.context = self.predictor.history_hours
-            if self._direct:
+            if marker == "jupiter-spectral-v1":
+                self.kind = "spectral"
+                self.limit = self.predictor.maximum_forecast_hours
+            elif self._direct:
                 architecture = record.get("architecture", "")
                 family = architecture.get("family") if isinstance(architecture, dict) else architecture
                 from Temporal.SequenceForecast import DENSE_FAMILIES, FAMILIES
@@ -65,7 +68,7 @@ class InferenceArtifact:
         if self.kind == "seasonal_ensemble":
             forecast, _, _ = self.predictor.predict(values, times, times[-1:], history[None])
             return forecast[0, :steps]
-        return self.predictor.forecast(history, steps)
+        return self.predictor.forecast(history, steps, origin=times[-1])
 
 
 class VerificationEnsemble:

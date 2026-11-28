@@ -129,7 +129,7 @@ def forecast_field(prepared, forecaster, steps):
     history = require_history(features.to_numpy(), features.index.to_numpy(dtype="datetime64[ns]"),
                               f"Latest {hours} hours need all six valid features and sufficient ET history",
                               hours=hours)
-    prediction, quantiles = forecaster.forecast_bundle(history, steps)
+    prediction, quantiles = forecaster.forecast_bundle(history, steps, origin=features.index[-1].to_datetime64())
     future = pd.date_range(features.index[-1] + pd.offsets.Hour(), periods=steps, freq="h",
                            name="timestamp")
     forecast = pd.DataFrame(prediction, index=future, columns=FEATURES)

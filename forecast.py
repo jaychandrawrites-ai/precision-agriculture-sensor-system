@@ -15,7 +15,7 @@ def forecast_csv(source, checkpoint, steps, device="cpu"):
     values, timestamps = read_hourly(source)
     model = load_forecaster(checkpoint, device)
     history = require_history(values, timestamps, hours=model.history_hours)
-    predictions, quantiles = model.forecast_bundle(history, steps)
+    predictions, quantiles = model.forecast_bundle(history, steps, origin=timestamps[-1])
     start = pd.Timestamp(timestamps[-1] + np.timedelta64(1, "h"), tz="UTC")
     frame = pd.DataFrame(predictions, columns=FEATURES)
     if quantiles is not None:
