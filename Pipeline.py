@@ -5,6 +5,7 @@ from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from Acquisition.Calibration import LeafCalibration, SoilCalibration
@@ -45,13 +46,54 @@ def train_historical(source, configuration, checkpoint, settings=TrainingConfig(
     return {"training": result, "quality": quality, "provenance": provenance}
 
 
+def _short_session_context(configuration, weather, site, reference):
+    """Accept explicit, adjacent hourly context with matched physics metadata."""
+    from dataclasses import asdict
+
+    context = configuration.get("historical_context")
+    if context is None:
+        return None
+    source = context.get("source")
+    if not isinstance(source, str) or not source.strip():
+        raise ValueError("Historical context requires a source label")
+    if context.get("assumptions") != site.metadata() or context.get("reference_et") != asdict(reference):
+        raise ValueError("Historical context physics differs from the field configuration")
+    rows = context.get("rows", [])
+    if not rows or len(rows) > 720:
+        raise ValueError("Supply 1–720 historical hourly context rows")
+    times = [pd.Timestamp(row["timestamp"]) for row in rows]
+    if any(pd.isna(time) or time.tzinfo is None for time in times):
+        raise ValueError("Historical context timestamps must include UTC offsets")
+    index = pd.DatetimeIndex([time.tz_convert("UTC") for time in times], name="timestamp")
+    expected = pd.date_range(end=weather.values.index[0] - pd.offsets.Hour(),
+                             periods=len(index), freq="h", name="timestamp")
+    if not index.equals(expected):
+        raise ValueError("Historical context must be consecutive and end one hour before the first field bin")
+    values = np.asarray([[row.get(feature, np.nan) for feature in FEATURES] for row in rows], dtype=float)
+    if not np.isfinite(values[:, 0]).all():
+        raise ValueError("Historical context needs finite air temperatures")
+    return pd.DataFrame(values, index=index, columns=FEATURES)
+
+
 def prepare_session(readings, configuration):
     site = Assumptions.from_dict(configuration.get("assumptions", {}))
     reference = ReferenceET(site.site.latitude_deg, **configuration["reference_et"])
     leaf = LeafCalibration(**configuration["leaf_calibration"])
     soil = SoilCalibration(**configuration["soil_calibration"])
     weather, gps, coverage = session_hourly(readings, leaf, soil, **configuration.get("hourly", {}))
-    features, flags, provenance = field_features(weather, site, reference)
+    context = _short_session_context(configuration, weather, site, reference)
+    prior = () if context is None else context["air_temperature_c"].items()
+    features, flags, provenance = field_features(weather, site, reference, prior_temperature=prior)
+    if context is not None:
+        features = pd.concat([context, features])
+        flags = flags.reindex(features.index, fill_value=False)
+        flags["historical_context"] = features.index.isin(context.index)
+        provenance["historical_context"] = {
+            "source": configuration["historical_context"]["source"], "hours": len(context),
+            "end_utc": context.index[-1].isoformat(),
+            "interpretation": "Explicit adjacent historical features followed by locally aggregated field readings",
+        }
+    provenance["model_input_interval_hours"] = 1
     return features, flags, provenance, gps, coverage
 
 
@@ -110,6 +152,7 @@ def check_prepared_session(prepared, forecaster=None):
         "closed_hour_bins": bool(provenance["complete_hour_bins_only"]),
         "ready": result["ready"] and bool(provenance["complete_hour_bins_only"]),
         "minimum_temperature_history_hours": history_hours + result["required_hours"] - 1,
+        "historical_context": provenance.get("historical_context"),
         "latest_hour_utc": features.index[-1].isoformat() if len(features) else None,
         "reference_et_unavailable_hours": int(flags["reference_et_unavailable"].sum()),
     })

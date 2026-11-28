@@ -11,7 +11,7 @@ from Utils.Serialization import read_json, write_json
 
 def save_direct(path, forecast, width, *, provenance=None):
     record = {
-        "format": "jupiter-direct-v1", "features": FEATURES,
+        "format": "jupiter-direct-v1", "interval_hours": 1, "features": FEATURES,
         "horizon": forecast.model.horizon, "width": width,
         "dtype": str(forecast.backend.dtype),
         "inputs": forecast.inputs.state_dict(), "targets": forecast.targets.state_dict(),
@@ -32,6 +32,8 @@ def load_direct(path, device="cpu"):
 
 
 def load_direct_state(record, device="cpu"):
+    if record.get("interval_hours", 1) != 1:
+        raise ValueError("Direct checkpoints require hourly inputs")
     version = record.get("format")
     if version not in ("jupiter-direct-v1", "jupiter-direct-v2", "jupiter-direct-v3") or tuple(record.get("features", ())) != FEATURES:
         raise ValueError("Unsupported experimental forecast checkpoint")

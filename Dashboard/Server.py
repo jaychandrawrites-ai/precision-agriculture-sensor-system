@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 import numpy as np
 
 from Acquisition.AITrace import TraceStore
-from Acquisition.TraceReceiver import TraceReceiver
+from Acquisition.ReceiverPool import ReceiverPool
 from Dashboard.Jobs import Jobs
 from Dashboard.TraceAPI import trace_get, trace_post
 from Utils.Serialization import read_json
@@ -31,7 +31,8 @@ class DashboardServer(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", port), Handler)
         try:
             self.trace = TraceStore(Path(root) / "surveys")
-            self.trace_receiver = TraceReceiver(self.trace, ports)
+            self.trace_receivers = ReceiverPool(self.trace, ports)
+            self.trace_receiver = self.trace_receivers.default
             self.jobs = Jobs(root, ports=ports)
         except BaseException:
             super().server_close()
@@ -41,7 +42,7 @@ class DashboardServer(ThreadingHTTPServer):
 
     def server_close(self):
         super().server_close()
-        self.trace_receiver.disconnect()
+        self.trace_receivers.close()
         self.jobs.close()
 
 

@@ -40,6 +40,8 @@ def _prepare_segment(records, configuration, started_at, ended_at):
     hourly["as_of"] = cutoff.isoformat()
     clock = hourly.get("clock", "received_at")
     device = hourly.get("device_id")
+    if records and all("manual_csv" in row["flags"] for row in records):
+        hourly.setdefault("duplicate_policy", "median_timestamp")
     if records and all("receipt_is_import_time" in row["flags"] for row in records):
         if clock != "observed_at":
             raise ValueError("Imported CSV requires the observed_at clock, not the import receipt time")

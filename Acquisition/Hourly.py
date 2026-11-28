@@ -24,9 +24,11 @@ def _aware(value):
 
 
 def session_hourly(path, leaf, soil, *, minimum_count=1, clock="received_at", device_id=None,
-                   as_of=None, complete_only=True):
+                   as_of=None, complete_only=True, duplicate_policy="mean_packets"):
     if clock not in ("received_at", "observed_at") or not isinstance(minimum_count, int) or minimum_count < 1:
         raise ValueError("Invalid clock or hourly coverage requirement")
+    if duplicate_policy not in {"mean_packets", "median_timestamp"}:
+        raise ValueError("Unknown duplicate timestamp policy")
     cutoff = _aware(as_of) if as_of is not None else None
     records, fixes, device_ids = [], [], set()
     counts = Counter()
@@ -89,6 +91,8 @@ def session_hourly(path, leaf, soil, *, minimum_count=1, clock="received_at", de
     columns = list(TEMPORAL_SENSORS + AUXILIARY_SENSORS)
     frame = pd.DataFrame(records).set_index("timestamp").reindex(columns=columns).astype(float)
     # Distinct packets can share the same timestamp. Identity deduplication already ran.
+    if duplicate_policy == "median_timestamp":
+        frame = frame.groupby(level=0, sort=True).median()
     bins = frame.sort_index().resample("h", label="right", closed="right")
     coverage = bins.count()
     hourly = bins.mean().where(coverage >= minimum_count)
@@ -110,7 +114,7 @@ def session_hourly(path, leaf, soil, *, minimum_count=1, clock="received_at", de
     gps = pd.DataFrame(fixes, columns=["timestamp", "received_at", "device_id", "latitude_deg", "longitude_deg"])
     provenance = {"source_type": "acquisition_session", "readings_sha256": digest.hexdigest(),
                   "timestamp_clock": clock, "aggregation": "right-closed UTC hourly means",
-                  "minimum_count": minimum_count, "device_id": next(iter(device_ids)),
+                  "duplicate_policy": duplicate_policy, "minimum_count": minimum_count, "device_id": next(iter(device_ids)),
                   "complete_hour_bins_only": complete_only, "as_of_utc": watermark.isoformat(),
                   "calibration": {"leaf": asdict(leaf), "soil": asdict(soil)},
                   "packet_counts": dict(counts)}

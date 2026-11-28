@@ -1114,3 +1114,27 @@ The actual field files were used only for import and spatial checks.
 Hourly checkpoint inference still needs calibrated features and enough
 complete consecutive hours. Multi-receiver support and checkpoint
 training across observation resolutions remain open.
+
+### Parallel receiver and short-session integration
+
+AI Trace routes each connected survey to its own exclusive serial worker.
+Use separate surveys for concurrent receivers, with individual start, stop
+and export. Simulated interleaved native packets passed port exclusivity,
+readiness and independent disconnect checks. Group controls and shared
+alignment exports are open.
+
+The field configuration accepts an optional historical_context object with
+source, assumptions, reference_et and rows. Rows use the six canonical
+feature keys and offset-aware timestamp. They must form consecutive hourly
+bins immediately before the field bins, with matching physics metadata.
+Prior temperature warms the causal ET calculation. The eventual model
+window still requires all six features, including calibrated measured
+field aggregates. Provenance identifies the context explicitly. Manual
+imports use a median for coincident observations before hourly aggregation.
+Direct checkpoints now declare interval_hours=1. Older checkpoints retain
+their implicit hourly compatibility.
+
+The synthetic one-hour test with explicit adjacent historical context
+loaded an hourly checkpoint and issued 24 leads. Removing the final
+context hour correctly caused refusal. No field data were fitted, and
+no calibrated adjacent real context was supplied for real forecasting.

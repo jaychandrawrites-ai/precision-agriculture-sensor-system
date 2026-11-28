@@ -31,7 +31,7 @@ def _metadata(status):
 def _reply_status(handler, identifier):
     return handler._json(200, {
         "survey": _metadata(handler.server.trace.status(identifier)),
-        "receiver": handler.server.trace_receiver.diagnostics(identifier),
+        "receiver": handler.server.trace_receivers.for_survey(identifier).diagnostics(identifier),
     })
 
 
@@ -67,7 +67,7 @@ def trace_post(handler, body):
     from Acquisition.TraceAnalysis import ensemble_forecast_maps, observational_map, survey_forecasts
 
     suffix = urlsplit(handler.path).path.removeprefix("/api/trace").strip("/")
-    store, receiver = handler.server.trace, handler.server.trace_receiver
+    store = handler.server.trace
     if not suffix:
         survey = store.create(body["label"])
         return handler._json(201, _metadata(survey))
@@ -91,8 +91,9 @@ def trace_post(handler, body):
     identifier, separator, action = suffix.partition("/")
     if not separator:
         return handler._json(404, {"error": "Trace action not found"})
+    receiver = handler.server.trace_receivers.for_survey(identifier)
     if action == "connect":
-        receiver.connect(identifier, body["port"], body.get("baud", 9600), body.get("mapping"))
+        handler.server.trace_receivers.connect(identifier, body["port"], body.get("baud", 9600), body.get("mapping"))
     elif action == "disconnect":
         receiver.disconnect(identifier)
     elif action == "start":

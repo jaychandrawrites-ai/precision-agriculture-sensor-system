@@ -12,9 +12,11 @@ from Physics.Evapotranspiration.ActualET import actual_et_from_moisture
 from Physics.Soil.WaterStress import depletion_from_moisture, stress_coefficient
 
 
-def field_features(hourly, assumptions, reference_et):
+def field_features(hourly, assumptions, reference_et, *, prior_temperature=()):
     check_hourly_configuration(reference_et, assumptions)
     reference = CausalReferenceET(reference_et)
+    for timestamp, air in prior_temperature:
+        reference.advance(timestamp, air)
     records, heat = [], None
     flags = hourly.flags.copy()
     flags["heat_restart"] = False
