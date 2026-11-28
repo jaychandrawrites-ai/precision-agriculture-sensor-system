@@ -47,7 +47,8 @@ class ReceiverPoolTests(unittest.TestCase):
                         queue.put(f"RX,-90,3,AQ,{node},{counter},0,0,30,24,450,6.8,22,55,350\n".encode())
                 for worker, survey in zip(workers, surveys):
                     wait(lambda: worker.diagnostics(survey)["native_readiness"]["ready"])
-                    worker.start(survey, label="Synthetic")
+                group = pool.group("start")
+                self.assertTrue(all(item["ok"] for item in group["receivers"].values()))
                 workers[0].disconnect(surveys[0])
                 self.assertTrue(workers[1].diagnostics()["recording"])
                 queues["second"].put(b"RX,-90,3,AQ,2,6,0,0,30,24,450,6.8,22,55,350\n")
@@ -55,5 +56,10 @@ class ReceiverPoolTests(unittest.TestCase):
                 active = store.status(surveys[1])["active_segment_id"]
                 wait(lambda: bool(store.segment_readings(surveys[1], active)))
                 self.assertEqual(store.segment_readings(surveys[1], active)[0]["device_id"], "2")
+                aligned = pool.aligned_export(5).decode()
+                self.assertIn(group["group_id"], aligned)
+                self.assertIn("receipt_offset_seconds", aligned)
+                pool.group("stop")
+                self.assertFalse(workers[1].diagnostics()["recording"])
             finally:
                 pool.close()

@@ -125,6 +125,10 @@ def survey_forecasts(store, survey_id, configuration, checkpoint=None, steps=Non
                             for timestamp, values in forecast.iterrows()
                         ]
                         detail["checkpoint_sha256"] = diagnostics["checkpoint_sha256"]
+                        detail["forecast_origin_utc"] = prepared[0].index[-1].isoformat()
+                        detail["forecast_steps"] = steps
+                        detail["input_provenance"] = diagnostics["field_provenance"]
+                        detail["value_origin"] = "model_prediction"
                         if "quantiles" in diagnostics:
                             detail["quantiles"] = diagnostics["quantiles"]
                         if ensemble:

@@ -65,8 +65,16 @@ def _short_session_context(configuration, weather, site, reference):
     if any(pd.isna(time) or time.tzinfo is None for time in times):
         raise ValueError("Historical context timestamps must include UTC offsets")
     index = pd.DatetimeIndex([time.tz_convert("UTC") for time in times], name="timestamp")
-    expected = pd.date_range(end=weather.values.index[0] - pd.offsets.Hour(),
-                             periods=len(index), freq="h", name="timestamp")
+    end = weather.values.index[0] - pd.offsets.Hour()
+    if context.get("match_visit") is True:
+        if index.has_duplicates or not index.is_monotonic_increasing:
+            raise ValueError("Historical source hours must be unique and chronological")
+        selected = (index <= end) & (index > end - pd.Timedelta(720, unit="h"))
+        rows = [row for row, keep in zip(rows, selected) if keep]
+        index = index[selected]
+        if not len(index):
+            raise ValueError(f"No matching historical context before first field bin; need hour ending {end.isoformat()}")
+    expected = pd.date_range(end=end, periods=len(index), freq="h", name="timestamp")
     if not index.equals(expected):
         raise ValueError("Historical context must be consecutive and end one hour before the first field bin")
     values = np.asarray([[row.get(feature, np.nan) for feature in FEATURES] for row in rows], dtype=float)
@@ -76,6 +84,12 @@ def _short_session_context(configuration, weather, site, reference):
 
 
 def prepare_session(readings, configuration):
+    required = ("reference_et", "leaf_calibration", "soil_calibration")
+    missing = [key for key in required if not isinstance(configuration.get(key), dict)]
+    if missing:
+        raise ValueError("Supply field configuration objects: " + ", ".join(missing))
+    if "solar_offset_minutes" not in configuration["reference_et"]:
+        raise ValueError("Reference ET requires reference_et.solar_offset_minutes")
     site = Assumptions.from_dict(configuration.get("assumptions", {}))
     reference = ReferenceET(site.site.latitude_deg, **configuration["reference_et"])
     leaf = LeafCalibration(**configuration["leaf_calibration"])

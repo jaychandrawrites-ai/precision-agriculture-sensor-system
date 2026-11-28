@@ -31,6 +31,13 @@ class ShortSessionTests(unittest.TestCase):
             forecast, report, _, _ = forecast_session(path, config, root / "model/synthetic-model.json", 24)
             self.assertEqual(forecast.shape, (24, 6))
             self.assertEqual(report["field_provenance"]["historical_context"]["hours"], 25)
-            config["historical_context"]["rows"].pop()
+            context = config["historical_context"]
+            last = context["rows"][-1]
+            context["rows"].append({**last, "timestamp": "2020-07-02T00:00:00Z"})
+            context["match_visit"] = True
+            matched, _, _, _ = forecast_session(path, config, root / "model/synthetic-model.json", 24)
+            pd.testing.assert_frame_equal(forecast, matched)
+            context["rows"].pop()
+            context["rows"].pop()
             with self.assertRaisesRegex(ValueError, "one hour before"):
                 forecast_session(path, config, root / "model/synthetic-model.json", 24)

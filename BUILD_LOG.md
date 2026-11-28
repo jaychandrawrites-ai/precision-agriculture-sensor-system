@@ -1138,3 +1138,21 @@ The synthetic one-hour test with explicit adjacent historical context
 loaded an hourly checkpoint and issued 24 leads. Removing the final
 context hour correctly caused refusal. No field data were fitted, and
 no calibrated adjacent real context was supplied for real forecasting.
+
+### Group receiver controls and forecast handover
+
+Added group start/stop, shared group IDs and long-form aligned CSV with
+original receipt and observation times, UTC bin starts and receipt
+offsets. No values are interpolated. A simulated test verified group
+recording and export while one receiver disconnected.
+
+Historical context can be matched to the first field bin. A synthetic
+test verified that later context rows cannot alter a 24-lead forecast.
+AI Trace forecast reports now include issue time and input provenance.
+
+Reimported the five real visits and attempted 24-hour inference using
+the previously saved AZMET checkpoint. Zero visits passed readiness.
+The model requires three consecutive six-feature hourly inputs. Field
+configuration and measured leaf/soil calibration were unavailable. The
+causal ET calculation also requires adjacent temperature history and a
+declared solar offset. No field measurements were used for fitting.

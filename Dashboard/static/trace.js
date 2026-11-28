@@ -307,6 +307,17 @@ submit("trace-import-csv", async event => {
 submit("trace-connect", async event => perform("connect", {port: event.target.elements.port.value,
   baud: Number(event.target.elements.baud.value), mapping: el("trace-protocol").value || await jsonFile(el("trace-mapping"))}),
 "Receiver connection requested.");
+for (const action of ["start-all", "stop-all"]) {
+  press("trace-" + action, async () => {
+    showResult(await request("/api/trace/" + action, {}));
+    if (trace.id) await refresh();
+  }, "Receiver group results available.");
+}
+press("trace-aligned-export", () => {
+  const seconds = el("trace-alignment");
+  if (!seconds.value || !seconds.checkValidity()) throw new Error("Choose a valid alignment interval.");
+  window.location.assign("/api/trace/aligned-export?seconds=" + encodeURIComponent(seconds.value));
+});
 press("trace-disconnect", () => perform("disconnect"), "Receiver disconnected.");
 submit("trace-start", async event => {
   const fields = event.target.elements;

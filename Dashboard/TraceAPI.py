@@ -42,6 +42,10 @@ def trace_get(handler):
     try:
         if not suffix:
             return handler._json(200, store.list_surveys())
+        if suffix == "aligned-export":
+            query = parse_qs(request.query)
+            payload = handler.server.trace_receivers.aligned_export(int(query.get("seconds", ["5"])[0]))
+            return handler._reply(200, payload, "text/csv; charset=utf-8", "aligned-receivers.csv")
         if "/" not in suffix:
             return _reply_status(handler, suffix)
         identifier, action = suffix.split("/", 1)
@@ -71,6 +75,8 @@ def trace_post(handler, body):
     if not suffix:
         survey = store.create(body["label"])
         return handler._json(201, _metadata(survey))
+    if suffix in {"start-all", "stop-all"}:
+        return handler._json(200, handler.server.trace_receivers.group(suffix.split("-")[0]))
     if suffix == "restore":
         archive = (decode_json(base64.b64decode(body["archive_bytes"], validate=True))
                    if "archive_bytes" in body else body["archive"])
