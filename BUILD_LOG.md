@@ -1222,3 +1222,26 @@ smoke reproduction commands are in HANDOVER.md. Field CSVs were not
 used for fitting, calibration, or selection. Native Windows, CUDA,
 independent field calibration and fresh long-horizon skill verification
 remain open.
+
+## Forecast stability handoff
+
+Reproduced the previous QIGA's severe cold drift and quantified projection
+saturation. Added training-only hourly increment scaling, mean relaxation
+for long rollouts, and their manual gradients. Preserved existing
+checkpoints and short-horizon CPU recovery identities. Added explicit
+UTC validation and test boundaries to recursive experiments and a
+matched-origin comparison plotter. No acquisition or firmware changes.
+
+Matched 72-hour AZMET development comparison used seed 42, two
+generations of two candidates, one epoch per candidate and two refit
+epochs. QIGA hour-72 temperature RMSE fell from 80.521 °C to 8.507 °C.
+Persistence and daily persistence were 3.453 °C. This reused the prior
+evaluation period and is development evidence. See AI_VALIDATION.md and
+Examples/forecast-stability for the six-feature results and figures.
+
+Chromium-enabled regression completed with 191 passes and two CUDA
+skips across 193 tests. Ran a labeled synthetic split and exact-resume
+smoke test and verified a 72-row forecast from the revised AZMET
+checkpoint and dashboard rendering of its diagnostics. No AquaMap
+field data entered training. Native Windows, physical Arduino/CUDA,
+independent calibration and final chronological evaluation remain open.

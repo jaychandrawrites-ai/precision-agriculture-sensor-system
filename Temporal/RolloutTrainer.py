@@ -1,5 +1,8 @@
 """Matched-budget teacher-forced and autoregressive sequence training."""
 from copy import deepcopy
+from dataclasses import replace
+
+import numpy as np
 
 from Data.Dataloader import DataLoader
 from Data.Normalization import Standardizer
@@ -23,6 +26,12 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
     features = dataset.input_scaler.inverse_transform(dataset.inputs[dataset.train])
     features[:, 6:12] -= (1 - options.smoothing) * features[:, 12:18]
     input_scaler = Standardizer().fit(features)
+    if options.relaxation and options.increment_scale is None:
+        # Scale the learned tendency by observed training-hour innovations after relaxation.
+        current = training.histories[:, -1]
+        tendency = training.targets[:, 0] - current
+        tendency -= options.relaxation * (dataset.target_scaler.mean - current)
+        options = replace(options, increment_scale=tuple(np.sqrt(np.mean(tendency**2, axis=0))))
     engine = Rollout(model, input_scaler, dataset.target_scaler, backend, options)
     model.rollout_options = options
     algorithms = {"adam": Adam, "sgd": SGD}

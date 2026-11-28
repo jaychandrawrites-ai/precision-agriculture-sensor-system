@@ -116,3 +116,41 @@ saved winner and generate a cross-method plot:
 & $python forecast.py az43-prepared/hourly.csv training/evolution-72/models/quantum_inspired/model.json --steps 72 > training/evolution-72/forecast.csv
 & $python research_figures.py evolution-forecast training/evolution-72/report.json training/evolution-72/temperature.png
 ```
+
+## Local stability training recipes
+
+Use the Windows setup above. These are CPU starting budgets. Run the
+smoke recipe first and inspect the validation and stability diagnostics
+before scheduling a longer search. Use a fresh directory for each recipe.
+
+```powershell
+$recipes = @{
+    smoke    = @(2, 2, 1, 2, 6)
+    moderate = @(4, 3, 2, 6, 72)
+    research = @(6, 6, 4, 16, 72)
+}
+$tier = "smoke"
+$seed = 42
+$population, $generations, $candidateEpochs, $epochs, $horizon = $recipes[$tier]
+$run = "training/stability-$tier-$seed"
+New-Item -ItemType Directory -Force $run
+Measure-Command {
+    & $python experiments.py az43-prepared/hourly.csv --preparation-report az43-prepared/report.json --seed $seed --population $population --generations $generations --candidate-epochs $candidateEpochs --epochs $epochs --horizon $horizon --max-parameters 2200 --random-baseline --hybrid-baseline --adaptive-amplitude --search-directory "$run/search" --export-selected "$run/models" > "$run/report.json"
+    if ($LASTEXITCODE -ne 0) { throw "Jupiter experiment failed" }
+}
+& $python -m Dashboard.Server --workspace "$env:LOCALAPPDATA\Jupiter" --import-training-run "$run/models/quantum_inspired"
+```
+
+Use the report's search and fit timings to estimate local cost. Search
+work grows approximately with population × generations × candidate epochs
+× horizon; refitting scales with final epochs × horizon. The six-hour
+smoke run does not measure the overhead of the longer rollout tape. A
+72-hour run with the smoke population and generation budget gives a
+closer timing estimate. For exact recovery, repeat the same command in
+the same directory with the same sources, software revision and settings.
+
+For formal evaluation, predeclare hourly UTC boundaries and append
+`--validation-from` and `--test-from` with those timestamps. Use only
+training and validation periods to make decisions. Keep the test period
+unexamined until settings are frozen. The existing comparison archive
+is development evidence because its evaluation period was already used.

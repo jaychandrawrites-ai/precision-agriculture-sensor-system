@@ -212,3 +212,54 @@ evolution and neural diagnostics rendered in Chromium.
 | Local training workflow | The Linux CLI exported, loaded, forecast from, and registered the winning architecture. PowerShell recipes are in the handover. Native Windows and physical CUDA remain unverified. |
 | Independent scientific validation | 72-hour development evaluation completed. Forecast skill and generalization require a fresh chronological archive and a multi-seed study. |
 | Real-field use | Independent leaf voltage endpoints, soil moisture reference calibration, a declared solar offset, and compatible hourly context remain required. Hardware acceptance remains open. |
+
+## Stability follow-up and local training handoff
+
+The previous delta rollout scaled each neural correction by the
+variability of the state level. That scale is larger than typical hourly
+changes for some features. Persistent directional corrections could
+accumulate for 72 iterations. At hour 72 the QIGA model had a −72.742 °C
+temperature bias, and the temperature projection changed 49.26% of its
+forecasts. The short model also had no explicit hour-of-day signal.
+The observed bias and projection rate directly demonstrate drift.
+They do not isolate the effect of periodicity, training duration, or
+architecture size.
+
+For new training above 24 hours, the recursive step applies a fixed
+12-hour anomaly half-life toward the training mean and learns a bounded
+hourly residual. Each residual is scaled by the RMS of training-hour
+changes after subtracting that relaxation. The previous state coefficient
+and output-scale derivatives are included in manual backpropagation.
+The loss continues to use the original targets. Legacy checkpoints
+retain their saved dynamics. The two changes were tested together.
+
+The before-and-after experiment held data, origin times, seed, and
+search and refit epoch budgets constant. It used the same 4,606 AZMET
+development origins as the previous comparison, so the results are
+not a new blinded test. The architecture was selected again on
+chronological validation. No AquaMap data entered fitting or selection.
+
+| Temperature RMSE (°C) | Hour 1 | Hour 6 | Hour 24 | Hour 72 |
+|---|---:|---:|---:|---:|
+| QIGA before | 6.716 | 20.990 | 47.833 | 80.521 |
+| QIGA after | 1.875 | 9.838 | 5.613 | 8.507 |
+| Persistence | 1.574 | 7.106 | 2.346 | 3.453 |
+| Daily persistence | 2.317 | 2.333 | 2.346 | 3.453 |
+
+At hour 72, the revised QIGA model's temperature bias was −4.646 °C and
+temperature projection changed 0 of 4,606 forecasts. This substantially
+reduced drift. Diurnal accuracy and long-horizon skill remain limited.
+The short search does not establish a ranking of search methods.
+The project can proceed to local QIGA training without making baseline
+superiority an acceptance criterion.
+
+The revised QIGA checkpoint SHA-256 is
+`33552f459f153da963dace30221acab4bc6a61e719f0413270ffd3bfd0cb35e6`.
+The CLI forecast produced 72 finite hourly rows. The dashboard imported
+the checkpoint and Chromium rendered its internal, evolution, and horizon
+plots. A separate labeled synthetic smoke run used explicit UTC boundaries
+and reproduced the checkpoint hash and generation records after recovery.
+
+See [stability plots](Examples/forecast-stability/stability.png),
+[six-feature RMSE](Examples/forecast-stability/feature-rmse.png), and
+[underlying values](Examples/forecast-stability/stability.json).

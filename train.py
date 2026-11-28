@@ -78,7 +78,7 @@ def _train_stable(checkpoint, settings, optimizer, loss, values, timestamps,
         optimizer=optimizer, loss=loss, warmup_epochs=settings.epochs // 3, recovery_path=recovery_path,
         diagnostic_every=diagnostic_every,
     )
-    engine = Rollout(model, inputs, dataset.target_scaler, backend, options)
+    engine = Rollout(model, inputs, dataset.target_scaler, backend, model.rollout_options)
     one_step = rollout_windows(dataset, dataset.test, values, timestamps, 1)
     if not len(one_step.starts):
         raise ValueError("No complete test windows")

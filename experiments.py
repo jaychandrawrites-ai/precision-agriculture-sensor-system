@@ -31,11 +31,11 @@ from Utils.Metrics import horizon_metrics, physical_metrics
 
 def compare(values, timestamps, settings, budget, *, recursive=False, include_random=False,
             include_hybrid=False, search_directory=None, search_options=SearchOptions(),
-            export_directory=None, provenance=None):
+            export_directory=None, provenance=None, cutoffs=None):
     if export_directory is not None and not recursive:
         raise ValueError("Winner export requires recursive rollout training")
-    cutoffs = (calendar_cutoffs(timestamps, settings.train_fraction, settings.validation_fraction)
-               if recursive else None)
+    if cutoffs is None and recursive:
+        cutoffs = calendar_cutoffs(timestamps, settings.train_fraction, settings.validation_fraction)
     dataset = build_dataset(values, timestamps, settings.train_fraction,
                             settings.validation_fraction, cutoffs=cutoffs)
     windows = None
@@ -144,7 +144,7 @@ def compare(values, timestamps, settings, budget, *, recursive=False, include_ra
             "final_fit_epochs": settings.epochs, "validation_loss": result.validation_loss,
         }
         if recursive:
-            engine = Rollout(model, inputs, dataset.target_scaler, backend, RolloutOptions.for_horizon(settings.rollout_steps))
+            engine = Rollout(model, inputs, dataset.target_scaler, backend, model.rollout_options)
             predictions = engine.predict(test.histories, settings.rollout_steps)
             single = engine.predict(one_step.histories, 1)
             report.update({
@@ -183,6 +183,8 @@ def main():
     parser.add_argument("--horizon", type=int, choices=range(1, 73), default=TrainingConfig().rollout_steps,
                         metavar="1..72")
     parser.add_argument("--preparation-report", type=Path)
+    parser.add_argument("--validation-from", help="Frozen UTC validation boundary, inclusive")
+    parser.add_argument("--test-from", help="Frozen UTC test boundary, inclusive")
     parser.add_argument("--epochs", type=int, default=TrainingConfig().epochs)
     parser.add_argument("--population", type=int, default=EvolutionConfig().population)
     parser.add_argument("--generations", type=int, default=EvolutionConfig().generations)
@@ -221,6 +223,15 @@ def main():
     parser.add_argument("--legacy", action="store_true")
     parser.add_argument("--synthetic", action="store_true", help="Label the input as synthetic in the report")
     args = parser.parse_args()
+    cutoffs = None
+    if args.validation_from or args.test_from:
+        if not args.validation_from or not args.test_from or args.legacy or args.sequence_space:
+            parser.error("Supply both boundaries for recursive rollout search")
+        from seasonal_study import utc_threshold
+
+        cutoffs = tuple(map(utc_threshold, (args.validation_from, args.test_from)))
+        if cutoffs[0] >= cutoffs[1]:
+            parser.error("Validation must begin before the test period")
     settings = replace(TrainingConfig(), epochs=args.epochs, seed=args.seed, rollout_steps=args.horizon)
     budget = EvolutionConfig(population=args.population, generations=args.generations,
                              candidate_epochs=args.candidate_epochs,
@@ -260,7 +271,7 @@ def main():
         report = compare(*series, settings, budget, recursive=not args.legacy,
                          include_random=args.random_baseline, include_hybrid=args.hybrid_baseline,
                          search_directory=args.search_directory, search_options=options,
-                         export_directory=args.export_selected, provenance=provenance)
+                         export_directory=args.export_selected, provenance=provenance, cutoffs=cutoffs)
     report["source_sha256"] = source_hash
     report["synthetic"] = args.synthetic
     print(json.dumps(report, allow_nan=False, indent=2))

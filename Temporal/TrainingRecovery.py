@@ -10,10 +10,15 @@ from Utils.Serialization import read_json, write_json
 
 
 def recipe(model, settings, options, training, validation, inputs, targets, **training_options):
+    rollout = asdict(options)
+    if not options.relaxation and options.increment_scale is None:
+        # Keep existing short-horizon recovery identities and legacy recipes readable.
+        rollout.pop("relaxation")
+        rollout.pop("increment_scale")
     metadata = {"format": "jupiter-rollout-epoch-v2", "settings": asdict(settings),
                 "architecture": {"hidden": list(model.hidden), "skips": list(model.skips),
                                  "dropout": model.dropout},
-                "rollout": asdict(options), "training": training_options,
+                "rollout": rollout, "training": training_options,
                 "numpy": np.__version__}
     if any(name != "relu" for name in model.activations):
         metadata["architecture"]["activations"] = list(model.activations)

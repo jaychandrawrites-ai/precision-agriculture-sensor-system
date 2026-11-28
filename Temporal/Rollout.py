@@ -13,6 +13,8 @@ class RolloutOptions:
     smoothing: float = 0.65
     acceleration_limit: float | None = 2.0
     delta_limit: float | None = None
+    relaxation: float = 0.0
+    increment_scale: tuple[float, ...] | None = None
 
     def __post_init__(self):
         if self.output not in ("state", "delta") or not 0 <= self.smoothing <= 1:
@@ -26,10 +28,19 @@ class RolloutOptions:
                 or not math.isfinite(self.delta_limit) or self.delta_limit <= 0):
             raise ValueError("Delta limit requires delta output and a finite positive bound")
 
+        if not 0 <= self.relaxation < 1 or (self.relaxation and self.output != "delta"):
+            raise ValueError("Relaxation requires a delta model and rate in [0, 1)")
+        if self.increment_scale is not None:
+            scales = tuple(self.increment_scale)
+            if (self.output != "delta" or len(scales) != 6
+                    or any(not math.isfinite(scale) or scale < 0 for scale in scales)):
+                raise ValueError("Expected six finite, nonnegative increment scales")
+            object.__setattr__(self, "increment_scale", scales)
+
     @classmethod
     def for_horizon(cls, hours):
-        # Keep short-horizon training unchanged and bound long unrolled increments.
-        return cls(delta_limit=1.0) if hours > 24 else cls()
+        # Dampen long-running anomalies with a prescribed 12-hour half-life.
+        return cls(delta_limit=2.0, relaxation=1 - 2**(-1/12)) if hours > 24 else cls()
 
 
 class Rollout:
@@ -43,6 +54,8 @@ class Rollout:
         self.input_scale = backend.array(input_scaler.scale)
         self.mean = backend.array(target_scaler.mean)
         self.scale = backend.array(target_scaler.scale)
+        self.increment_scale = (self.scale if options.increment_scale is None
+                                else backend.array(options.increment_scale))
         self.lower = backend.array(LOWER)
         self.upper = backend.array(UPPER)
         if crop_coefficient is not None and (
@@ -76,7 +89,8 @@ class Rollout:
             output_derivative = 1 - bounded**2
             output = limit * bounded
         if self.options.output == "delta":
-            raw = history[:, -1] + output * self.scale
+            current = history[:, -1]
+            raw = current + output * self.increment_scale + self.options.relaxation * (self.mean - current)
         else:
             raw = self.mean + output * self.scale
         self.backend.require_finite(raw, "raw rollout state")
@@ -155,13 +169,14 @@ class Rollout:
                         feedback_grad[:, 4] *= ~eta_limited
                     interior = (raw > self.lower) & (raw < self.upper)
                     raw_grad = direct + feedback_grad * interior
-                    input_grad = self.model.backward(raw_grad * self.scale * output_derivative, cache)
+                    output_scale = self.increment_scale if self.options.output == "delta" else self.scale
+                    input_grad = self.model.backward(raw_grad * output_scale * output_derivative, cache)
                     if derivative is not None:
                         input_grad[:, 12:] *= derivative
                     input_grad = (input_grad / self.input_scale).reshape(-1, 3, 6)
                     previous = self.coefficients.T @ input_grad
                     if self.options.output == "delta":
-                        previous[:, 2] += raw_grad
+                        previous[:, 2] += (1 - self.options.relaxation) * raw_grad
                     if autoregressive:
                         previous[:, 1:] += carry[:, :2]
                     carry = previous

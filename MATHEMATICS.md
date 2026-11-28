@@ -54,16 +54,21 @@ variance measures uncertainty under the specified covariance model.
 The input is a current six-variable state, smoothed backward slope, and
 backward second difference. Each 18-vector uses training-only scaling.
 The acceleration inputs are smoothly bounded after normalization. The
-network predicts an increment in units of the target scale. For new
-training runs above 24 hours the normalized increment is
-`L tanh(network_output / L)`, with L = 1. This is a numerical trust
-bound on proposals, with no clipping of observed targets. The derivative
-through it is `1 - tanh(network_output / L)^2`. The projected six-variable
+network predicts a per-step tendency. For training above 24 hours the
+raw proposal is `x + r(μ - x) + s L tanh(network_output / L)` with
+`r = 1 - 2^(-1/12)`, `L = 2`, training state mean μ, and per-feature s
+equal to the RMS of training-hour changes after subtracting relaxation.
+A fixed neural tendency cannot cause unbounded drift because the
+coefficient on the previous state is `1 - r`. This does not establish
+trajectory skill or guarantee that a trajectory avoids a physical bound.
+The derivative of the bounded output is `1 - tanh(network_output / L)^2`.
+The relaxation and fitted scales are stored in checkpoints. Short
+historical recipes retain their target-scale increment and older
+long-horizon checkpoints retain their saved configuration. The projected six-variable
 state enters the next three-state history. Backpropagation reverses the
 history shift and applies the projection Jacobian to feedback gradients,
 while the direct loss still compares the pre-projection state with the
-observed target. Checkpoints store the option. Existing checkpoints load
-with their original unbounded increment rule.
+observed target. Observed targets are unchanged.
 
 The recursive architecture genome encodes depth, widths and residual
 connections. Extended genomes encode independent activations. Candidate

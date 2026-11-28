@@ -38,7 +38,8 @@ class RolloutTests(unittest.TestCase):
             # Force bound and proportional-cap activity without evaluating a kink.
             model.layers[-1].bias.value[2:] = [4, 0, 2, -3]
             engine = Rollout(model, input_scaler, output_scaler, backend,
-                             RolloutOptions(output, delta_limit=limit), crop_coefficient=0.8)
+                             RolloutOptions(output, delta_limit=limit, relaxation=.05 if limit else 0,
+                                            increment_scale=(4, 8, .2, .24, .24, .5) if limit else None), crop_coefficient=0.8)
             projected, raw, _ = engine.predict(histories, 4, True)
             self.assertTrue((raw[:, :, 2] > 1).any())
             self.assertTrue((raw[:, :, 4] > projected[:, :, 4]).any())
