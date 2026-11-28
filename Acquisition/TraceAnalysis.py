@@ -91,6 +91,11 @@ def survey_forecasts(store, survey_id, configuration, checkpoint=None, steps=Non
         raise ValueError("Forecasting requires a saved checkpoint and 1–168 hourly steps")
     forecaster = load_forecaster(checkpoint) if checkpoint is not None else None
     members = (forecaster, *(load_forecaster(path) for path in ensemble)) if forecaster is not None else ()
+    if steps is not None:
+        limits = [member.maximum_forecast_hours for member in members
+                  if member.maximum_forecast_hours is not None]
+        if limits and steps > min(limits):
+            raise ValueError(f"Selected checkpoint supports at most {min(limits)} forecast hours")
     hashes = [member.checkpoint_sha256 for member in members]
     if ensemble and (steps is None or len(set(hashes)) != len(members)):
         raise ValueError("An ensemble needs forecasting steps and distinct checkpoints")

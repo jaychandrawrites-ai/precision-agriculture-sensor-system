@@ -196,9 +196,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--import-training-run", type=Path, action="append", default=[])
     parser.add_argument("--allow-port", action="append", default=[])
     args = parser.parse_args()
     with DashboardServer(args.port, args.workspace, args.allow_port) as server:
+        for source in args.import_training_run:
+            server.jobs.import_training_run(source)
         print(f"Open http://{server.authority}", flush=True)
         try:
             server.serve_forever()

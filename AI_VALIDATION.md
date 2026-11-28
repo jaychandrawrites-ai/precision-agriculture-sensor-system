@@ -71,3 +71,64 @@ To see saved diagnostics in the website, prepare or upload eligible
 historical data and submit **Model training** from the console, then open
 **AI diagnostics**. CLI training exports its artifacts to the chosen
 directory independently of the dashboard job store.
+
+## Supported time combinations
+
+| Visit duration | Hourly checkpoint eligibility |
+| --- | --- |
+| 15 or 30 minutes | Requires a usable closed hourly field bin under the configured coverage rules and suitable prior context. A short visit alone cannot establish full-hour coverage. |
+| About one hour | Can supply a closed field aggregate. Adjacent compatible history and calibration are still required. |
+| Multiple hours | Can supply consecutive hourly aggregates if each has eligible observations and enough prior history for reference ET. |
+| Arbitrary subhourly forecast | No trained native subhourly checkpoint is available. |
+
+Direct, quantile and blend checkpoints enforce their saved output horizon.
+Recursive checkpoints expose the software limit separately from validation.
+The existing 24-lead synthetic test demonstrates inference mechanics.
+It does not validate accuracy at that lead.
+
+## Development experiment
+
+The az43 chronological comparison used seeds 42 and 43, four epochs,
+width 16 and six leads. Selection, calibration and reporting began
+2025-07-01, 2025-10-01 and 2026-02-01 UTC. The archive overlaps
+previously examined data, so this is development evidence.
+
+| Method | Six-hour temperature RMSE (°C) |
+| --- | ---: |
+| Persistence | 7.552 |
+| Daily persistence | 2.662 |
+| Harmonic regression | 3.892 |
+| Direct neural forecast | 4.401 |
+| Daily residual | 3.041 |
+| Validation-weighted blend | 2.665 |
+
+The residual model used the daily anchor and improved over the direct
+model; daily persistence remains preferable in this comparison. For
+each feature and lead the study exports RMSE, MAE, bias, R² and skill.
+
+```powershell
+.\.venv\Scripts\python.exe seasonal_study.py seasonal-development.json az43-prepared/hourly.csv --selection-from 2025-07-01T00:00Z --calibration-from 2025-10-01T00:00Z --final-from 2026-02-01T00:00Z --station az43 --horizon 6 --width 16 --epochs 4 --seeds 42 43
+```
+
+## Persistent runs
+
+```powershell
+New-Item -ItemType Directory -Force training/az43-initial
+.\.venv\Scripts\python.exe train.py az43-prepared/hourly.csv training/az43-initial/model.json --epochs 4 --seed 42 --diagnostic-every 1 --preparation-report az43-prepared/report.json --diagnostics training/az43-initial/diagnostics --resume-state training/az43-initial/resume.json > training/az43-initial/run.json
+.\.venv\Scripts\python.exe -m Dashboard.Server --workspace "$env:LOCALAPPDATA\Jupiter" --import-training-run training/az43-initial
+```
+
+For a longer CPU run choose a new directory and specify `--epochs 30
+--diagnostic-every 5` from the start. A resume requires the same settings.
+Sampling records the first batch of selected epochs, before clipping
+for gradients and after the update for inference activations. Histograms
+use bounded samples. The imported checkpoint hash must match its report.
+The dashboard copies it into its local job store and can reload it later
+without retraining.
+
+Real inference still requires independent leaf wet and dry voltage
+endpoints, a soil calibration tied to reference volumetric measurements,
+the ET solar offset and compatible adjacent hourly feature context.
+Use manufacturer procedures or an approved lab protocol for calibration.
+The five field records remain inference-only. An AZMET weather series
+cannot provide measured soil moisture or leaf calibration for those visits.

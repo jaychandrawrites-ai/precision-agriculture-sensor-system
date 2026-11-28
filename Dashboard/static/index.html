@@ -77,6 +77,7 @@
       <label id="validation-start-label" hidden>Validation start (UTC)<input type="datetime-local" id="validation-start"></label>
       <label id="validation-end-label" hidden>Validation end (exclusive, UTC)<input type="datetime-local" id="validation-end"></label>
       <label id="memory-bytes-label" hidden>Training allocation in bytes (0 for default)<input id="memory-bytes" type="number" min="0" max="1073741824" value="0"></label>
+      <label id="diagnostic-every-label" hidden>Sample internal layers every N epochs (0 disables)<input id="diagnostic-every" type="number" min="0" max="300" value="0"></label>
       <label id="optimizer-label" hidden>Optimizer<select id="optimizer"><option value="adam">Adam</option><option value="sgd">SGD</option></select></label>
       <label id="loss-label" hidden>Training loss<select id="loss"><option value="huber">Huber</option><option value="mse">Mean squared error</option></select></label>
       <label id="architecture-label" hidden>Direct architecture<select id="architecture">

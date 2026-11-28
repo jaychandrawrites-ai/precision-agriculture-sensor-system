@@ -458,6 +458,7 @@ function options() {
     figure_source: $("figure-source").value, feature: $("figure-feature").value,
     members: [...$("members").selectedOptions].map(option => option.value),
     validation_start: $("validation-start").value, validation_end: $("validation-end").value,
+    diagnostic_every: Number($("diagnostic-every").value),
     direct_optimizer: $("direct-optimizer").value, scheduler: $("scheduler").value,
     memory_bytes: Number($("memory-bytes").value), architecture: $("architecture").value, width: Number($("width").value),
     seed: Number($("joint-seed").value), epochs: Number($("epochs").value), steps: Number($("steps").value),

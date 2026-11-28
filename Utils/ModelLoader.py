@@ -28,6 +28,21 @@ class Forecaster:
             return max(model.history_hours for model in self.members)
         return self.direct.context_hours if self.direct is not None else 3
 
+    @property
+    def maximum_forecast_hours(self):
+        if self.blend is not None:
+            return len(self.blend.weights)
+        if self.quantile is not None:
+            return self.quantile.horizon
+        if self.direct is not None:
+            return self.direct.model.horizon
+        return None
+
+    def time_requirements(self):
+        return {"input_interval_minutes": 60, "consecutive_feature_hours": self.history_hours,
+                "checkpoint_maximum_forecast_hours": self.maximum_forecast_hours,
+                "validated_horizon_hours": self.provenance.get("validated_horizon_hours"),
+                "short_visit_requirement": "At least one eligible hourly field aggregate and compatible adjacent context"}
     def forecast(self, history, steps):
         point, _ = self.forecast_bundle(history, steps)
         return point

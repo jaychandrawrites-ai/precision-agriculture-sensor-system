@@ -41,7 +41,7 @@ class Rollout:
             raise ValueError("Invalid crop coefficient")
         self.crop = crop_coefficient
 
-    def _step(self, history, training):
+    def normalized_inputs(self, history):
         xp = self.backend.xp
         features = (self.coefficients @ history).reshape(len(history), 18)
         inputs = (features - self.input_mean) / self.input_scale
@@ -52,6 +52,11 @@ class Rollout:
             robust = xp.tanh(inputs[:, 12:] / limit)
             inputs[:, 12:] = limit * robust
             derivative = 1 - robust**2
+        return inputs, derivative
+
+    def _step(self, history, training):
+        xp = self.backend.xp
+        inputs, derivative = self.normalized_inputs(history)
         output, cache = self.model.forward(inputs, training=training)
         if self.options.output == "delta":
             raw = history[:, -1] + output * self.scale

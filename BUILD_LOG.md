@@ -1174,3 +1174,27 @@ A focused synthetic Chromium test confirmed diagnostic images and the
 checkpoint remained available after restarting the server. Corrected
 PNG MIME handling for browser rendering. The compatibility matrix,
 audit scope and remaining limitations are in AI_VALIDATION.md.
+
+## Variable-time readiness and persistent training diagnostics
+
+AI Trace reads cadence, hourly context, and horizon limits from the saved
+checkpoint. Existing hourly checkpoints continue to work. Historic AZMET
+hourly data support hour-aligned validation. Shorter sessions require
+compatible adjacent context and independently calibrated field features.
+
+The matched chronological development comparison (seeds 42 and 43,
+four CPU epochs each) gave six-hour temperature RMSE of 7.552 °C for
+persistence, 2.662 °C for daily persistence, 3.892 °C for a harmonic
+baseline, 4.401 °C for direct AI, 3.041 °C for daily-residual AI, and
+2.665 °C for the validation blend. The archive overlaps earlier work.
+Daily persistence led, and these runs did not establish independent skill.
+The study emits per-feature and per-horizon metrics.
+
+Added optional internal layer statistics, CPU recovery continuity and
+diagnostics import for CLI runs. The four-epoch historical checkpoint was
+imported into the local dashboard. The diagnostics page and completed job
+API returned HTTP 200. Full Chromium-enabled regression ran 191 tests
+with 189 passes and two CUDA skips. The field CSVs were excluded from
+training and selection. Independent calibration and matched hourly
+context are still required for real-field forecast acceptance. Native
+Windows and physical CUDA remain unverified.

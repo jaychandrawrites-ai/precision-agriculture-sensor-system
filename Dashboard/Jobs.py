@@ -38,7 +38,7 @@ ARTIFACTS = {
     "prepare": {"prepared/hourly.csv", "prepared/flags.csv", "prepared/report.json"},
     "train": {"report.json", "model.json", "diagnostics/metrics.json", "diagnostics/evaluation.npz",
               "diagnostics/training.png", "diagnostics/actual-predicted.png", "diagnostics/horizon.png",
-              "diagnostics/residuals.png", "diagnostics/parameters.png"},
+              "diagnostics/residuals.png", "diagnostics/parameters.png", "diagnostics/internal.png"},
     "forecast": {"forecast.csv"},
     "blend": {"blend.json"},
     "figure": {"figure.png", "figure.svg"},
@@ -112,6 +112,43 @@ class Jobs:
         except BaseException:
             self.lease.close()
             raise
+
+    def import_training_run(self, source):
+        """Register a local, completed CLI training run without retraining."""
+        from hashlib import sha256
+        import shutil
+        from Utils.ModelLoader import load_forecaster
+
+        source = Path(source)
+        model = load_forecaster(source / "model.json")
+        metrics = source / "diagnostics/metrics.json"
+        report = read_json(metrics)
+        if report.get("checkpoint_sha256") != model.checkpoint_sha256:
+            raise ValueError("Diagnostic report and checkpoint hashes differ")
+        identifier = sha256(("cli-training:" + model.checkpoint_sha256).encode()).hexdigest()[:32]
+        with self.lock:
+            if identifier in self.store:
+                return identifier
+            if len(self.store) >= self.capacity:
+                raise ValueError("Dashboard workspace job limit reached")
+            folder = self.root / identifier
+            folder.mkdir()
+            try:
+                (folder / "diagnostics").mkdir()
+                for name in ARTIFACTS["train"] - {"report.json"}:
+                    original = source / name
+                    if original.is_file():
+                        shutil.copyfile(original, folder / name)
+                if sha256((folder / "model.json").read_bytes()).hexdigest() != model.checkpoint_sha256:
+                    raise ValueError("Checkpoint changed during import")
+                shutil.copyfile(metrics, folder / "report.json")
+                job = Job(identifier, "train", folder, {}, datetime.now(timezone.utc).isoformat(), "complete")
+                self._save(job)
+                self.store[identifier] = job
+            except BaseException:
+                shutil.rmtree(folder)
+                raise
+        return identifier
 
     def _claim_workspace(self):
         """Exclude a second running server while allowing recovery after a crash."""
@@ -251,6 +288,7 @@ class Jobs:
         if kind in DATASET_INPUTS:
             settings["epochs"] = self._number(raw, "epochs", 30, (1, 300 if kind == "train" else 50))
         if kind == "train":
+            settings["diagnostic_every"] = self._number(raw, "diagnostic_every", 0, (0, 300))
             settings["optimizer"] = self._choice(raw, "optimizer", "adam", ("adam", "sgd"))
             settings["loss"] = self._choice(raw, "loss", "huber", ("huber", "mse"))
         if kind == "figure":
@@ -354,7 +392,7 @@ class Jobs:
         if kind == "train":
             command = ["train.py", data, folder / "model.json", "--epochs", opts["epochs"],
                     "--optimizer", opts["optimizer"], "--loss", opts["loss"],
-                    "--resume-state", folder / "resume.json", "--diagnostics", folder / "diagnostics"]
+                    "--resume-state", folder / "resume.json", "--diagnostics", folder / "diagnostics", "--diagnostic-every", opts.get("diagnostic_every", 0)]
             if "dataset" in opts:
                 command += ["--preparation-report", self._linked(opts["dataset"], {"prepare"}, "prepared/report.json")]
             return command

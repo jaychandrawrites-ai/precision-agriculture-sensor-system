@@ -71,3 +71,17 @@ def publish(directory, report, observed, predicted, persistence, seasonal, param
     export("horizon", horizon)
     export("residuals", residuals)
     export("parameters", weights, 1, 1)
+    if fit.get("layer_diagnostics"):
+        def internal(axes):
+            samples = fit["layer_diagnostics"]
+            for name in samples[0]["layers"]:
+                epochs = [item["epoch"] for item in samples]
+                axes[0].plot(epochs, [item["layers"][name]["gradient"]["l2"] for item in samples], label=name)
+                axes[1].plot(epochs, [item["layers"][name]["update_to_weight_norm"] for item in samples])
+            axes[0].set(xlabel="Epoch", ylabel="Gradient L2 (before clipping)")
+            axes[0].legend(fontsize=7)
+            axes[1].set(xlabel="Epoch", ylabel="Update / parameter L2")
+            for name, summary in samples[-1]["inference_activations"].items():
+                axes[2].hist(summary["sample"], bins=20, histtype="step", label=name)
+            axes[2].set(xlabel="Activation", ylabel="Sample count")
+        export("internal", internal, 1, 3)

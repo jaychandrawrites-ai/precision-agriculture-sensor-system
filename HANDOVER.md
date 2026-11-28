@@ -55,3 +55,8 @@ See [AI_VALIDATION.md](AI_VALIDATION.md) for the feature compatibility
 matrix, numerical audit scope and commands for training diagnostics.
 Dashboard training saves plots and held-out predictions under its job
 directory. Open /diagnostics after a completed model training job.
+
+For persistent CLI training and dashboard registration see
+[AI_VALIDATION.md](AI_VALIDATION.md). AI Trace displays the selected
+checkpoint's hourly context and horizon constraints. Use a new run directory
+when changing total epochs or layer sampling frequency.

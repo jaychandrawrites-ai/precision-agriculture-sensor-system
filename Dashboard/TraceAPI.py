@@ -114,8 +114,12 @@ def trace_post(handler, body):
                         label=body.get("label"), location_id=body.get("location_id"), mapping=body.get("mapping"))
     elif action == "readiness":
         model = body.get("model")
-        checkpoint = handler.server.jobs.artifact(model, "model.json") if model else None
+        checkpoint = _trace_model(handler, model) if model else None
         return handler._json(200, survey_forecasts(store, identifier, body["configuration"], checkpoint))
+    elif action == "model-requirements":
+        from Utils.ModelLoader import load_forecaster
+
+        return handler._json(200, load_forecaster(_trace_model(handler, body["model"])).time_requirements())
     elif action == "forecast":
         steps = body.get("steps", 6)
         if type(steps) is not int or not 1 <= steps <= 72:

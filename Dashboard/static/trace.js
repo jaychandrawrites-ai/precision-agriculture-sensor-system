@@ -340,6 +340,26 @@ submit("trace-replay", async event => {
     label: fields.label.value || undefined, location_id: fields.location.value || undefined,
     mapping: el("trace-protocol").value || await jsonFile(el("trace-mapping"))});
 }, "Replay saved as its own recording segment.");
+el("trace-models").addEventListener("change", async event => {
+  const model = event.target.value, survey = trace.id;
+  const status = el("trace-time-requirements");
+  const steps = el("trace-forecast-form").elements.steps;
+  status.textContent = "";
+  steps.max = 72;
+  if (!model || !survey) return;
+  try {
+    const record = await request("/api/trace/" + survey + "/model-requirements", {model});
+    if (event.target.value !== model || trace.id !== survey) return;
+    steps.max = Math.min(72, record.checkpoint_maximum_forecast_hours ?? 72);
+    if (Number(steps.value) > Number(steps.max)) steps.value = steps.max;
+    status.textContent = record.consecutive_feature_hours + " consecutive hourly feature rows. " +
+      record.short_visit_requirement + ". " + (record.checkpoint_maximum_forecast_hours ?
+        "Checkpoint cap: " + record.checkpoint_maximum_forecast_hours + " hours." :
+        "Recursive checkpoint. Forecast range in this form is a software limit.");
+  } catch (error) {
+    status.textContent = error.message;
+  }
+});
 submit("trace-forecast-form", async event => {
   const action = event.submitter.value;
   const fields = event.target.elements;

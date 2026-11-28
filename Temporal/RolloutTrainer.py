@@ -14,7 +14,7 @@ from Temporal.TrainingRecovery import (decode_runtime, read_recovery, recipe,
 
 def fit_rollout(model, dataset, training, validation, backend, settings, options,
                 autoregressive=True, optimizer="adam", loss="huber", warmup_epochs=0,
-                *, recovery_path=None, stop_after_epoch=None):
+                *, recovery_path=None, stop_after_epoch=None, diagnostic_every=0):
     if not len(training.starts) or not len(validation.starts):
         raise ValueError("Need complete chronological training and validation windows")
     if not 0 <= warmup_epochs < settings.epochs:
@@ -32,6 +32,13 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
     loader = DataLoader(training.histories, training.targets, settings.batch_size,
                         seed=settings.seed)
     val_targets = backend.array(dataset.target_scaler.transform(validation.targets).reshape(-1, 6))
+    if type(diagnostic_every) is not int or diagnostic_every < 0:
+        raise ValueError("Diagnostic epoch interval must be a nonnegative integer")
+    from Temporal.LayerDiagnostics import LayerDiagnostics
+
+    recorder = LayerDiagnostics(model, backend) if diagnostic_every else None
+    internal = []
+    epoch_seconds, learning_rates = [], []
     best = float("inf")
     peak_gradient_norm = 0.0
     clipped_updates = 0
@@ -43,9 +50,14 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
         identity = recipe(model, settings, options, training, validation, input_scaler,
                           dataset.target_scaler, optimizer=optimizer, loss=loss,
                           autoregressive=autoregressive, warmup_epochs=warmup_epochs)
+        if diagnostic_every:
+            identity["diagnostic_every"] = diagnostic_every
         recovery = read_recovery(recovery_path, identity)
         if recovery is not None:
             start = recovery["epoch"]
+            internal = recovery.get("layer_diagnostics", [])
+            epoch_seconds = recovery.get("epoch_seconds", [])
+            learning_rates = recovery.get("learning_rate", [])
             history = recovery["history"]
             training_history = recovery["training_history"]
             best_epoch = recovery["best_epoch"]
@@ -66,18 +78,24 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
         raise ValueError("Training budget must allow at least one epoch")
     from time import perf_counter
 
-    epoch_seconds, learning_rates = [], []
     for epoch in range(start + 1, budget + 1):
         tick = perf_counter()
         learning_rates.append(opt.learning_rate)
         epoch_loss = 0.0
-        for inputs, targets, _ in loader:
+        for batch, (inputs, targets, _) in enumerate(loader):
             opt.zero_grad()
             objective = engine.objective(inputs, targets,
                                          autoregressive=autoregressive and epoch > warmup_epochs,
                                          loss=loss)
             epoch_loss += objective * len(inputs)
+            sample = recorder is not None and epoch % diagnostic_every == 0 and batch == 0
+            before = recorder.before() if sample else None
             update = opt.step()
+            if sample:
+                with backend.scope():
+                    probe, _ = engine.normalized_inputs(backend.array(inputs[:8]))
+                internal.append({"epoch": epoch, "layers": recorder.report(before),
+                                 "inference_activations": recorder.activations(probe)})
             peak_gradient_norm = max(peak_gradient_norm, update["gradient_norm"])
             clipped_updates += update["clip_factor"] < 1
         predictions = engine.predict(validation.histories, validation.targets.shape[1])
@@ -99,7 +117,8 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
         if recovery_path is not None:
             write_recovery(recovery_path, {
                 "recipe": identity, "epoch": epoch, "best_epoch": best_epoch, "history": history,
-                "training_history": training_history,
+                "training_history": training_history, "layer_diagnostics": internal,
+                "epoch_seconds": epoch_seconds, "learning_rate": learning_rates,
                 "peak_gradient_norm": peak_gradient_norm, "clipped_updates": clipped_updates,
                 "last": serialize_runtime(model, backend, opt, schedule, loader),
                 "best": {"weights": weights, "optimizer": opt_state, "schedule": schedule_state,
@@ -110,6 +129,6 @@ def fit_rollout(model, dataset, training, validation, backend, settings, options
     result = FitResult(best, best_epoch, history, opt_state, schedule_state, shuffle_state, rng_state)
     diagnostics = {"updates": opt.steps, "peak_gradient_norm": peak_gradient_norm,
                    "clipped_updates": clipped_updates, "training_loss": training_history,
-                   "validation_loss": history, "learning_rate": learning_rates if not start else [],
-                   "epoch_seconds": epoch_seconds if not start else []}
+                   "validation_loss": history, "learning_rate": learning_rates,
+                   "epoch_seconds": epoch_seconds, "layer_diagnostics": internal}
     return result, input_scaler, diagnostics

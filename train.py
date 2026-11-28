@@ -20,7 +20,7 @@ from Utils.Checkpoints import save
 from Utils.Metrics import horizon_metrics, physical_metrics as _physical_metrics
 
 
-def train(source, checkpoint, settings, optimizer="adam", loss="huber", stable_rollout=False, *, recovery_path=None, diagnostics_dir=None, preparation_report=None):
+def train(source, checkpoint, settings, optimizer="adam", loss="huber", stable_rollout=False, *, recovery_path=None, diagnostics_dir=None, preparation_report=None, diagnostic_every=0):
     from hashlib import sha256
 
     values, timestamps = read_hourly(source)
@@ -31,11 +31,11 @@ def train(source, checkpoint, settings, optimizer="adam", loss="huber", stable_r
         upstream = read_json(preparation_report)["provenance"]
         provenance = {**upstream, "prepared_sha256": sha256(Path(source).read_bytes()).hexdigest()}
     return train_values(values, timestamps, checkpoint, settings, optimizer, loss,
-                        stable_rollout=stable_rollout, recovery_path=recovery_path, diagnostics_dir=diagnostics_dir, provenance=provenance)
+                        stable_rollout=stable_rollout, recovery_path=recovery_path, diagnostics_dir=diagnostics_dir, provenance=provenance, diagnostic_every=diagnostic_every)
 
 
 def train_values(values, timestamps, checkpoint, settings, optimizer="adam", loss="huber",
-                 *, stable_rollout=True, provenance=None, cutoffs=None, recovery_path=None, diagnostics_dir=None):
+                 *, stable_rollout=True, provenance=None, cutoffs=None, recovery_path=None, diagnostics_dir=None, diagnostic_every=0):
     if recovery_path is not None and Path(recovery_path).resolve() == Path(checkpoint).resolve():
         raise ValueError("Training recovery and inference checkpoint must use distinct files")
     dataset = build_dataset(values, timestamps, settings.train_fraction,
@@ -44,7 +44,7 @@ def train_values(values, timestamps, checkpoint, settings, optimizer="adam", los
     model = TemporalModel(backend, settings.hidden, settings.dropout)
     if stable_rollout:
         return _train_stable(checkpoint, settings, optimizer, loss, values, timestamps,
-                             dataset, model, backend, provenance, recovery_path, diagnostics_dir)
+                             dataset, model, backend, provenance, recovery_path, diagnostics_dir, diagnostic_every)
     if recovery_path is not None or diagnostics_dir is not None:
         raise ValueError("Use stable rollout training for epoch recovery or diagnostics")
     result = fit(model, dataset, backend, settings, optimizer, loss)
@@ -64,7 +64,7 @@ def train_values(values, timestamps, checkpoint, settings, optimizer="adam", los
 
 
 def _train_stable(checkpoint, settings, optimizer, loss, values, timestamps,
-                  dataset, model, backend, provenance, recovery_path, diagnostics_dir):
+                  dataset, model, backend, provenance, recovery_path, diagnostics_dir, diagnostic_every):
     from time import perf_counter
 
     steps = settings.rollout_steps
@@ -76,6 +76,7 @@ def _train_stable(checkpoint, settings, optimizer, loss, values, timestamps,
     result, inputs, fit_diagnostics = fit_rollout(
         model, dataset, training, validation, backend, settings, options,
         optimizer=optimizer, loss=loss, warmup_epochs=settings.epochs // 3, recovery_path=recovery_path,
+        diagnostic_every=diagnostic_every,
     )
     engine = Rollout(model, inputs, dataset.target_scaler, backend, options)
     one_step = rollout_windows(dataset, dataset.test, values, timestamps, 1)
@@ -133,6 +134,7 @@ def main():
     parser.add_argument("checkpoint")
     parser.add_argument("--seed", type=int, default=TrainingConfig().seed)
     parser.add_argument("--preparation-report", type=Path)
+    parser.add_argument("--diagnostic-every", type=int, default=0)
     parser.add_argument("--diagnostics", type=Path)
     parser.add_argument("--epochs", type=int, default=TrainingConfig().epochs)
     parser.add_argument("--device", default="cpu")
@@ -144,7 +146,7 @@ def main():
     args = parser.parse_args()
     settings = replace(TrainingConfig(), epochs=args.epochs, device=args.device, seed=args.seed)
     print(json.dumps(train(args.source, args.checkpoint, settings, args.optimizer, args.loss,
-                           stable_rollout=not args.legacy, recovery_path=args.resume_state, diagnostics_dir=args.diagnostics, preparation_report=args.preparation_report), indent=2, allow_nan=False))
+                           stable_rollout=not args.legacy, recovery_path=args.resume_state, diagnostics_dir=args.diagnostics, preparation_report=args.preparation_report, diagnostic_every=args.diagnostic_every), indent=2, allow_nan=False))
 
 
 if __name__ == "__main__":
