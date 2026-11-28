@@ -1274,3 +1274,13 @@ Full Chromium-enabled regression ran 197 tests with 195 passes and two
 CUDA skips. Spectral tests verified Fourier and damped reconstruction,
 origin anchoring, coefficient finite differences, sparse sampling and
 all 72 checkpoint forecast prefixes.
+
+## Joint spectral curve fit
+
+Added optional mean-level, centered-trajectory and curvature losses with
+manual gradients. The curve preset preserves the level weight while
+increasing emphasis on shape and slope. It reuses Fourier, damped and
+sparse-input searches. The matched AZMET development comparison improved
+Fourier 72-hour temperature RMSE from 3.869 to 3.757 °C. The new checkpoint
+completed a 72-hour CLI forecast. Finite differences and the level/shape
+decomposition were verified. Details are in AI_VALIDATION.md.

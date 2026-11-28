@@ -302,3 +302,17 @@ See [Fourier components](Examples/spectral/qiga-fourier.png),
 [damped components](Examples/spectral/qiga-laplace.png),
 [all six RMSE curves](Examples/spectral/qiga-horizons.png), and
 [pattern metrics and generation records](Examples/spectral/summary.json).
+
+### Joint curve-fit experiment
+
+With matched seed, search budget, four refit epochs, and the same
+4,606 previously examined AZMET origins, the joint objective improved
+Fourier temperature trajectory correlation from 0.876 to 0.889.
+Six-hour and 72-hour RMSE went from 3.366 to 3.163 °C and 3.869 to
+3.757 °C. For the transient arm they went from 2.829 to 2.693 °C and
+4.256 to 4.078 °C. The Fourier slope RMSE fell from 1.067 to 1.049 °C
+per hour. Daily persistence still achieved 0.904 correlation and
+3.453 °C RMSE at 72 hours. The sparse arm recorded 17 refit events
+and made no material difference. Actual ET correlation remained
+undefined. These are one-seed development results, with no fresh test
+period or AquaMap data used. [Curve comparison](Examples/spectral/curve-comparison.png).

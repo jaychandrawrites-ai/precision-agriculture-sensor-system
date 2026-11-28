@@ -1,0 +1,10 @@
+{
+  "value": 0.5,
+  "level": 0.5,
+  "shape": 1.0,
+  "spectral": 0.03,
+  "derivative": 0.5,
+  "curvature": 0.15,
+  "physical": 0.1,
+  "regularization": 0.002
+}

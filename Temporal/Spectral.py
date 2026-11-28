@@ -64,6 +64,9 @@ class LossWeights:
     derivative: float = .25
     physical: float = .1
     regularization: float = .002
+    level: float = 0.
+    shape: float = 0.
+    curvature: float = 0.
 
     def __post_init__(self):
         if any(not math.isfinite(x) or x < 0 for x in vars(self).values()) or not self.value:
@@ -76,18 +79,29 @@ def loss(coefficients, target, anchor, basis, reference, lower, upper, weights, 
     error = predicted - target
     residual = predicted - xp.clip(predicted, lower, upper)
     velocity = xp.diff(error, axis=1)
+    curvature = xp.diff(velocity, axis=1)
+    level = xp.mean(error, axis=1, keepdims=True)
+    shape = error - level
     coefficient_error = coefficients - reference
     # Downweight weakly identified coefficients and penalize higher frequencies gradually.
     identified = xp.mean(basis**2, axis=0)[:, None]
     penalty = xp.mean(xp.diff(basis, axis=0)**2, axis=0)[:, None]
     terms = {
         "value": xp.mean(error**2),
+        "level": xp.mean(level**2),
+        "shape": xp.mean(shape**2),
+        "curvature": xp.mean(curvature**2),
         "spectral": xp.mean(identified * coefficient_error**2),
         "derivative": xp.mean(velocity**2),
         "physical": xp.mean(residual**2),
         "regularization": xp.mean(penalty * coefficients**2),
     }
-    state_gradient = 2 * (weights.value * error + weights.physical * residual) / error.size
+    state_gradient = 2 * (weights.value * error + weights.physical * residual
+                          + weights.level * level + weights.shape * shape) / error.size
+    bending = 2 * weights.curvature * curvature / curvature.size
+    state_gradient[:, 2:] += bending
+    state_gradient[:, 1:-1] -= 2 * bending
+    state_gradient[:, :-2] += bending
     derivative = 2 * weights.derivative * velocity / velocity.size
     state_gradient[:, 1:] += derivative
     state_gradient[:, :-1] -= derivative

@@ -25,7 +25,7 @@ class SpectralTests(unittest.TestCase):
         reference = np.linalg.pinv(basis) @ target
 
         def evaluate(coef):
-            return loss(coef, target, 0, basis, reference, -.9, 1.1, LossWeights())
+            return loss(coef, target, 0, basis, reference, -.9, 1.1, LossWeights(level=.2, shape=.8, curvature=.3))
 
         _, gradient, _ = evaluate(coeff)
         for index in np.ndindex(coeff.shape):
@@ -82,3 +82,15 @@ class SpectralTests(unittest.TestCase):
                 loader.forecast(history, 72)
             with self.assertRaisesRegex(ValueError, "integer horizons"):
                 loader.forecast(history, 73, origin=origin)
+
+    def test_level_and_shape_separate_offset_from_curve_error(self):
+        basis = Modes((24,)).basis(np.arange(1, 73))
+        coefficients = np.zeros((1, 3, 6))
+        coefficients[:, 0] = 2
+        coefficients[:, 1] = 1
+        target = np.zeros((1, 72, 6))
+        _, _, terms = loss(coefficients, target, 0, basis, coefficients, -10, 10, LossWeights())
+        self.assertAlmostEqual(terms["level"], 4)
+        self.assertAlmostEqual(terms["shape"], .5)
+        self.assertAlmostEqual(terms["value"], terms["level"] + terms["shape"])
+        self.assertGreater(terms["curvature"], 0)

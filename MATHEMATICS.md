@@ -146,3 +146,15 @@ absolute magnitude is n and variance is n²x. The implementation caps the
 magnitude at b, so the latter two quantities become min(nx,b)/x and
 min(nx,b)²/x. The cap leaves event probability unchanged. Validation,
 testing, calendar inputs, and inference use zero augmentation.
+
+### Joint level and curve objective
+
+For each origin and feature, split the normalized trajectory error e into
+its lead mean m and the centered error e − m. Their mean squares sum
+to the existing value MSE. The curve preset adds distinct weights for
+these orthogonal terms, giving effective value weights of 1.0 on level
+and 1.5 on centered shape. It also increases slope weight and adds
+squared second-difference error to score changes in slope around turns.
+The adjoint for this last term scatters the second-difference gradient
+with weights [1, −2, 1] before applying the spectral basis transpose.
+The older objective remains available with the new weights at zero.

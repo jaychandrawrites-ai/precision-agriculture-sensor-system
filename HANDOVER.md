@@ -182,3 +182,9 @@ Loss weights can be specified in a JSON object with the keys
 Repeat the same command to recover completed search generations.
 Final spectral weight fits restart from their seeded initialization.
 The Windows commands were exercised with equivalent Linux invocations.
+
+For joint level-and-curve training, add
+`--loss-weights Examples/spectral/curve-loss.json` to the spectral command
+and use a fresh run directory. Keep `--sparse-scale 0.0001` to compare
+the inverse-power augmentation arm. The report records level, centered
+shape, slope and curvature loss components for validation and search.
